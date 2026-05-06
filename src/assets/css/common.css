@@ -1,0 +1,639 @@
+/* =============================================================================
+   📦 引入依賴 (Dependencies Import)
+   ============================================================================= */
+
+@import "./variables.css"; /* 基礎變數定義 */
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@100..900&display=swap");
+
+/* =============================================================================
+   🔧 基礎重置和全局設定 (Base Reset & Global Settings)
+   ============================================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--my-font-family-primary); /* 使用主要字體 */
+  font-size: var(--my-font-size-md); /* 基礎字體大小 */
+  font-weight: var(--my-font-weight-md);
+  letter-spacing: var(--my-letter-spacing-md);
+  color: var(--my-color-gray-900); /* 主要文字顏色 */
+  background-color: var(--my-color-white); /* 主要背景顏色 */
+}
+
+/* 應用程式佈局 (Application Layout)  */
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 字體大小 */
+
+.my-font-size-xs {
+  font-size: var(--my-font-size-xs);
+}
+.my-font-size-sm {
+  font-size: var(--my-font-size-sm);
+}
+.my-font-size-md {
+  font-size: var(--my-font-size-md);
+}
+.my-font-size-lg {
+  font-size: var(--my-font-size-lg);
+}
+.my-font-size-xl {
+  font-size: var(--my-font-size-xl);
+}
+.my-font-size-2xl {
+  font-size: var(--my-font-size-2xl);
+}
+
+/* 圖層顏色類別 */
+.my-color-white {
+  color: var(--my-color-white);
+}
+.my-color-gray-50 {
+  color: var(--my-color-gray-50);
+}
+.my-color-gray-100 {
+  color: var(--my-color-gray-100);
+}
+.my-color-gray-200 {
+  color: var(--my-color-gray-200);
+}
+.my-color-gray-300 {
+  color: var(--my-color-gray-300);
+}
+.my-color-gray-400 {
+  color: var(--my-color-gray-400);
+}
+.my-color-gray-500 {
+  color: var(--my-color-gray-500);
+}
+.my-color-gray-600 {
+  color: var(--my-color-gray-600);
+}
+.my-color-gray-700 {
+  color: var(--my-color-gray-700);
+}
+.my-color-gray-800 {
+  color: var(--my-color-gray-800);
+}
+.my-color-gray-900 {
+  color: var(--my-color-gray-900);
+}
+.my-color-black {
+  color: var(--my-color-black);
+}
+
+.my-color-red {
+  color: var(--my-color-red);
+}
+.my-color-pink {
+  color: var(--my-color-pink);
+}
+.my-color-deeporange {
+  color: var(--my-color-deeporange);
+}
+.my-color-orange {
+  color: var(--my-color-orange);
+}
+.my-color-amber {
+  color: var(--my-color-amber);
+}
+.my-color-yellow {
+  color: var(--my-color-yellow);
+}
+.my-color-lime {
+  color: var(--my-color-lime);
+}
+.my-color-lightgreen {
+  color: var(--my-color-lightgreen);
+}
+.my-color-green {
+  color: var(--my-color-green);
+}
+.my-color-teal {
+  color: var(--my-color-teal);
+}
+.my-color-cyan {
+  color: var(--my-color-cyan);
+}
+.my-color-lightblue {
+  color: var(--my-color-lightblue);
+}
+.my-color-blue {
+  color: var(--my-color-blue);
+}
+.my-color-bluegrey {
+  color: var(--my-color-bluegrey);
+}
+.my-color-indigo {
+  color: var(--my-color-indigo);
+}
+.my-color-deeppurple {
+  color: var(--my-color-deeppurple);
+}
+.my-color-purple {
+  color: var(--my-color-purple);
+}
+.my-color-brown {
+  color: var(--my-color-brown);
+}
+
+/* 文字間距 */
+
+.my-letter-spacing-lg {
+  letter-spacing: var(--my-letter-spacing-lg);
+}
+
+/* 圖層背景顏色類別  */
+.my-bgcolor-white {
+  background-color: var(--my-color-white);
+}
+.my-bgcolor-gray-50 {
+  background-color: var(--my-color-gray-50);
+}
+.my-bgcolor-gray-100 {
+  background-color: var(--my-color-gray-100);
+}
+.my-bgcolor-gray-200 {
+  background-color: var(--my-color-gray-200);
+}
+.my-bgcolor-gray-300 {
+  background-color: var(--my-color-gray-300);
+}
+.my-bgcolor-gray-400 {
+  background-color: var(--my-color-gray-400);
+}
+.my-bgcolor-gray-500 {
+  background-color: var(--my-color-gray-500);
+}
+.my-bgcolor-gray-600 {
+  background-color: var(--my-color-gray-600);
+}
+.my-bgcolor-gray-700 {
+  background-color: var(--my-color-gray-700);
+}
+.my-bgcolor-gray-800 {
+  background-color: var(--my-color-gray-800);
+}
+.my-bgcolor-gray-900 {
+  background-color: var(--my-color-gray-900);
+}
+.my-bgcolor-black {
+  background-color: var(--my-color-black);
+}
+
+.my-bgcolor-red {
+  background-color: var(--my-color-red);
+}
+.my-bgcolor-pink {
+  background-color: var(--my-color-pink);
+}
+.my-bgcolor-deeporange {
+  background-color: var(--my-color-deeporange);
+}
+.my-bgcolor-orange {
+  background-color: var(--my-color-orange);
+}
+.my-bgcolor-amber {
+  background-color: var(--my-color-amber);
+}
+.my-bgcolor-yellow {
+  background-color: var(--my-color-yellow);
+}
+.my-bgcolor-lime {
+  background-color: var(--my-color-lime);
+}
+.my-bgcolor-lightgreen {
+  background-color: var(--my-color-lightgreen);
+}
+.my-bgcolor-green {
+  background-color: var(--my-color-green);
+}
+.my-bgcolor-teal {
+  background-color: var(--my-color-teal);
+}
+.my-bgcolor-cyan {
+  background-color: var(--my-color-cyan);
+}
+.my-bgcolor-lightblue {
+  background-color: var(--my-color-lightblue);
+}
+.my-bgcolor-blue {
+  background-color: var(--my-color-blue);
+}
+.my-bgcolor-bluegrey {
+  background-color: var(--my-color-bluegrey);
+}
+.my-bgcolor-indigo {
+  background-color: var(--my-color-indigo);
+}
+.my-bgcolor-deeppurple {
+  background-color: var(--my-color-deeppurple);
+}
+.my-bgcolor-purple {
+  background-color: var(--my-color-purple);
+}
+.my-bgcolor-brown {
+  background-color: var(--my-color-brown);
+}
+
+.my-bgcolor-white-hover {
+  background-color: var(--my-color-white);
+}
+.my-bgcolor-white-hover:active,
+.my-bgcolor-white-hover:hover {
+  background-color: var(--my-color-gray-200);
+}
+
+.my-table-tr-hover:hover {
+  background-color: var(--my-color-gray-100);
+}
+
+.my-table-tr-hover:hover > td {
+  background-color: transparent;
+}
+
+/* 文字顏色 */
+
+.my-title-xl-black {
+  font-size: var(--my-font-size-xl);
+  color: var(--my-color-black);
+}
+
+.my-title-xl-gray {
+  font-size: var(--my-font-size-xl);
+  color: var(--my-color-gray-600);
+}
+
+.my-title-lg-gray {
+  font-size: var(--my-font-size-lg);
+  color: var(--my-color-gray-600);
+}
+
+.my-title-md-gray {
+  font-size: var(--my-font-size-md);
+  color: var(--my-color-gray-600);
+}
+
+.my-title-sm-white {
+  font-size: var(--my-font-size-sm);
+  color: var(--my-color-white);
+  font-weight: var(--my-font-weight-lg);
+}
+
+.my-title-sm-black {
+  font-size: var(--my-font-size-sm);
+  color: var(--my-color-black);
+  font-weight: var(--my-font-weight-lg);
+}
+
+.my-title-sm-gray {
+  font-size: var(--my-font-size-sm);
+  color: var(--my-color-gray-600);
+  font-weight: var(--my-font-weight-lg);
+}
+
+.my-title-xs-white {
+  font-size: var(--my-font-size-xs);
+  color: var(--my-color-white);
+  font-weight: var(--my-font-weight-lg);
+}
+
+
+.my-title-xs-black {
+  font-size: var(--my-font-size-xs);
+  color: var(--my-color-black);
+  font-weight: var(--my-font-weight-lg);
+}
+
+.my-title-xs-gray {
+  font-size: var(--my-font-size-xs);
+  color: var(--my-color-gray-600);
+  font-weight: var(--my-font-weight-lg);
+}
+
+.my-content-sm-black {
+  font-size: var(--my-font-size-sm);
+  color: var(--my-color-black);
+}
+
+.my-content-xs-black {
+  font-size: var(--my-font-size-xs);
+  color: var(--my-color-black);
+}
+
+.my-content-xs-gray {
+  font-size: var(--my-font-size-xs);
+  color: var(--my-color-gray-600);
+}
+
+/* 按鈕模式 */
+
+.my-btn-transparent {
+  color: var(--my-color-black);
+}
+
+.my-btn-transparent:hover,
+.my-btn-transparent:active {
+  color: var(--my-color-black);
+  background-color: var(--my-color-white);
+}
+
+.my-btn-white {
+  color: var(--my-color-black);
+  background-color: var(--my-color-white);
+}
+
+.my-btn-white:hover,
+.my-btn-white:active {
+  background-color: var(--my-color-gray-100);
+}
+
+.my-btn-red {
+  color: var(--my-color-white);
+  background-color: var(--my-color-red);
+}
+
+.my-btn-red:hover,
+.my-btn-red:active {
+  color: var(--my-color-white);
+  background-color: var(--my-color-red-hover);
+}
+
+.my-btn-red:disabled {
+  color: var(--my-color-gray-600);
+  background-color: var(--my-color-gray-200);
+}
+
+.my-btn-green {
+  color: var(--my-color-white);
+  background-color: var(--my-color-green);
+}
+
+.my-btn-green:hover,
+.my-btn-green:active {
+  color: var(--my-color-white);
+  background-color: var(--my-color-green-hover);
+}
+
+.my-btn-green:disabled {
+  color: var(--my-color-gray-600);
+  background-color: var(--my-color-gray-200);
+}
+
+.my-btn-blue {
+  color: var(--my-color-white);
+  background-color: var(--my-color-blue);
+}
+
+.my-btn-blue:hover,
+.my-btn-blue:active {
+  color: var(--my-color-white);
+  background-color: var(--my-color-blue-hover);
+}
+
+.my-btn-blue:disabled {
+  color: var(--my-color-gray-600);
+  background-color: var(--my-color-gray-200);
+}
+
+.my-btn-orange {
+  color: var(--my-color-white);
+  background-color: var(--my-color-orange);
+}
+
+.my-btn-orange:hover,
+.my-btn-orange:active {
+  color: var(--my-color-white);
+  background-color: var(--my-color-orange-hover);
+}
+
+.my-btn-orange:disabled {
+  color: var(--my-color-gray-600);
+  background-color: var(--my-color-gray-200);
+}
+
+/* 面板樣式  */
+
+.my-right-panel {
+  background-color: var(--my-color-white); /* 面板背景色 */
+  /* border-left: 1px solid var(--my-color-gray-200); */ /* 左邊框 */
+}
+
+/* 🌟 左側面板右側陰影 (Left Panel Right Shadow) */
+.my-left-panel {
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.15); /* 增強右側陰影效果 */
+  position: relative;
+  z-index: 1500; /* 提高層級，確保陰影顯示在地圖等所有元素上方 */
+}
+
+/* 🌟 左側面板陰影偽元素 (Left Panel Shadow Pseudo Element) */
+.my-left-panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -8px; /* 陰影延伸到右側 */
+  width: 8px;
+  height: 100%;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.1), transparent);
+  pointer-events: none; /* 不影響滑鼠事件 */
+  z-index: 1501; /* 比面板本身更高的層級 */
+}
+
+/* 🌟 中間面板左側內陰影 (Middle Panel Left Inner Shadow) */
+.my-middle-panel {
+  box-shadow: inset 4px 0 8px rgba(0, 0, 0, 0.1); /* 左側內陰影效果 */
+  position: relative;
+  z-index: 1; /* 確保在左側面板陰影下方 */
+}
+
+/* =============================================================================
+   📜 滾動條樣式 (Scrollbar Styles)
+   ============================================================================= */
+
+/* 🎨 自定義滾動條樣式 (Custom Scrollbar Styles) */
+/* 適用於 Webkit 瀏覽器 (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px; /* 垂直滾動條寬度 */
+  height: 8px; /* 水平滾動條高度 */
+}
+
+::-webkit-scrollbar-track {
+  background: var(--my-color-gray-100); /* 滾動條軌道背景色 */
+  border-radius: 4px; /* 軌道圓角 */
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--my-color-gray-400); /* 滾動條顏色 */
+  border-radius: 4px; /* 滾動條圓角 */
+  transition: background-color 0.2s ease; /* 平滑過渡效果 */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--my-color-gray-600); /* 滑鼠懸停時的顏色 */
+}
+
+::-webkit-scrollbar-corner {
+  background: white; /* 滾動條角落背景色 */
+}
+
+/* 🎨 Firefox 滾動條樣式 */
+* {
+  scrollbar-width: thin; /* 細滾動條 */
+  scrollbar-color: var(--my-color-gray-400) var(--my-color-gray-100); /* 滾動條顏色 軌道顏色 */
+}
+
+/* 拖拉調整器樣式  */
+
+.my-resizer {
+  background-color: var(--my-color-gray-100); /* 調整器背景色 */
+  transition: all 0.2s ease; /* 平滑過渡效果 */
+  border: none; /* 移除邊框 */
+}
+
+.my-resizer:hover {
+  background-color: var(--my-color-blue); /* 懸停時的背景色 */
+}
+
+/* 🔧 垂直拖曳調整器 (Vertical Resizer) */
+.my-resizer-vertical {
+  min-width: 4px;
+  max-width: 4px;
+  cursor: col-resize; /* 左右調整游標 */
+  touch-action: none; /* 禁用觸控手勢，確保拖拉正常工作 */
+}
+
+/* 🔧 水平拖曳調整器 (Horizontal Resizer) */
+.my-resizer-horizontal {
+  min-height: 4px;
+  max-height: 4px;
+  cursor: row-resize; /* 上下調整游標 */
+  touch-action: none; /* 禁用觸控手勢，確保拖拉正常工作 */
+}
+
+/* 🔧 垂直拖曳調整器在觸摸裝置上需要更大的觸控區域 */
+@media (hover: none) and (pointer: coarse) {
+  .my-resizer-vertical {
+    min-width: 12px; /* 觸控裝置上提供更大的觸控區域 */
+    max-width: 12px;
+  }
+}
+
+.my-resizer-vertical:hover,
+.my-resizer-vertical.my-dragging {
+  min-width: 6px;
+  max-width: 6px;
+}
+
+/* 🔧 觸控裝置上的垂直拖拉狀態樣式 */
+@media (hover: none) and (pointer: coarse) {
+  .my-resizer-vertical.my-dragging {
+    min-width: 12px;
+    max-width: 12px;
+    background-color: var(--my-color-blue) !important;
+  }
+}
+
+/* 🔧 水平拖曳調整器在觸摸裝置上需要更大的觸控區域 */
+@media (hover: none) and (pointer: coarse) {
+  .my-resizer-horizontal {
+    min-height: 12px; /* 觸控裝置上提供更大的觸控區域 */
+    max-height: 12px;
+  }
+}
+
+.my-resizer-horizontal:hover,
+.my-resizer-horizontal.my-dragging {
+  min-height: 6px;
+  max-height: 6px;
+}
+
+/* 🔧 觸控裝置上的拖拉狀態樣式 */
+@media (hover: none) and (pointer: coarse) {
+  .my-resizer-horizontal.my-dragging {
+    min-height: 12px;
+    max-height: 12px;
+    background-color: var(--my-color-blue) !important;
+  }
+}
+
+.my-resizer.my-dragging {
+  background-color: var(--my-color-blue) !important; /* 拖曳時的背景色 */
+}
+
+/* 🔧 不同位置的 resizer 顏色 (Different Resizer Colors) */
+.my-resizer-left {
+  background-color: var(--my-color-gray-00); /* 左側面板 resizer - gray-100 */
+}
+
+.my-resizer-left:hover {
+  background-color: var(--my-color-blue); /* 懸停時保持主色 */
+}
+
+.my-resizer-right {
+  background-color: var(--my-color-gray-200); /* 右側面板 resizer - white */
+  border-left: 1px solid var(--my-color-gray-300); /* 左邊框 */
+}
+
+.my-resizer-right:hover {
+  background-color: var(--my-color-blue); /* 懸停時保持主色 */
+}
+
+.my-resizer-middle {
+  background-color: var(--my-color-gray-200); /* 中間面板上下拉 resizer - gray-200 */
+  position: relative; /* 為偽元素提供定位上下文 */
+  border-top: 1px solid var(--my-color-gray-300); /* 上邊框分隔線 */
+}
+
+.my-resizer-middle:hover {
+  background-color: var(--my-color-blue); /* 懸停時保持主色 */
+}
+
+/* =============================================================================
+   🖱️ 防止選取樣式 (No-Select Styles)
+   ============================================================================= */
+
+.my-no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+body.my-no-select {
+  cursor: inherit !important; /* 保持游標樣式 */
+}
+
+body.my-no-select * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important; /* 防止所有元素被選取 */
+}
+
+/* 霧化樣式 */
+.my-blur {
+  backdrop-filter: blur(4px) saturate(160%);
+  -webkit-backdrop-filter: blur(4px) saturate(160%);
+  background-color: rgba(255, 255, 255, 0.4); /* 50% 透明度的白色 */
+}
+
+.my-cursor-pointer {
+  cursor: pointer;
+}

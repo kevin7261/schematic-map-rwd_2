@@ -1,0 +1,456 @@
+/**
+ * 將 e 層「地圖路段匯出」JSON 陣列還原為 spaceNetworkGridJsonData 扁平 segments，
+ * 並可再餵給 computeStationDataFromRoutes，使 taipei_f／taipei_g 讀檔後繪製與 taipei_e 一致。
+ */
+
+function num(v) {
+  return Number(v ?? 0);
+}
+
+function cloneJson(obj) {
+  if (obj === undefined || obj === null) return obj;
+  try {
+    return JSON.parse(JSON.stringify(obj));
+  } catch {
+    return obj;
+  }
+}
+
+function pointKey(x, y) {
+  return `${num(x)},${num(y)}`;
+}
+
+/** 三點是否共線且為水平或垂直（網格 HV 路徑） */
+function axisAlignedCollinearTriple(a, b, c) {
+  if (!a || !b || !c) return false;
+  const ax = num(a[0]);
+  const ay = num(a[1]);
+  const bx = num(b[0]);
+  const by = num(b[1]);
+  const cx = num(c[0]);
+  const cy = num(c[1]);
+  const sameX = ax === bx && bx === cx;
+  const sameY = ay === by && by === cy;
+  return sameX || sameY;
+}
+
+/**
+ * 中間頂點是否僅為幾何轉折（可刪）：非 connect，且無站名／站號。
+ * 有 station 的 line 節點仍保留；g3→h3／匯出之中段黑點僅有 tags._forceDrawBlackDot 者亦不可刪。
+ */
+function nodeIsRemovableGeometricLine(node) {
+  if (!node || typeof node !== 'object') return false;
+  if (node.node_type === 'connect') return false;
+  if (node.tags?._forceDrawBlackDot) return false;
+  const sid = node.station_id ?? node.tags?.station_id;
+  const sname = node.station_name ?? node.tags?.station_name ?? node.tags?.name;
+  if (sid || sname) return false;
+  return node.node_type === 'line' || node.node_type == null;
+}
+
+/**
+ * 讀入 network 後：直線段上僅存起迄（與必須保留的中間站），刪除共線的純幾何 line 頂點。
+ * @returns {{ points: Array, nodes: Array, keptIndices: number[] }}
+ */
+export function simplifyCollinearBareLinePointsInSegment(points, nodes) {
+  const n = Array.isArray(points) ? points.length : 0;
+  if (n <= 2) {
+    return {
+      points,
+      nodes,
+      keptIndices: n > 0 ? points.map((_, i) => i) : [],
+    };
+  }
+  if (!Array.isArray(nodes) || nodes.length !== n) {
+    return {
+      points,
+      nodes,
+      keptIndices: points.map((_, i) => i),
+    };
+  }
+  const kept = [0];
+  for (let i = 1; i < n - 1; i++) {
+    const prev = points[kept[kept.length - 1]];
+    const cur = points[i];
+    const next = points[i + 1];
+    if (nodeIsRemovableGeometricLine(nodes[i]) && axisAlignedCollinearTriple(prev, cur, next)) {
+      continue;
+    }
+    kept.push(i);
+  }
+  kept.push(n - 1);
+  const newPts = kept.map((j) => points[j]);
+  const newNodes = kept.map((j) => nodes[j]);
+  return { points: newPts, nodes: newNodes, keptIndices: kept };
+}
+
+/**
+ * taipei_f／taipei_g：對 routes 內每個 segment 壓縮直線段上的多餘幾何點，並同步 original_points。
+ */
+export function simplifyTaipeiNetworkSegmentsInRoutes(routesData) {
+  if (!Array.isArray(routesData)) return;
+  for (const route of routesData) {
+    for (const seg of route.segments || []) {
+      const pts = seg.points;
+      const nod = seg.nodes;
+      const nOld = Array.isArray(pts) ? pts.length : 0;
+      const { points, nodes, keptIndices } = simplifyCollinearBareLinePointsInSegment(pts, nod);
+      if (keptIndices.length === nOld) continue;
+      seg.points = points;
+      seg.nodes = nodes;
+      if (Array.isArray(seg.original_points) && seg.original_points.length === nOld) {
+        seg.original_points = keptIndices.map((j) => seg.original_points[j]);
+      }
+    }
+  }
+}
+
+/** 水平優先再垂直，逐步從 a 走到 b（不含 a，含 b） */
+export function hvStepsHorizontalFirst(a, b) {
+  const x0 = num(a[0]);
+  const y0 = num(a[1]);
+  const x1 = num(b[0]);
+  const y1 = num(b[1]);
+  const pts = [];
+  let x = x0;
+  let y = y0;
+  const EPS = 1e-9;
+  const MAX_STEPS = 2_000_000;
+
+  const stepAxis = (cur, target, axisIsX) => {
+    let c = cur;
+    while (Math.abs(c - target) > EPS) {
+      if (pts.length > MAX_STEPS) return null;
+      const d = target - c;
+      const step = Math.abs(d) >= 1 - EPS ? Math.sign(d) : d;
+      c += step;
+      if (axisIsX) {
+        pts.push([c, y]);
+      } else {
+        pts.push([x, c]);
+      }
+    }
+    return c;
+  };
+
+  const nx = stepAxis(x, x1, true);
+  if (nx == null) return pts;
+  x = nx;
+  const ny = stepAxis(y, y1, false);
+  if (ny == null) return pts;
+  y = ny;
+  return pts;
+}
+
+/**
+ * routeCoordinates: [ start, bends[], end ] → 完整 HV 折線點列（含所有格步）
+ */
+export function expandHVChainFromRouteCoordinates(routeCoordinates) {
+  if (!Array.isArray(routeCoordinates) || routeCoordinates.length !== 3) return [];
+  const [pStart, bends, pEnd] = routeCoordinates;
+  const vertices = [];
+  if (pStart && Array.isArray(pStart) && pStart.length >= 2) {
+    vertices.push([num(pStart[0]), num(pStart[1])]);
+  }
+  for (const b of bends || []) {
+    if (b && Array.isArray(b) && b.length >= 2) {
+      vertices.push([num(b[0]), num(b[1])]);
+    }
+  }
+  if (pEnd && Array.isArray(pEnd) && pEnd.length >= 2) {
+    vertices.push([num(pEnd[0]), num(pEnd[1])]);
+  }
+  if (vertices.length === 0) return [];
+  if (vertices.length === 1) return [[...vertices[0]]];
+  const out = [[...vertices[0]]];
+  for (let i = 1; i < vertices.length; i++) {
+    const a = out[out.length - 1];
+    const b = vertices[i];
+    for (const s of hvStepsHorizontalFirst(a, b)) {
+      const last = out[out.length - 1];
+      if (s[0] !== last[0] || s[1] !== last[1]) out.push([s[0], s[1]]);
+    }
+  }
+  return out;
+}
+
+/**
+ * routeCoordinates: [ start, bends[], end ] → 僅串接頂點（經緯度折線，不做 HV 格點展開）
+ */
+export function expandLonLatChainFromRouteCoordinates(routeCoordinates) {
+  if (!Array.isArray(routeCoordinates) || routeCoordinates.length !== 3) return [];
+  const [pStart, bends, pEnd] = routeCoordinates;
+  const out = [];
+  const pushPt = (p) => {
+    if (!p || !Array.isArray(p) || p.length < 2) return;
+    const nx = num(p[0]);
+    const ny = num(p[1]);
+    const last = out[out.length - 1];
+    if (last && last[0] === nx && last[1] === ny) return;
+    out.push([nx, ny]);
+  };
+  pushPt(pStart);
+  for (const b of bends || []) pushPt(b);
+  pushPt(pEnd);
+  return out;
+}
+
+function cloneConnectNode(obj, px, py) {
+  if (!obj || typeof obj !== 'object') {
+    return { node_type: 'connect', x_grid: px, y_grid: py, tags: {} };
+  }
+  const o = cloneJson(obj);
+  o.node_type = 'connect';
+  o.x_grid = px;
+  o.y_grid = py;
+  o.tags = o.tags && typeof o.tags === 'object' ? { ...o.tags } : {};
+  return o;
+}
+
+/**
+ * 與典型 e 層 segment 相同：nodes.length === points.length，每格一節點。
+ */
+const SEGMENT_EPS = 1e-6;
+
+function pointLiesOnAxisAlignedSegment(a, b, sx, sy) {
+  const ax = num(a[0]);
+  const ay = num(a[1]);
+  const bx = num(b[0]);
+  const by = num(b[1]);
+  const minx = Math.min(ax, bx);
+  const maxx = Math.max(ax, bx);
+  const miny = Math.min(ay, by);
+  const maxy = Math.max(ay, by);
+  if (Math.abs(ax - bx) <= SEGMENT_EPS) {
+    return Math.abs(sx - ax) <= SEGMENT_EPS && sy >= miny - SEGMENT_EPS && sy <= maxy + SEGMENT_EPS;
+  }
+  if (Math.abs(ay - by) <= SEGMENT_EPS) {
+    return Math.abs(sy - ay) <= SEGMENT_EPS && sx >= minx - SEGMENT_EPS && sx <= maxx + SEGMENT_EPS;
+  }
+  return false;
+}
+
+/** 由 a 走向 b 時，插入點在線段上的順序鍵（0…1） */
+function parametricOrderOnSegment(a, b, sx, sy) {
+  const ax = num(a[0]);
+  const ay = num(a[1]);
+  const bx = num(b[0]);
+  const by = num(b[1]);
+  if (Math.abs(ax - bx) <= SEGMENT_EPS) {
+    const den = by - ay;
+    return Math.abs(den) <= SEGMENT_EPS ? 0 : (sy - ay) / den;
+  }
+  const den = bx - ax;
+  return Math.abs(den) <= SEGMENT_EPS ? 0 : (sx - ax) / den;
+}
+
+function sameGridPoint(p, q) {
+  return (
+    Math.abs(num(p[0]) - num(q[0])) <= SEGMENT_EPS && Math.abs(num(p[1]) - num(q[1])) <= SEGMENT_EPS
+  );
+}
+
+/**
+ * routeCoordinates 展開後僅含轉折頂點，segment.stations 之中間站（常為半格）可能不在頂點列上；
+ * 若不插入，buildNodesAlignedToPoints 對不到站、會落成可刪幾何點而被 simplify 拿掉，與 j3 即時路網不一致。
+ */
+function insertMapDrawnStationsIntoPolyline(points, stations) {
+  if (
+    !Array.isArray(points) ||
+    points.length < 2 ||
+    !Array.isArray(stations) ||
+    stations.length === 0
+  ) {
+    return points;
+  }
+  /** @type {{ segIndex: number, t: number, pt: number[] }[]} */
+  const inserts = [];
+  for (const st of stations) {
+    if (!st || typeof st !== 'object') continue;
+    const sx = num(st.x_grid ?? st.tags?.x_grid);
+    const sy = num(st.y_grid ?? st.tags?.y_grid);
+    if (!Number.isFinite(sx) || !Number.isFinite(sy)) continue;
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      if (!pointLiesOnAxisAlignedSegment(a, b, sx, sy)) continue;
+      const t = parametricOrderOnSegment(a, b, sx, sy);
+      inserts.push({ segIndex: i, t, pt: [sx, sy] });
+      break;
+    }
+  }
+  if (inserts.length === 0) return points;
+  inserts.sort((u, v) => (u.segIndex !== v.segIndex ? u.segIndex - v.segIndex : u.t - v.t));
+  const out = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    out.push([num(points[i][0]), num(points[i][1])]);
+    const onSeg = inserts.filter((ins) => ins.segIndex === i).sort((a, b) => a.t - b.t);
+    let prev = out[out.length - 1];
+    for (const ins of onSeg) {
+      if (sameGridPoint(prev, ins.pt)) continue;
+      if (sameGridPoint(ins.pt, points[i + 1])) continue;
+      out.push([ins.pt[0], ins.pt[1]]);
+      prev = out[out.length - 1];
+    }
+  }
+  const last = points[points.length - 1];
+  out.push([num(last[0]), num(last[1])]);
+  return out;
+}
+
+function buildNodesAlignedToPoints(points, startObj, endObj, stations) {
+  const stationByKey = new Map();
+  for (const s of stations || []) {
+    if (!s || typeof s !== 'object') continue;
+    const x = s.x_grid ?? s.tags?.x_grid;
+    const y = s.y_grid ?? s.tags?.y_grid;
+    if (x == null || y == null) continue;
+    stationByKey.set(pointKey(x, y), s);
+  }
+  const n = points.length;
+  const nodes = [];
+  for (let i = 0; i < n; i++) {
+    const px = num(points[i][0]);
+    const py = num(points[i][1]);
+    const k = pointKey(px, py);
+    if (i === 0) {
+      nodes.push(cloneConnectNode(startObj, px, py));
+    } else if (i === n - 1) {
+      nodes.push(cloneConnectNode(endObj, px, py));
+    } else if (stationByKey.has(k)) {
+      nodes.push(cloneJson(stationByKey.get(k)));
+    } else {
+      nodes.push({ node_type: 'line', x_grid: px, y_grid: py, tags: {} });
+    }
+  }
+  return nodes;
+}
+
+/**
+ * @param {*} jsonData - 解析後的 JSON 根
+ * @returns {boolean}
+ */
+export function isMapDrawnRoutesExportArray(jsonData) {
+  if (!Array.isArray(jsonData) || jsonData.length === 0) return false;
+  return jsonData.every(
+    (row) =>
+      row &&
+      typeof row === 'object' &&
+      typeof row.routeName === 'string' &&
+      row.segment &&
+      typeof row.segment === 'object' &&
+      row.segment.start != null &&
+      row.segment.end != null &&
+      Array.isArray(row.routeCoordinates) &&
+      row.routeCoordinates.length === 3
+  );
+}
+
+/**
+ * @param {Array} rows - isMapDrawnRoutesExportArray 為 true 時的陣列
+ * @returns {Array<Object>} 扁平 segments（points、nodes、properties_start/end、route_name）
+ */
+export function mapDrawnExportRowsToFlatSegments(rows) {
+  const out = [];
+  for (const row of rows || []) {
+    const routeName = row.routeName || 'Unknown';
+    const seg = row.segment || {};
+    let points = expandHVChainFromRouteCoordinates(row.routeCoordinates);
+    if (points.length < 2) continue;
+
+    const startObj = cloneJson(seg.start);
+    const endObj = cloneJson(seg.end);
+    const stations = Array.isArray(seg.stations) ? seg.stations : [];
+
+    points = insertMapDrawnStationsIntoPolyline(points, stations);
+    const nodes = buildNodesAlignedToPoints(points, startObj, endObj, stations);
+    const { points: sp, nodes: sn } = simplifyCollinearBareLinePointsInSegment(points, nodes);
+    const properties_start = cloneJson(startObj);
+    const properties_end = cloneJson(endObj);
+
+    const rowColor =
+      typeof row.color === 'string' && row.color.trim() !== '' ? row.color.trim() : '';
+    const color =
+      rowColor ||
+      startObj?.tags?.color ||
+      endObj?.tags?.color ||
+      stations[0]?.tags?.color ||
+      '#666666';
+
+    out.push({
+      points: sp,
+      nodes: sn,
+      properties_start,
+      properties_end,
+      route_name: routeName,
+      name: routeName,
+      way_properties: {
+        type: 'way',
+        tags: {
+          route_name: routeName,
+          color,
+        },
+      },
+    });
+  }
+  return out;
+}
+
+/**
+ * 與 mapDrawnExportRowsToFlatSegments 相同輸出結構，但座標為經緯度時以頂點折線連接（供 GeoJSON 轉路段）
+ * @param {Array} rows - exportRouteSegmentsFromGeoJson 或 Python 匯出之陣列
+ * @returns {Array<Object>}
+ */
+export function mapDrawnExportRowsToFlatSegmentsLonLat(rows) {
+  const out = [];
+  for (const row of rows || []) {
+    const routeName = row.routeName || 'Unknown';
+    const seg = row.segment || {};
+    const points = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
+    if (points.length < 2) continue;
+
+    const startObj = cloneJson(seg.start);
+    const endObj = cloneJson(seg.end);
+    const stations = Array.isArray(seg.stations) ? seg.stations : [];
+
+    const nodes = buildNodesAlignedToPoints(points, startObj, endObj, stations);
+    for (let i = 1; i < nodes.length - 1; i++) {
+      const n = nodes[i];
+      if (n?.node_type !== 'connect' && (n.station_id != null || n.tags?.station_id)) {
+        n.node_type = 'line';
+      }
+    }
+
+    const properties_start = cloneJson(startObj);
+    const properties_end = cloneJson(endObj);
+
+    const rowColor =
+      typeof row.color === 'string' && row.color.trim() !== '' ? row.color.trim() : '';
+    const color =
+      rowColor ||
+      startObj?.tags?.color ||
+      startObj?.color ||
+      endObj?.tags?.color ||
+      endObj?.color ||
+      stations[0]?.tags?.color ||
+      stations[0]?.color ||
+      '#666666';
+
+    out.push({
+      points,
+      nodes,
+      properties_start,
+      properties_end,
+      route_name: routeName,
+      name: routeName,
+      way_properties: {
+        type: 'way',
+        tags: {
+          route_name: routeName,
+          color,
+        },
+      },
+    });
+  }
+  return out;
+}

@@ -1,0 +1,10741 @@
+/** * 🎮 操作控制分頁組件 (Control Tab Component) * * 功能說明 (Features): * 1. 🚀
+執行下一步：提供圖層處理流程的執行按鈕 * 2. 📊 圖層選擇：顯示當前可操作的圖層 * 3. 🔄
+狀態管理：追蹤執行狀態和圖層資訊 * 4. 📱 響應式設計：適配不同螢幕尺寸的顯示需求 * * 技術特點
+(Technical Features): * - 使用 Vue 3 Composition API 進行狀態管理 * - 整合 Pinia 狀態管理系統 * -
+支援多圖層切換和操作 * * @file ControlTab.vue * @version 1.0.0 * @author Kevin Cheng * @since 1.0.0
+*/
+<script setup>
+  // ==================== 📦 第三方庫引入 (Third-Party Library Imports) ====================
+
+  /**
+   * Vue 3 Composition API 核心功能引入
+   * 提供響應式數據管理、計算屬性、生命週期鉤子等現代化 Vue 開發功能
+   */
+  import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+
+  /**
+   * Pinia 狀態管理庫引入
+   * 提供集中式狀態管理和跨組件數據共享能力
+   */
+  import { storeToRefs } from 'pinia';
+  import { useDataStore } from '@/stores/dataStore.js';
+  import { parseOsmXmlStringToRouteGeoJsonLoadResult } from '@/utils/dataProcessor.js';
+  import { getIcon } from '@/utils/utils.js';
+
+  /**
+   * 網格合併和縮減工具函數引入
+   * 提供路線合併和網格縮減的核心功能
+   */
+  import {
+    generateDataTableData_Test4 as generateDataTableDataUtil,
+    mergeRoutesHorizontal,
+    mergeRoutesVertical,
+    reduceGrid as reduceGridUtil,
+  } from '@/utils/gridMergeReduce.js';
+  import {
+    buildStraightSegments,
+    computeFlipAnalysis,
+    flipLShapeInRoutesData,
+    buildNShapeList,
+    computeNShapeAnalysis,
+    reduceNShapeInRoutesData,
+    findOverlappingSegmentRanges,
+    mergeRoutesByCoords,
+    mergeAndStripConnectPoints,
+    reconfigureStations,
+  } from '@/utils/segmentUtils.js';
+  import { straightenRoutesOnCurrentLayer } from '@/utils/dataExecute/straightenRoutesCurrentLayer.js';
+  import {
+    applyHVZAllToSpaceNetworkData,
+    applyHVZStepToSpaceNetworkData,
+    countHVZSegments,
+  } from '@/utils/taipeiTest3/applyHVZToSpaceNetwork.js';
+  import {
+    applyFlipLAllToSpaceNetworkData,
+    applyFlipLStepToSpaceNetworkData,
+  } from '@/utils/taipeiTest3/applyFlipLToSpaceNetwork.js';
+  import {
+    findBestA3RowForSegment,
+    a3ExportRowEndpointSummary,
+    a3MidStationLabels,
+  } from '@/utils/taipeiTest3/g3ToH3PlaceBlackStationsFromA3Rows.js';
+  import {
+    mapFlatSegmentsToExportRowsOrNull,
+    exportRowToControlStationNodes,
+  } from '@/utils/taipeiTest3/flatSegmentsToGeojsonStyleExportRows.js';
+  import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
+  import { taipeiK4MapK3TabJsonToPlotPxForDisplay } from '@/utils/taipeiK4SpaceNetworkPlotPx.js';
+  import {
+    buildTaipeiB5DiagnosticsSegmentsLikeLayoutGrid,
+    buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid,
+  } from '@/utils/taipeiK4ControlDiagnosticsSegments.js';
+  import { endpointSimplifyOnLayer } from '@/utils/dataExecute/endpointSimplifyCurrentLayer.js';
+  import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
+  import {
+    collectStationPlacementPoints,
+    collectLineStationGridPointsFromStationData,
+    computeGridStationMinAxisDistances,
+    normalizeSpaceNetworkDataToFlatSegments,
+    towardCenterMoveLabel,
+  } from '../utils/gridNormalizationMinDistance.js';
+  import { buildMapDrawnRoutesExport } from '@/utils/exportMapDrawnRoutesFromLayer.js';
+  import { sketchPolylinesWgs84ToGeoJsonFeatureCollection } from '@/utils/networkDrawSketchToSpaceNetworkSegments.js';
+  import { isRegisteredNetworkDrawSketchLayerId } from '@/utils/networkDrawSketchPipelineLayers.js';
+  import { isRegisteredNetworkDrawSketchSn4LayerId } from '@/utils/networkDrawSketchSn4PipelineLayers.js';
+  import {
+    getSchematicPlotBoundsFromLayer,
+    mapNetworkToSchematicPlotXY,
+  } from '../utils/schematicPlotMapper.js';
+  import {
+    applyOverlayNormalizedGridCoordinates,
+    applyTaipeiFPruneEmptyGridRowsCols,
+    overlayReducedTooltipPair,
+  } from '../utils/dataExecute/execute_d_to_e_test.js';
+  import {
+    applyRandomWeightsBetweenAdjacentStations,
+    applyTaipeiFMergePruneRebuildToLayer,
+    buildTaipeiFDataTableRowsFromSpaceNetwork,
+    sampleWeight1to10InverseSeries,
+  } from '@/utils/randomConnectSegmentWeights.js';
+  import {
+    buildTaipeiFColHighlightPlan,
+    buildTaipeiFRowHighlightPlan,
+    buildSectionDataFlatSegmentIndexSet,
+    getFlatSegmentsFromLayer,
+  } from '@/utils/taipeiFColRouteHighlightPlan.js';
+  import {
+    computeTaipeiFColHighlightShift,
+    computeTaipeiFRowHighlightShift,
+    applyTaipeiFColShiftToLayerData,
+    applyTaipeiFRowShiftToLayerData,
+  } from '@/utils/taipeiFColHighlightShift.js';
+  import {
+    TAIPEI_TEST2_F_LAYER_ID,
+    snapshotTaipeiFNetworkLayer,
+    restoreTaipeiFNetworkLayer,
+    validateTaipeiF2ColRowShiftResult,
+  } from '@/utils/taipeiF2ColRowShiftGuard.js';
+  import {
+    probeLineStationCentering,
+    runLineStationsTowardSchematicCenter,
+    runListedSectionStationsTowardSchematicCenter,
+    stepOneLineStationTowardSchematicCenter,
+    stepOneSectionStationTowardSchematicCenter,
+  } from '@/utils/layerStationsTowardSchematicCenter.js';
+  import { listSectionRoutesBetweenConnects } from '@/utils/sectionRouteConnectEndpoints.js';
+  import { isTaipeiTestStraighteningLayerId } from '@/utils/taipeiTestStraighteningLayerIds.js';
+  import {
+    getTaipeiTestPipelineByExecuteLayer,
+    getTaipeiTestLayerBForGridNormLayer,
+    isTaipeiTestGridNormLayerTab,
+    isTaipeiTestCLayerTab,
+    isTaipeiTestDLayerTab,
+    isTaipeiTestELayerTab,
+    isTaipeiTestFLayerTab,
+    isTaipeiTestGLayerTab,
+    isTaipeiTestGOrHWeightLayerTab,
+    isTaipeiTest3BcdeLayerTab,
+    isTaipeiTest3J3TrafficExportLayerTab,
+    isLayoutGridTest3LayerTab,
+  } from '@/utils/taipeiTestPipeline.js';
+  import { taipeiH2ComputeShortestPathOverlay } from '@/utils/taipeiH2ShortestPath.js';
+  import {
+    applyTaipeiL3BlackDotReductionOneStep,
+    applyTaipeiL3BlackDotReductionWhileMinDiffLessThan,
+  } from '@/utils/taipeiL3BlackDotReductionStep.js';
+  import { executeTaipeiB4ZeroWeightMergeAndRedistribute } from '@/utils/dataExecute/executeTaipeiB4ZeroWeightMergeAndRedistribute.js';
+  import { executeTaipeiB5ZeroWeightMergeAndRedistribute } from '@/utils/dataExecute/executeTaipeiB5ZeroWeightMergeAndRedistribute.js';
+  import { executeTaipeiB6ZeroWeightMergeAndRedistribute } from '@/utils/dataExecute/executeTaipeiB6ZeroWeightMergeAndRedistribute.js';
+  // ==================== 🏪 狀態管理初始化 (State Management Initialization) ====================
+
+  /**
+   * 獲取 Pinia 數據存儲實例
+   * 用於訪問全域狀態和圖層數據
+   */
+  const dataStore = useDataStore();
+  const { spaceNetworkGridL3MinCellDimensions } = storeToRefs(dataStore);
+
+  /** layout-network-grid k4：分配倍率 n（寫入 store ref；不依賴 setter 以免 HMR 未掛上） */
+  function applySpaceNetworkK4ProportionalScaleN(raw) {
+    const v = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(v)) return;
+    dataStore.spaceNetworkK4WeightProportionalScaleN = Math.min(6, Math.max(0.25, v));
+  }
+
+  /** taipei_k4：滑鼠所在 snap 帶加權峰值 n（整數 1～50；寫入 store ref） */
+  function applySpaceNetworkK4MouseBandFocusMagnifyN(raw) {
+    const v = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(v)) return;
+    dataStore.spaceNetworkK4MouseBandFocusMagnifyN = Math.min(50, Math.max(1, Math.round(v)));
+  }
+
+  // ==================== 📊 響應式狀態定義 (Reactive State Definition) ====================
+
+  /**
+   * 📑 當前作用中的圖層分頁 (Active Layer Tab)
+   * 追蹤使用者當前選中的圖層分頁
+   */
+  const activeLayerTab = ref(null);
+
+  /**
+   * 🔄 執行計算狀態 (Execution Loading State)
+   * 追蹤 executeFunction 執行過程的狀態，用於顯示計算中指示器
+   */
+  const isExecuting = ref(false);
+  /** taipei_c5：手動「零權重合併＋mergeConnectSpans…」執行中 */
+  const isTaipeiB5ManualZeroMergeBusy = ref(false);
+  const runTaipeiB5ManualZeroWeightMerge = async () => {
+    if (isTaipeiB5ManualZeroMergeBusy.value) return;
+    isTaipeiB5ManualZeroMergeBusy.value = true;
+    try {
+      await executeTaipeiB5ZeroWeightMergeAndRedistribute();
+    } finally {
+      isTaipeiB5ManualZeroMergeBusy.value = false;
+    }
+  };
+  /** taipei_c6：手動零權重合併（與 c5 分狀態／分 execute 檔，不共用） */
+  const isTaipeiB6ManualZeroMergeBusy = ref(false);
+  const runTaipeiB6ManualZeroWeightMerge = async () => {
+    if (isTaipeiB6ManualZeroMergeBusy.value) return;
+    isTaipeiB6ManualZeroMergeBusy.value = true;
+    try {
+      await executeTaipeiB6ZeroWeightMergeAndRedistribute();
+    } finally {
+      isTaipeiB6ManualZeroMergeBusy.value = false;
+    }
+  };
+  /** taipei_c4：手動「零權重合併＋mergeConnectSpans…」執行中（與 c5 分狀態，不共用） */
+  const isTaipeiB4ManualZeroMergeBusy = ref(false);
+  const runTaipeiB4ManualZeroWeightMerge = async () => {
+    if (isTaipeiB4ManualZeroMergeBusy.value) return;
+    isTaipeiB4ManualZeroMergeBusy.value = true;
+    try {
+      await executeTaipeiB4ZeroWeightMergeAndRedistribute();
+    } finally {
+      isTaipeiB4ManualZeroMergeBusy.value = false;
+    }
+  };
+  /** 曾 flip 過的紅點（目前僅預覽不執行 flip，此為保留欄位） */
+  const flippedConnectPointsMap = ref({});
+  const lastFlippedConnectPoints = flippedConnectPointsMap;
+
+  // ==================== 📊 計算屬性定義 (Computed Properties Definition) ====================
+
+  /**
+   * 獲取所有可見且有資料的圖層 (Get All Visible Layers with Data)
+   * 從全域狀態中篩選出可見且已載入資料的圖層
+   */
+  const visibleLayers = computed(() => {
+    const allLayers = dataStore.getAllLayers();
+    return allLayers.filter((layer) => layer && layer.visible);
+  });
+
+  /**
+   * 獲取所有有效的可見圖層（確保每個圖層都有有效的 layerId）
+   * 用於模板中的 v-for，避免渲染無效圖層
+   */
+  const validVisibleLayers = computed(() => {
+    return visibleLayers.value.filter((layer) => layer && layer.layerId);
+  });
+
+  /**
+   * 當前選中的圖層 (Current Selected Layer)
+   * 根據 activeLayerTab 獲取當前選中的圖層物件
+   */
+  const currentLayer = computed(() => {
+    if (!activeLayerTab.value || !visibleLayers.value || visibleLayers.value.length === 0) {
+      return null;
+    }
+    return (
+      visibleLayers.value.find((layer) => layer && layer.layerId === activeLayerTab.value) || null
+    );
+  });
+
+  /**
+   * 取得圖層完整標題 (包含群組名稱) (Get Layer Full Title with Group Name)
+   * 組合群組名稱和圖層名稱，形成完整的圖層標題
+   */
+  const getLayerFullTitle = (layer) => {
+    if (!layer) return { groupName: null, layerName: '未知圖層' };
+    const groupName = dataStore.findGroupNameByLayerId(layer.layerId);
+    return {
+      groupName: groupName,
+      layerName: layer.layerName,
+    };
+  };
+
+  /**
+   * 判斷當前圖層是否有 executeFunction 且屬於 Taipei 群組
+   */
+  const canExecuteLayer = computed(() => {
+    if (!currentLayer.value) return false;
+
+    if (isRegisteredNetworkDrawSketchLayerId(currentLayer.value.layerId)) {
+      return !!(
+        currentLayer.value.executeFunction &&
+        typeof currentLayer.value.executeFunction === 'function'
+      );
+    }
+    if (isRegisteredNetworkDrawSketchSn4LayerId(currentLayer.value.layerId)) {
+      return !!(
+        currentLayer.value.executeFunction &&
+        typeof currentLayer.value.executeFunction === 'function'
+      );
+    }
+    // 檢查圖層是否屬於可執行「下一步」之群組
+    const groupName = dataStore.findGroupNameByLayerId(currentLayer.value.layerId);
+    if (
+      groupName !== '資料處理_2' &&
+      groupName !== '網格繪製_2' &&
+      groupName !== '空間網絡網格測試_2' &&
+      groupName !== '空間網絡網格測試_3' &&
+      groupName !== '空間網絡網格測試_4' &&
+      groupName !== '版面網格測試_2' &&
+      groupName !== '版面網格測試_3'
+    )
+      return false;
+
+    // 檢查是否有 executeFunction
+    return (
+      currentLayer.value.executeFunction && typeof currentLayer.value.executeFunction === 'function'
+    );
+  });
+
+  /**
+   * 判斷當前圖層是否為網格示意圖測試圖層
+   * 只有網格示意圖測試圖層才顯示網格預覽
+   *
+   * @type {ComputedRef<boolean>}
+   * @returns {boolean} 是否為網格示意圖測試圖層
+   */
+  const isCurrentLayerGridSchematic = computed(() => {
+    if (!activeLayerTab.value) return false;
+    if (!Array.isArray(visibleLayers.value) || visibleLayers.value.length === 0) {
+      return false;
+    }
+    const currentLayer = visibleLayers.value.find(
+      (layer) => layer && layer.layerId === activeLayerTab.value
+    );
+    return currentLayer && currentLayer.isGridSchematic === true;
+  });
+
+  /**
+   * 判斷當前圖層是否為 taipei_6_1_test
+   * 只有此圖層才顯示"合併一筆路線"按鈕
+   *
+   * @type {ComputedRef<boolean>}
+   * @returns {boolean} 是否為 taipei_6_1_test 圖層
+   */
+  const isTaipei6_1Test = computed(() => {
+    return currentLayer.value && currentLayer.value.layerId === 'taipei_6_1_test';
+  });
+
+  /**
+   * 📊 判斷是否為 taipei_6_1_test2 圖層 (Check if is taipei_6_1_test2 Layer)
+   * 用於控制特定圖層專屬功能的顯示
+   *
+   * @type {ComputedRef<boolean>}
+   * @returns {boolean} 是否為 taipei_6_1_test2 圖層
+   */
+  const isTaipei6_1Test2 = computed(() => {
+    return currentLayer.value && currentLayer.value.layerId === 'taipei_6_1_test2';
+  });
+
+  /**
+   * 📊 判斷是否為 taipei_6_1_test3 或 taipei_6_1_test4 圖層 (Check if is taipei_6_1_test3 or taipei_6_1_test4 Layer)
+   * 用於控制特定圖層專屬功能的顯示（顯示 LayoutGridTab_Test4 的網格資料）
+   *
+   * @type {ComputedRef<boolean>}
+   * @returns {boolean} 是否為 taipei_6_1_test3 或 taipei_6_1_test4 圖層
+   */
+  const isTaipei6_1Test3 = computed(() => {
+    return (
+      currentLayer.value &&
+      (currentLayer.value.layerId === 'taipei_6_1_test3' ||
+        currentLayer.value.layerId === 'taipei_6_1_test4')
+    );
+  });
+
+  /** layoutGridJsonData_Test4 相關操作（合併／縮減／隨機權重）適用圖層 */
+  const isTaipei6_1Test3Or4LayerId = (layerId) =>
+    layerId === 'taipei_6_1_test3' || layerId === 'taipei_6_1_test4';
+
+  const isTaipeiF = computed(
+    () => currentLayer.value && isTaipeiTestGOrHWeightLayerTab(currentLayer.value.layerId)
+  );
+
+  /**
+   * 空間網路「路線權重數字」開關：有 spaceNetworkGridJsonData 或 K3／L3 專用複本，且非 taipei_f／g（該類另有專區顯示權重）。
+   * 與 Upper 之 space-network-grid、space-network-grid-k3 之路線權重數字連動（l3 分頁為依版面動態網格預覽，不繪權重）。
+   */
+  const hasSpaceNetworkStandaloneRouteWeightToggle = computed(() => {
+    const L = currentLayer.value;
+    if (!L) return false;
+    const hasSn =
+      Array.isArray(L.spaceNetworkGridJsonData) && L.spaceNetworkGridJsonData.length > 0;
+    const hasSnK3 =
+      Array.isArray(L.spaceNetworkGridJsonDataK3Tab) && L.spaceNetworkGridJsonDataK3Tab.length > 0;
+    const hasSnL3 =
+      Array.isArray(L.spaceNetworkGridJsonDataL3Tab) && L.spaceNetworkGridJsonDataL3Tab.length > 0;
+    const hasSnM3 =
+      Array.isArray(L.spaceNetworkGridJsonDataM3Tab) && L.spaceNetworkGridJsonDataM3Tab.length > 0;
+    if (!hasSn && !hasSnK3 && !hasSnL3 && !hasSnM3) return false;
+    if (isTaipeiF.value && hasSn) return false;
+    return true;
+  });
+
+  /**
+   * K3 JSON 分頁——taipei_b5（版面網格測試_2，a5 產出層）專用診斷取段（與 b4 分函式複製，版面網格測試_1／版面網格測試_2 不共用本體）。
+   * 座標與主圖 layout-network-grid-k3 一致（k4 rebuild + 內繪區 px／tooltip snap）。
+   */
+  const getK3TabRawSegmentsForTaipeiB5 = (layer) => {
+    if (!layer || layer.layerId !== 'taipei_b5') return null;
+    const liveFromLayoutGrid = dataStore.taipeiB5LayoutGridDiagSegments;
+    if (Array.isArray(liveFromLayoutGrid) && liveFromLayoutGrid.length > 0) {
+      return liveFromLayoutGrid;
+    }
+    const src = layer.spaceNetworkGridJsonDataK3Tab;
+    if (!Array.isArray(src) || src.length === 0) return null;
+    const chart = dataStore.d3jsDimensions;
+    const w = chart?.width;
+    const h = chart?.height;
+    if (!w || w < 40 || !h || h < 30) return src;
+    const likeGrid = buildTaipeiB5DiagnosticsSegmentsLikeLayoutGrid(
+      layer,
+      src,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+    if (likeGrid && likeGrid.length) return likeGrid;
+    return taipeiK4MapK3TabJsonToPlotPxForDisplay(
+      src,
+      src,
+      layer,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+  };
+
+  /**
+   * K3 JSON 分頁——taipei_c5（版面網格測試_2 主操作圖層）專用診斷取段（與 b5 分函式相同語意）。
+   * 座標與主圖 layout-network-grid-k3 一致（k4 rebuild + 內繪區 px／tooltip snap）。
+   */
+  const getK3TabRawSegmentsForTaipeiC5 = (layer) => {
+    if (!layer || layer.layerId !== 'taipei_c5') return null;
+    const liveFromLayoutGrid = dataStore.taipeiC5LayoutGridDiagSegments;
+    if (Array.isArray(liveFromLayoutGrid) && liveFromLayoutGrid.length > 0) {
+      return liveFromLayoutGrid;
+    }
+    const src = layer.spaceNetworkGridJsonDataK3Tab;
+    if (!Array.isArray(src) || src.length === 0) return null;
+    const chart = dataStore.d3jsDimensions;
+    const w = chart?.width;
+    const h = chart?.height;
+    if (!w || w < 40 || !h || h < 30) return src;
+    const likeGrid = buildTaipeiB5DiagnosticsSegmentsLikeLayoutGrid(
+      layer,
+      src,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+    if (likeGrid && likeGrid.length) return likeGrid;
+    return taipeiK4MapK3TabJsonToPlotPxForDisplay(
+      src,
+      src,
+      layer,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+  };
+
+  /**
+   * K3 JSON 分頁——taipei_b6（版面網格測試_3，a6 產出層）專用診斷取段（與 b5 分函式複製）。
+   */
+  const getK3TabRawSegmentsForTaipeiB6 = (layer) => {
+    if (!layer || layer.layerId !== 'taipei_b6') return null;
+    const liveFromLayoutGrid = dataStore.taipeiB6LayoutGridDiagSegments;
+    if (Array.isArray(liveFromLayoutGrid) && liveFromLayoutGrid.length > 0) {
+      return liveFromLayoutGrid;
+    }
+    const src = layer.spaceNetworkGridJsonDataK3Tab;
+    if (!Array.isArray(src) || src.length === 0) return null;
+    const chart = dataStore.d3jsDimensions;
+    const w = chart?.width;
+    const h = chart?.height;
+    if (!w || w < 40 || !h || h < 30) return src;
+    const likeGrid = buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid(
+      layer,
+      src,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+    if (likeGrid && likeGrid.length) return likeGrid;
+    return taipeiK4MapK3TabJsonToPlotPxForDisplay(
+      src,
+      src,
+      layer,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+  };
+
+  /**
+   * K3 JSON 分頁——taipei_c6（版面網格測試_3 主操作圖層）專用診斷取段（與 b6 分函式相同語意）。
+   */
+  const getK3TabRawSegmentsForTaipeiC6 = (layer) => {
+    if (!layer || layer.layerId !== 'taipei_c6') return null;
+    const liveFromLayoutGrid = dataStore.taipeiC6LayoutGridDiagSegments;
+    if (Array.isArray(liveFromLayoutGrid) && liveFromLayoutGrid.length > 0) {
+      return liveFromLayoutGrid;
+    }
+    const src = layer.spaceNetworkGridJsonDataK3Tab;
+    if (!Array.isArray(src) || src.length === 0) return null;
+    const chart = dataStore.d3jsDimensions;
+    const w = chart?.width;
+    const h = chart?.height;
+    if (!w || w < 40 || !h || h < 30) return src;
+    const likeGrid = buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid(
+      layer,
+      src,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+    if (likeGrid && likeGrid.length) return likeGrid;
+    return taipeiK4MapK3TabJsonToPlotPxForDisplay(
+      src,
+      src,
+      layer,
+      w,
+      h,
+      dataStore.k3JsonOverlapDistancePx
+    );
+  };
+
+  const getK3TabRawSegments = (layer) => {
+    if (!layer) return null;
+    if (layer.layerId === 'taipei_b5') return getK3TabRawSegmentsForTaipeiB5(layer);
+    if (layer.layerId === 'taipei_c5') return getK3TabRawSegmentsForTaipeiC5(layer);
+    if (layer.layerId === 'taipei_b6') return getK3TabRawSegmentsForTaipeiB6(layer);
+    if (layer.layerId === 'taipei_c6') return getK3TabRawSegmentsForTaipeiC6(layer);
+    return null;
+  };
+
+  const getRouteMetaForDiag = (seg, idx) => {
+    const props = seg?.props || seg?.original_props || {};
+    const tags =
+      props?.way_properties?.tags || props?.properties?.tags || seg?.way_properties?.tags || {};
+    const nameRaw =
+      seg?.route_name ??
+      props?.name ??
+      props?.route_name ??
+      tags?.name ??
+      tags?.ref ??
+      `route_${idx + 1}`;
+    const routeName = String(nameRaw ?? '').trim() || `route_${idx + 1}`;
+    const colorRaw = seg?.route_color ?? props?.color ?? tags?.colour ?? tags?.color ?? '';
+    const routeColor = String(colorRaw ?? '').trim();
+    const routeGroupKey = routeColor ? `color:${routeColor}` : `name:${routeName}`;
+    return {
+      routeName,
+      routeColor,
+      routeGroupKey,
+      routeLabel: routeColor ? `${routeName}（${routeColor}）` : routeName,
+    };
+  };
+
+  /**
+   * K3 JSON（space-network-grid-json-data-k3）重疊點診斷：
+   * 僅同一路線（同色）內，檢查同一 layout-network-grid 座標上「多個不同黑點站名／多個不同 connect 站名／connect+黑」。
+   * 相鄰 segment 共端點（同座標但代表同一點）不計入重疊。
+   */
+  const k3JsonPointOverlapReport = computed(() => {
+    const layer = currentLayer.value;
+    const rawSegments = getK3TabRawSegments(layer);
+    if (!Array.isArray(rawSegments) || rawSegments.length === 0) return null;
+
+    const routeBuckets = new Map();
+    const normalizeName = (node) => {
+      const n = node && typeof node === 'object' ? node : {};
+      const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+      const raw =
+        n.station_name ??
+        tags.station_name ??
+        tags.name ??
+        n.station_id ??
+        tags.station_id ??
+        n.connect_number ??
+        tags.connect_number;
+      const s = raw == null ? '' : String(raw).trim();
+      return s || null;
+    };
+
+    const ensureBucket = (meta) => {
+      if (!routeBuckets.has(meta.routeGroupKey)) {
+        routeBuckets.set(meta.routeGroupKey, {
+          routeName: meta.routeName,
+          routeColor: meta.routeColor,
+          routeLabel: meta.routeLabel,
+          byKey: new Map(),
+        });
+      }
+      return routeBuckets.get(meta.routeGroupKey);
+    };
+
+    const ensurePoint = (bucket, x, y) => {
+      const nx = Number(x);
+      const ny = Number(y);
+      if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+      const rx = Math.round(nx * 1e6) / 1e6;
+      const ry = Math.round(ny * 1e6) / 1e6;
+      const key = `${rx},${ry}`;
+      if (!bucket.byKey.has(key)) {
+        bucket.byKey.set(key, {
+          x: rx,
+          y: ry,
+          hasConnect: false,
+          hasBlack: false,
+          connectNames: new Set(),
+          blackNames: new Set(),
+        });
+      }
+      return bucket.byKey.get(key);
+    };
+
+    const mark = (bucket, x, y, node) => {
+      const row = ensurePoint(bucket, x, y);
+      if (!row) return;
+      const n = node && typeof node === 'object' ? node : {};
+      const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+      const nt = String(n.node_type ?? '').trim();
+      const label = normalizeName(n);
+      if (nt === 'connect') {
+        row.hasConnect = true;
+        if (label) row.connectNames.add(label);
+        return;
+      }
+      const hasStation = !!(n.station_name || n.station_id || tags.station_name || tags.station_id);
+      const forceBlack = !!tags._forceDrawBlackDot;
+      if (hasStation || forceBlack) {
+        row.hasBlack = true;
+        if (label) row.blackNames.add(label);
+      }
+    };
+
+    for (let si = 0; si < rawSegments.length; si++) {
+      const seg = rawSegments[si];
+      if (!seg || typeof seg !== 'object') continue;
+      const meta = getRouteMetaForDiag(seg, si);
+      const bucket = ensureBucket(meta);
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const nodes = Array.isArray(seg.nodes) ? seg.nodes : [];
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        let x = null;
+        let y = null;
+        let node = null;
+        if (Array.isArray(p) && p.length >= 2) {
+          x = p[0];
+          y = p[1];
+          if (p.length > 2 && p[2] && typeof p[2] === 'object') node = p[2];
+        } else if (p && typeof p === 'object') {
+          x = p.x;
+          y = p.y;
+        }
+        if (!node && nodes[i] && typeof nodes[i] === 'object') node = nodes[i];
+        const gx = Number(x);
+        const gy = Number(y);
+        if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
+        mark(bucket, gx, gy, node);
+      }
+    }
+
+    const groups = [];
+    for (const bucket of routeBuckets.values()) {
+      const points = Array.from(bucket.byKey.values())
+        .map((r) => ({
+          ...r,
+          connectNames: Array.from(r.connectNames),
+          blackNames: Array.from(r.blackNames),
+        }))
+        .filter((r) => r.hasConnect || r.hasBlack)
+        .sort((a, b) => a.y - b.y || a.x - b.x);
+      if (points.length === 0) continue;
+
+      for (const p of points) {
+        /** 重疊：同一座標上有「兩個不同的東西」才算——不同站名、不同 connect 編號，或 connect+黑混存。
+         *  （同路線相鄰 segment 端點會在同座標出現兩次，但代表同一點，不算重疊。） */
+        const mixConnectBlack = p.hasConnect && p.hasBlack;
+        const multiBlackSamePx = p.hasBlack && p.blackNames.length > 1;
+        const multiConnectSamePx = p.hasConnect && p.connectNames.length > 1;
+        if (!(mixConnectBlack || multiBlackSamePx || multiConnectSamePx)) continue;
+
+        const members = [
+          {
+            x: p.x,
+            y: p.y,
+            hasConnect: p.hasConnect,
+            hasBlack: p.hasBlack,
+            connectNames: p.connectNames,
+            blackNames: p.blackNames,
+          },
+        ];
+
+        groups.push({
+          routeName: bucket.routeName,
+          routeColor: bucket.routeColor,
+          routeLabel: bucket.routeLabel,
+          size: members.length,
+          members,
+        });
+      }
+    }
+
+    groups.sort((a, b) => a.routeLabel.localeCompare(b.routeLabel, 'zh-Hant'));
+    return {
+      total: groups.length,
+      rows: groups.slice(0, 30),
+      truncated: groups.length > 30,
+    };
+  });
+
+  /**
+   * K3 JSON 分頁：列出所有 connect（紅／藍）與黑點在繪區 px 上的座標（與 JSON 分頁／近距診斷同一 mapPair）。
+   */
+  const k3JsonConnectBlackCoordsReport = computed(() => {
+    const layer = currentLayer.value;
+    const rawSegments = getK3TabRawSegments(layer);
+    if (!Array.isArray(rawSegments) || rawSegments.length === 0) return null;
+
+    const toGridPoint = (p) => {
+      if (Array.isArray(p) && p.length >= 2) {
+        const x = Number(p[0]);
+        const y = Number(p[1]);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      if (p && typeof p === 'object') {
+        const x = Number(p.x);
+        const y = Number(p.y);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      return null;
+    };
+
+    const gkey = (gx, gy) => `${Math.round(gx)},${Math.round(gy)}`;
+    const gridDeg = new Map();
+    for (let si = 0; si < rawSegments.length; si++) {
+      const seg = rawSegments[si];
+      if (!seg || typeof seg !== 'object') continue;
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const coords = pts.map((p) => toGridPoint(p)).filter((p) => p);
+      for (let i = 1; i < coords.length; i++) {
+        const a = coords[i - 1];
+        const b = coords[i];
+        if (!a || !b || (a[0] === b[0] && a[1] === b[1])) continue;
+        const ka = gkey(a[0], a[1]);
+        const kb = gkey(b[0], b[1]);
+        gridDeg.set(ka, (gridDeg.get(ka) || 0) + 1);
+        gridDeg.set(kb, (gridDeg.get(kb) || 0) + 1);
+      }
+    }
+
+    const normalizeName = (node) => {
+      const n = node && typeof node === 'object' ? node : {};
+      const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+      const raw =
+        n.station_name ??
+        tags.station_name ??
+        tags.name ??
+        n.station_id ??
+        tags.station_id ??
+        n.connect_number ??
+        tags.connect_number;
+      const s = raw == null ? '' : String(raw).trim();
+      return s || null;
+    };
+
+    const routeBuckets = new Map();
+    const dedupe = new Set();
+    const MAX_ROWS = 1200;
+    let rowCount = 0;
+    let truncated = false;
+
+    /** @returns {boolean} false = 已達列印上限，應停止掃描 */
+    const pushRow = (meta, item) => {
+      if (rowCount >= MAX_ROWS) return false;
+      const dk = `${meta.routeGroupKey}|${item.kind}|${item.hue || ''}|${item.x}|${item.y}|${item.name || ''}|${item.display}`;
+      if (dedupe.has(dk)) return true;
+      dedupe.add(dk);
+      if (!routeBuckets.has(meta.routeGroupKey)) {
+        routeBuckets.set(meta.routeGroupKey, {
+          routeLabel: meta.routeLabel,
+          items: [],
+        });
+      }
+      routeBuckets.get(meta.routeGroupKey).items.push(item);
+      rowCount += 1;
+      if (rowCount >= MAX_ROWS) {
+        truncated = true;
+        return false;
+      }
+      return true;
+    };
+
+    outer: for (let si = 0; si < rawSegments.length; si++) {
+      const seg = rawSegments[si];
+      if (!seg || typeof seg !== 'object') continue;
+      const meta = getRouteMetaForDiag(seg, si);
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const nodes = Array.isArray(seg.nodes) ? seg.nodes : [];
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        let x = null;
+        let y = null;
+        let node = null;
+        if (Array.isArray(p) && p.length >= 2) {
+          x = p[0];
+          y = p[1];
+          if (p.length > 2 && p[2] && typeof p[2] === 'object') node = p[2];
+        } else if (p && typeof p === 'object') {
+          x = p.x;
+          y = p.y;
+        }
+        if (!node && nodes[i] && typeof nodes[i] === 'object') node = nodes[i];
+        const gx = Number(x);
+        const gy = Number(y);
+        if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
+        const rx = Math.round(gx * 1e6) / 1e6;
+        const ry = Math.round(gy * 1e6) / 1e6;
+
+        const n = node && typeof node === 'object' ? node : {};
+        const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+        const nt = String(n.node_type ?? '').trim();
+        const name = normalizeName(n);
+        const displayState = n.display === false || tags.display === false ? 'false' : 'true';
+
+        if (nt === 'connect') {
+          const d = gridDeg.get(gkey(gx, gy)) || 0;
+          const hue = d <= 1 ? '藍' : '紅';
+          if (
+            !pushRow(meta, {
+              kind: 'connect',
+              hue,
+              kindLabel: `connect·${hue}（${d <= 1 ? '末端' : '交叉'}）`,
+              x: rx,
+              y: ry,
+              name,
+              display: displayState,
+            })
+          ) {
+            break outer;
+          }
+          continue;
+        }
+        const hasStation = !!(
+          n.station_name ||
+          n.station_id ||
+          tags.station_name ||
+          tags.station_id
+        );
+        const forceBlack = !!tags._forceDrawBlackDot;
+        const hiddenBlack =
+          n.display === false || tags.display === false || tags._mergedHiddenBlackDot;
+        if (hasStation || forceBlack || hiddenBlack) {
+          if (
+            !pushRow(meta, {
+              kind: 'black',
+              hue: null,
+              kindLabel: hiddenBlack ? '黑點（display=false）' : '黑點',
+              x: rx,
+              y: ry,
+              name,
+              display: displayState,
+            })
+          ) {
+            break outer;
+          }
+        }
+      }
+    }
+
+    const routes = Array.from(routeBuckets.values())
+      .map((b) => ({
+        routeLabel: b.routeLabel,
+        items: b.items.sort((a, b) => a.y - b.y || a.x - b.x),
+      }))
+      .sort((a, b) => a.routeLabel.localeCompare(b.routeLabel, 'zh-Hant'));
+
+    return {
+      total: rowCount,
+      maxRows: MAX_ROWS,
+      truncated,
+      routes,
+    };
+  });
+
+  /**
+   * K3 JSON 分頁：同一路線內任兩個黑/紅/藍點，距離 <= 門檻（px）之列舉（內繪區 px）。
+   */
+  const k3JsonConsecutiveNearPairsReport = computed(() => {
+    const layer = currentLayer.value;
+    const rawSegments = getK3TabRawSegments(layer);
+    if (!Array.isArray(rawSegments) || rawSegments.length === 0) return null;
+
+    const threshold = Math.max(1, Math.round(Number(dataStore.k3JsonMinStationDistancePx) || 10));
+    const hasValue = (v) => v !== undefined && v !== null;
+    const toGridPoint = (p) => {
+      if (Array.isArray(p) && p.length >= 2) {
+        const x = Number(p[0]);
+        const y = Number(p[1]);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      if (p && typeof p === 'object') {
+        const x = Number(p.x);
+        const y = Number(p.y);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      return null;
+    };
+    const pointKey = (x, y) =>
+      `${Math.round(Number(x) * 1e6) / 1e6},${Math.round(Number(y) * 1e6) / 1e6}`;
+
+    const gridDeg = new Map();
+    for (let si = 0; si < rawSegments.length; si++) {
+      const seg = rawSegments[si];
+      if (!seg || typeof seg !== 'object') continue;
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const coords = pts.map((p) => toGridPoint(p)).filter((p) => p);
+      for (let i = 1; i < coords.length; i++) {
+        const a = coords[i - 1];
+        const b = coords[i];
+        if (!a || !b || (a[0] === b[0] && a[1] === b[1])) continue;
+        const ka = pointKey(a[0], a[1]);
+        const kb = pointKey(b[0], b[1]);
+        gridDeg.set(ka, (gridDeg.get(ka) || 0) + 1);
+        gridDeg.set(kb, (gridDeg.get(kb) || 0) + 1);
+      }
+    }
+
+    const normalizeName = (node) => {
+      const n = node && typeof node === 'object' ? node : {};
+      const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+      const raw =
+        n.station_name ??
+        tags.station_name ??
+        tags.name ??
+        n.station_id ??
+        tags.station_id ??
+        n.connect_number ??
+        tags.connect_number;
+      const s = raw == null ? '' : String(raw).trim();
+      return s || '';
+    };
+
+    const roundedXY = (xy) => ({
+      x: Math.round(Number(xy[0]) * 1e6) / 1e6,
+      y: Math.round(Number(xy[1]) * 1e6) / 1e6,
+    });
+
+    const parsePointNodeAt = (seg, idx) => {
+      const pts = Array.isArray(seg?.points) ? seg.points : [];
+      const nodes = Array.isArray(seg?.nodes) ? seg.nodes : [];
+      const p = pts[idx];
+      if (!p) return null;
+      const xy0 = toGridPoint(p);
+      if (!xy0) return null;
+      let node = null;
+      if (Array.isArray(p) && p.length > 2 && p[2] && typeof p[2] === 'object') node = p[2];
+      if (!node && nodes[idx] && typeof nodes[idx] === 'object') node = nodes[idx];
+      const n = node && typeof node === 'object' ? node : {};
+      const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+      const r = roundedXY(xy0);
+      return { x: r.x, y: r.y, n, tags };
+    };
+
+    /** 與主圖 SpaceNetworkGridTabK3 一致：type 等標 terminal 時視為末端（藍），不依 grid 度數 */
+    const connectTaggedTerminalAsBlueHue = (n, tags) => {
+      const tg = tags && typeof tags === 'object' ? tags : {};
+      const raw =
+        n?.type ??
+        tg?.type ??
+        n?.connect_type ??
+        tg?.connect_type ??
+        n?.station_type ??
+        tg?.station_type;
+      const s = raw == null ? '' : String(raw).trim().toLowerCase();
+      if (!s) return false;
+      return (
+        s === 'terminal' || s === 'terminus' || s === 'end' || s === 'endpoint' || s === 'line_end'
+      );
+    };
+
+    const isConnectSeg = (seg, idx) => {
+      const pn = parsePointNodeAt(seg, idx);
+      if (!pn) return false;
+      const { n, tags } = pn;
+      const nt = String(n.node_type ?? '').trim();
+      return nt === 'connect' || hasValue(n.connect_number) || hasValue(tags.connect_number);
+    };
+
+    const endpointLabelText = (seg, idx) => {
+      const pn = parsePointNodeAt(seg, idx);
+      if (!pn) return '（無座標）';
+      const { x, y, n, tags } = pn;
+      const nm = normalizeName(n) || '（無站名）';
+      if (isConnectSeg(seg, idx)) {
+        const d = gridDeg.get(pointKey(x, y)) || 0;
+        const hue = connectTaggedTerminalAsBlueHue(n, tags) || d <= 1 ? '藍' : '紅';
+        return `${hue}·${nm}（${x}, ${y}）`;
+      }
+      return `路線端·${nm}（${x}, ${y}）`;
+    };
+
+    /** 與「兩點：」列相同語意：色相（粗體）＋站名＋（x, y） */
+    const endpointLabelParts = (seg, idx) => {
+      const pn = parsePointNodeAt(seg, idx);
+      if (!pn) return null;
+      const { x, y, n, tags } = pn;
+      const nm = normalizeName(n) || '（無站名）';
+      if (isConnectSeg(seg, idx)) {
+        const d = gridDeg.get(pointKey(x, y)) || 0;
+        const hue = connectTaggedTerminalAsBlueHue(n, tags) || d <= 1 ? '藍' : '紅';
+        return { hue, name: nm, x, y };
+      }
+      return { hue: '路線端', name: nm, x, y };
+    };
+
+    const buildConnectLegIntervals = (seg) => {
+      const pts = Array.isArray(seg?.points) ? seg.points : [];
+      const n = pts.length;
+      if (!n) return [];
+      const conn = [];
+      for (let i = 0; i < n; i++) {
+        if (isConnectSeg(seg, i)) conn.push(i);
+      }
+      if (!conn.length) return [];
+      const out = [];
+      if (conn[0] > 0) out.push({ lo: 0, hi: conn[0], a: 0, b: conn[0] });
+      for (let k = 0; k < conn.length - 1; k++) {
+        out.push({ lo: conn[k], hi: conn[k + 1], a: conn[k], b: conn[k + 1] });
+      }
+      if (conn[conn.length - 1] < n - 1) {
+        out.push({
+          lo: conn[conn.length - 1],
+          hi: n - 1,
+          a: conn[conn.length - 1],
+          b: n - 1,
+        });
+      }
+      return out;
+    };
+
+    const axisEps = 1e-3;
+
+    /**
+     * 同一段 polyline 上兩頂點：僅當兩者落在「同一個」connect 子路段（兩端點為 connect 或路線端）內時，
+     * 回傳該子路段起迄；不跨多段子路段串接。
+     */
+    const legSpanIfBothInSameConnectSubseg = (segSi, ia, ib) => {
+      const seg = rawSegments[segSi];
+      if (!seg || typeof seg !== 'object' || ia == null || ib == null) return null;
+      const lo = Math.min(ia, ib);
+      const hi = Math.max(ia, ib);
+      const ivs = buildConnectLegIntervals(seg);
+      const iv = ivs.find((v) => v.lo <= lo && hi <= v.hi);
+      if (!iv) return null;
+      return {
+        key: `${segSi}|${iv.a}|${iv.b}`,
+        fromLabel: endpointLabelText(seg, iv.a),
+        toLabel: endpointLabelText(seg, iv.b),
+        fromParts: endpointLabelParts(seg, iv.a),
+        toParts: endpointLabelParts(seg, iv.b),
+      };
+    };
+
+    const legSpanIfBothInSameConnectSubsegOnSeg = (seg, ia, ib) => {
+      if (!seg || typeof seg !== 'object' || ia == null || ib == null) return null;
+      const lo = Math.min(ia, ib);
+      const hi = Math.max(ia, ib);
+      const ivs = buildConnectLegIntervals(seg);
+      const iv = ivs.find((v) => v.lo <= lo && hi <= v.hi);
+      if (!iv) return null;
+      return {
+        key: `seg|${iv.a}|${iv.b}`,
+        fromLabel: endpointLabelText(seg, iv.a),
+        toLabel: endpointLabelText(seg, iv.b),
+        fromParts: endpointLabelParts(seg, iv.a),
+        toParts: endpointLabelParts(seg, iv.b),
+      };
+    };
+
+    /** 折線最近點：回傳距離與沿線累積參數 tau（用於排序） */
+    const closestOnPolyline = (spine, qx, qy) => {
+      if (!Array.isArray(spine) || spine.length < 2) return { dist: Infinity, tau: 0 };
+      let bestD = Infinity;
+      let bestTau = 0;
+      let cum = 0;
+      for (let i = 0; i < spine.length - 1; i++) {
+        const ax0 = spine[i][0];
+        const ay0 = spine[i][1];
+        const bx0 = spine[i + 1][0];
+        const by0 = spine[i + 1][1];
+        const ex = bx0 - ax0;
+        const ey = by0 - ay0;
+        const el2 = ex * ex + ey * ey;
+        let t = 0;
+        if (el2 > 1e-18) {
+          t = Math.max(0, Math.min(1, ((qx - ax0) * ex + (qy - ay0) * ey) / el2));
+        }
+        const px = ax0 + t * ex;
+        const py = ay0 + t * ey;
+        const d = Math.hypot(qx - px, qy - py);
+        const edgeLen = Math.sqrt(el2);
+        const tau = cum + t * edgeLen;
+        if (d < bestD) {
+          bestD = d;
+          bestTau = tau;
+        }
+        cum += edgeLen;
+      }
+      return { dist: bestD, tau: bestTau };
+    };
+
+    /**
+     * 僅在同 routeGroupKey 內解析 connect 子路。
+     * taipei_c4／c5 主圖診斷：route 折線無 node、station 為散點時，依 route 幾何投影排序 station 再算子路。
+     */
+    const resolveConnectLegForNearPair = (routeGroupKey, ax, ay, bx, by) => {
+      const pkA = pointKey(ax, ay);
+      const pkB = pointKey(bx, by);
+      const snapPx = Math.max(
+        1,
+        Math.min(80, Math.round(Number(dataStore.k3JsonOverlapDistancePx) || 10))
+      );
+
+      const segsSameRoute = [];
+      for (let si = 0; si < rawSegments.length; si++) {
+        const seg = rawSegments[si];
+        if (!seg || typeof seg !== 'object') continue;
+        const meta = getRouteMetaForDiag(seg, si);
+        if (meta.routeGroupKey !== routeGroupKey) continue;
+        segsSameRoute.push({ si, seg });
+      }
+      if (!segsSameRoute.length) return { kind: 'none' };
+
+      // Path 1：折線頂點上已有 connect（傳統 JSON）
+      let best = null;
+      let bestLen = Infinity;
+      for (const { si, seg } of segsSameRoute) {
+        if (!buildConnectLegIntervals(seg).length) continue;
+        const pts = Array.isArray(seg.points) ? seg.points : [];
+        const coords = pts.map((p) => toGridPoint(p));
+        const ia = [];
+        const ib = [];
+        for (let i = 0; i < coords.length; i++) {
+          const c = coords[i];
+          if (!c) continue;
+          if (pointKey(c[0], c[1]) === pkA) ia.push(i);
+          if (pointKey(c[0], c[1]) === pkB) ib.push(i);
+        }
+        if (!ia.length || !ib.length) continue;
+        for (const i of ia) {
+          for (const j of ib) {
+            const leg = legSpanIfBothInSameConnectSubseg(si, i, j);
+            if (leg) {
+              const len = Math.abs(i - j);
+              if (len < bestLen) {
+                best = leg;
+                bestLen = len;
+              }
+            }
+          }
+        }
+      }
+      if (best) return { kind: 'single', leg: best };
+
+      // Path 2：taipei_c4／c5 diag — diag_geometry route + station
+      const hasDiag = segsSameRoute.some(
+        ({ seg }) => seg.diag_geometry === 'route' || seg.diag_geometry === 'station'
+      );
+      if (!hasDiag) return { kind: 'none' };
+
+      const routeSegs = segsSameRoute.filter(({ seg }) => seg.diag_geometry === 'route');
+      const stationSegs = segsSameRoute.filter(({ seg }) => seg.diag_geometry === 'station');
+      if (!routeSegs.length || !stationSegs.length) return { kind: 'none' };
+
+      const spineOf = (seg) => {
+        const pts = Array.isArray(seg.points) ? seg.points : [];
+        const out = [];
+        for (const p of pts) {
+          const c = toGridPoint(p);
+          if (c) out.push([c[0], c[1]]);
+        }
+        return out;
+      };
+
+      let bestSpine = null;
+      let bestScore = Infinity;
+      for (const { seg } of routeSegs) {
+        const spine = spineOf(seg);
+        if (spine.length < 2) continue;
+        const da = closestOnPolyline(spine, ax, ay);
+        const db = closestOnPolyline(spine, bx, by);
+        const score = da.dist + db.dist;
+        if (score < bestScore) {
+          bestScore = score;
+          bestSpine = spine;
+        }
+      }
+      if (!bestSpine || bestScore > snapPx * 30) return { kind: 'none' };
+
+      const hits = [];
+      for (const { seg } of stationSegs) {
+        const pts = Array.isArray(seg.points) ? seg.points : [];
+        const nodes = Array.isArray(seg.nodes) ? seg.nodes : [];
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+          const c = toGridPoint(p);
+          if (!c) continue;
+          const rx = Math.round(Number(c[0]) * 1e6) / 1e6;
+          const ry = Math.round(Number(c[1]) * 1e6) / 1e6;
+          const { dist: dLine, tau } = closestOnPolyline(bestSpine, rx, ry);
+          if (dLine > snapPx * 6) continue;
+          let node = null;
+          if (Array.isArray(p) && p.length > 2 && p[2] && typeof p[2] === 'object') node = p[2];
+          if (!node && nodes[i] && typeof nodes[i] === 'object') node = nodes[i];
+          hits.push({ rx, ry, tau, node: node && typeof node === 'object' ? node : {} });
+        }
+      }
+      hits.sort((u, v) => u.tau - v.tau || u.rx - v.rx || u.ry - v.ry);
+      const seen = new Set();
+      const ordered = [];
+      for (const h of hits) {
+        const k = pointKey(h.rx, h.ry);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        ordered.push(h);
+      }
+      if (ordered.length < 2) return { kind: 'none' };
+
+      const synthPoints = ordered.map((h) => [h.rx, h.ry, h.node]);
+      const synthNodes = ordered.map((h) => h.node);
+      const synthSeg = { points: synthPoints, nodes: synthNodes };
+
+      const nearestIdx = (px, py) => {
+        let bi = -1;
+        let bd = Infinity;
+        for (let i = 0; i < ordered.length; i++) {
+          const d = Math.hypot(ordered[i].rx - px, ordered[i].ry - py);
+          if (d < bd) {
+            bd = d;
+            bi = i;
+          }
+        }
+        return bd <= snapPx * 2 ? bi : -1;
+      };
+      const ia = nearestIdx(ax, ay);
+      const ib = nearestIdx(bx, by);
+      if (ia < 0 || ib < 0) return { kind: 'none' };
+
+      const leg = legSpanIfBothInSameConnectSubsegOnSeg(synthSeg, ia, ib);
+      if (leg) return { kind: 'single', leg };
+      return { kind: 'none' };
+    };
+
+    const routeBuckets = new Map();
+    for (let si = 0; si < rawSegments.length; si++) {
+      const seg = rawSegments[si];
+      if (!seg || typeof seg !== 'object') continue;
+      const meta = getRouteMetaForDiag(seg, si);
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const nodes = Array.isArray(seg.nodes) ? seg.nodes : [];
+      if (!routeBuckets.has(meta.routeGroupKey)) {
+        routeBuckets.set(meta.routeGroupKey, {
+          routeGroupKey: meta.routeGroupKey,
+          routeLabel: meta.routeLabel,
+          byPoint: new Map(),
+        });
+      }
+      const bucket = routeBuckets.get(meta.routeGroupKey);
+
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        const xy = toGridPoint(p);
+        if (!xy) continue;
+        let node = null;
+        if (Array.isArray(p) && p.length > 2 && p[2] && typeof p[2] === 'object') node = p[2];
+        if (!node && nodes[i] && typeof nodes[i] === 'object') node = nodes[i];
+        const n = node && typeof node === 'object' ? node : {};
+        const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+        const nt = String(n.node_type ?? '').trim();
+        const key = pointKey(xy[0], xy[1]);
+
+        let kind = '';
+        let hue = '';
+        if (nt === 'connect' || hasValue(n.connect_number) || hasValue(tags.connect_number)) {
+          const d = gridDeg.get(key) || 0;
+          kind = 'connect';
+          hue = connectTaggedTerminalAsBlueHue(n, tags) || d <= 1 ? '藍' : '紅';
+        } else {
+          const hasStation = !!(
+            n.station_name ||
+            n.station_id ||
+            tags.station_name ||
+            tags.station_id
+          );
+          const forceBlack = !!tags._forceDrawBlackDot;
+          const hiddenBlack =
+            n.display === false || tags.display === false || tags._mergedHiddenBlackDot;
+          if (hasStation || forceBlack || hiddenBlack) {
+            kind = 'black';
+            hue = '黑';
+          }
+        }
+        if (!kind) continue;
+        const name = normalizeName(n);
+        const pKey = `${key}|${hue}`;
+        if (!bucket.byPoint.has(pKey)) {
+          bucket.byPoint.set(pKey, {
+            key,
+            x: Math.round(Number(xy[0]) * 1e6) / 1e6,
+            y: Math.round(Number(xy[1]) * 1e6) / 1e6,
+            kind,
+            hue,
+            name,
+            segSi: si,
+            ptIdx: i,
+          });
+        } else if (!bucket.byPoint.get(pKey).name && name) {
+          bucket.byPoint.get(pKey).name = name;
+        }
+      }
+    }
+
+    const axisLabelFor = (dx, dy) => {
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+      if (adx < axisEps && ady < axisEps) return '重疊';
+      if (adx < axisEps && ady >= axisEps) return '垂直';
+      if (ady < axisEps && adx >= axisEps) return '水平';
+      return '斜向';
+    };
+
+    const rows = [];
+    for (const bucket of routeBuckets.values()) {
+      const items = Array.from(bucket.byPoint.values());
+      for (let i = 0; i < items.length; i++) {
+        const a = items[i];
+        for (let j = i + 1; j < items.length; j++) {
+          const b = items[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy);
+          if (!Number.isFinite(dist) || dist > threshold) continue;
+          let legConnectKind = 'none';
+          let legConnectFrom = null;
+          let legConnectTo = null;
+          const resolved = resolveConnectLegForNearPair(bucket.routeGroupKey, a.x, a.y, b.x, b.y);
+          if (resolved.kind === 'single' && resolved.leg) {
+            legConnectKind = 'single';
+            legConnectFrom = resolved.leg.fromParts;
+            legConnectTo = resolved.leg.toParts;
+          }
+          rows.push({
+            routeLabel: bucket.routeLabel,
+            fromHue: a.hue,
+            toHue: b.hue,
+            fromName: a.name || `(${a.x}, ${a.y})`,
+            toName: b.name || `(${b.x}, ${b.y})`,
+            fromX: a.x,
+            fromY: a.y,
+            toX: b.x,
+            toY: b.y,
+            axisLabel: axisLabelFor(dx, dy),
+            dist: Math.round(dist * 1000) / 1000,
+            legConnectKind,
+            legConnectFrom,
+            legConnectTo,
+          });
+        }
+      }
+    }
+
+    const axisOrder = (l) => (l === '水平' ? 0 : l === '垂直' ? 1 : l === '重疊' ? 2 : 3);
+    rows.sort((u, v) => {
+      if (u.dist !== v.dist) return u.dist - v.dist;
+      const oa = axisOrder(u.axisLabel);
+      const ob = axisOrder(v.axisLabel);
+      if (oa !== ob) return oa - ob;
+      return `${u.routeLabel}|${u.fromName}|${u.toName}`.localeCompare(
+        `${v.routeLabel}|${v.fromName}|${v.toName}`,
+        'zh-Hant'
+      );
+    });
+    /** 相異「connect 間路段」數（與下方分組 key 一致；含全部近距對，不受 80 列截斷影響） */
+    const resolvedLegKeys = new Set();
+    const unresolvedLegKeys = new Set();
+    for (const row of rows) {
+      if (row.legConnectKind === 'single' && row.legConnectFrom && row.legConnectTo) {
+        const a = row.legConnectFrom;
+        const b = row.legConnectTo;
+        resolvedLegKeys.add(
+          `${row.routeLabel}\t${a.hue}|${a.name}|${a.x},${a.y}\t${b.hue}|${b.name}|${b.x},${b.y}`
+        );
+      } else {
+        unresolvedLegKeys.add(
+          `${row.routeLabel}\t${row.fromX},${row.fromY}\t${row.toX},${row.toY}`
+        );
+      }
+    }
+    const MAX_ROWS = 80;
+    return {
+      threshold,
+      total: rows.length,
+      rows: rows.slice(0, MAX_ROWS),
+      truncated: rows.length > MAX_ROWS,
+      connectLegSegmentCount: resolvedLegKeys.size,
+      unresolvedNearPairGroupCount: unresolvedLegKeys.size,
+    };
+  });
+
+  /**
+   * 與 k3JsonConsecutiveNearPairsReport 相同資料，但依「connect 間路段」合併：
+   * 同一區間（同路線、同 legConnectFrom／legConnectTo）之多對近距站點列在同一區塊。
+   */
+  const k3JsonConsecutiveNearPairsReportGroupedByLeg = computed(() => {
+    const rep = k3JsonConsecutiveNearPairsReport.value;
+    if (!rep) return null;
+    const slice = Array.isArray(rep.rows) ? rep.rows : [];
+    if (!slice.length) {
+      return {
+        threshold: rep.threshold,
+        total: rep.total,
+        truncated: rep.truncated,
+        groups: [],
+        connectLegSegmentCount: rep.connectLegSegmentCount ?? 0,
+        unresolvedNearPairGroupCount: rep.unresolvedNearPairGroupCount ?? 0,
+      };
+    }
+    const axisOrder = (l) => (l === '水平' ? 0 : l === '垂直' ? 1 : l === '重疊' ? 2 : 3);
+    const legKey = (row) => {
+      if (row.legConnectKind === 'single' && row.legConnectFrom && row.legConnectTo) {
+        const a = row.legConnectFrom;
+        const b = row.legConnectTo;
+        return `1\t${row.routeLabel}\t${a.hue}|${a.name}|${a.x},${a.y}\t${b.hue}|${b.name}|${b.x},${b.y}`;
+      }
+      return `0\t${row.routeLabel}\t${row.fromX},${row.fromY}\t${row.toX},${row.toY}`;
+    };
+    const order = [];
+    const byKey = new Map();
+    for (const row of slice) {
+      const k = legKey(row);
+      if (!byKey.has(k)) {
+        byKey.set(k, []);
+        order.push(k);
+      }
+      byKey.get(k).push(row);
+    }
+    for (const k of order) {
+      const g = byKey.get(k);
+      g.sort((u, v) => {
+        if (u.dist !== v.dist) return u.dist - v.dist;
+        const oa = axisOrder(u.axisLabel);
+        const ob = axisOrder(v.axisLabel);
+        if (oa !== ob) return oa - ob;
+        return `${u.fromName}|${u.toName}`.localeCompare(`${v.fromName}|${v.toName}`, 'zh-Hant');
+      });
+    }
+    const groups = order.map((k) => {
+      const rows = byKey.get(k);
+      const first = rows[0];
+      return {
+        routeLabel: first.routeLabel,
+        legConnectKind: first.legConnectKind,
+        legConnectFrom: first.legConnectFrom,
+        legConnectTo: first.legConnectTo,
+        rows,
+      };
+    });
+    groups.sort((u, v) => {
+      if (u.routeLabel !== v.routeLabel) {
+        return u.routeLabel.localeCompare(v.routeLabel, 'zh-Hant');
+      }
+      const uLeg =
+        u.legConnectKind === 'single' && u.legConnectFrom && u.legConnectTo
+          ? `${u.legConnectFrom.name}\t${u.legConnectTo.name}`
+          : '\uffff';
+      const vLeg =
+        v.legConnectKind === 'single' && v.legConnectFrom && v.legConnectTo
+          ? `${v.legConnectFrom.name}\t${v.legConnectTo.name}`
+          : '\uffff';
+      if (uLeg !== vLeg) return uLeg.localeCompare(vLeg, 'zh-Hant');
+      const ua = u.legConnectKind === 'single' ? 0 : 1;
+      const va = v.legConnectKind === 'single' ? 0 : 1;
+      if (ua !== va) return ua - va;
+      return 0;
+    });
+    return {
+      threshold: rep.threshold,
+      total: rep.total,
+      truncated: rep.truncated,
+      groups,
+      connectLegSegmentCount: rep.connectLegSegmentCount ?? 0,
+      unresolvedNearPairGroupCount: rep.unresolvedNearPairGroupCount ?? 0,
+    };
+  });
+
+  /**
+   * K3 JSON（space-network-grid-json-data-k3）路線重疊診斷：
+   * 不同路線群（不同色／無色時不同名）之「水平／垂直」線段若共線且一維投影區間有重疊（長度 &gt; 0），即視為重疊；
+   * 先將同一路線群折線上連續共線邊合併為最長段，再比對；最後依路線群 pair 與軸向合併相鄰重疊區間，避免折線切碎造成重複計段。
+   */
+  const k3JsonRouteOverlapReport = computed(() => {
+    const layer = currentLayer.value;
+    const rawSegments = getK3TabRawSegments(layer);
+    if (!Array.isArray(rawSegments) || rawSegments.length === 0) return null;
+
+    const alignTol = 0;
+    const minLen = 1e-6;
+
+    const toPoint = (p) => {
+      if (Array.isArray(p) && p.length >= 2) {
+        const x = Number(p[0]);
+        const y = Number(p[1]);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      if (p && typeof p === 'object') {
+        const x = Number(p.x);
+        const y = Number(p.y);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      return null;
+    };
+
+    // 路線重疊檢查以「同色（或無色時同名）」視為同一路線群，避免同色分支彼此被當成不同路線
+    const routeMetaKey = (m) => `${m.routeGroupKey}`;
+
+    /** @returns {{ kind:'H'|'V', y?: number, x?: number, x1?: number, x2?: number, y1?: number, y2?: number, rKey: string, routeLabel: string } | null} */
+    const normalizeHVEdge = (a, b, meta) => {
+      if (!a || !b) return null;
+      const rKey = routeMetaKey(meta);
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      if (Math.abs(dy) <= alignTol && Math.abs(dx) > minLen) {
+        const y = (a[1] + b[1]) / 2;
+        return {
+          kind: 'H',
+          y,
+          x1: Math.min(a[0], b[0]),
+          x2: Math.max(a[0], b[0]),
+          rKey,
+          routeLabel: meta.routeLabel,
+        };
+      }
+      if (Math.abs(dx) <= alignTol && Math.abs(dy) > minLen) {
+        const x = (a[0] + b[0]) / 2;
+        return {
+          kind: 'V',
+          x,
+          y1: Math.min(a[1], b[1]),
+          y2: Math.max(a[1], b[1]),
+          rKey,
+          routeLabel: meta.routeLabel,
+        };
+      }
+      return null;
+    };
+
+    const overlap1d = (l1, r1, l2, r2) => {
+      const L = Math.max(l1, l2);
+      const R = Math.min(r1, r2);
+      if (R - L <= minLen) return null;
+      return [L, R];
+    };
+
+    /** 同一 segment 折線上連續、同 rKey、同軸之 HV 邊合併（避免與他線比對時一段拆成多條子邊而重複計段） */
+    const mergeHVEdgesAlongPolyline = (list) => {
+      if (!list.length) return [];
+      const touchEps = 1e-5;
+      const out = [];
+      let cur = { ...list[0] };
+      for (let k = 1; k < list.length; k++) {
+        const e = list[k];
+        if (
+          cur.kind === 'H' &&
+          e.kind === 'H' &&
+          cur.rKey === e.rKey &&
+          Math.abs(cur.y - e.y) <= alignTol &&
+          !(cur.x2 < e.x1 - touchEps || e.x2 < cur.x1 - touchEps)
+        ) {
+          cur = {
+            ...cur,
+            x1: Math.min(cur.x1, e.x1),
+            x2: Math.max(cur.x2, e.x2),
+            y: (cur.y + e.y) / 2,
+          };
+          continue;
+        }
+        if (
+          cur.kind === 'V' &&
+          e.kind === 'V' &&
+          cur.rKey === e.rKey &&
+          Math.abs(cur.x - e.x) <= alignTol &&
+          !(cur.y2 < e.y1 - touchEps || e.y2 < cur.y1 - touchEps)
+        ) {
+          cur = {
+            ...cur,
+            y1: Math.min(cur.y1, e.y1),
+            y2: Math.max(cur.y2, e.y2),
+            x: (cur.x + e.x) / 2,
+          };
+          continue;
+        }
+        out.push(cur);
+        cur = { ...e };
+      }
+      out.push(cur);
+      return out;
+    };
+
+    const edges = [];
+    for (let si = 0; si < rawSegments.length; si++) {
+      const seg = rawSegments[si];
+      if (!seg || typeof seg !== 'object') continue;
+      if (seg.diag_geometry === 'station') continue;
+      const meta = getRouteMetaForDiag(seg, si);
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const coords = pts.map((p) => toPoint(p)).filter((p) => p);
+      const segEdges = [];
+      for (let i = 1; i < coords.length; i++) {
+        const a = coords[i - 1];
+        const b = coords[i];
+        if (!a || !b || (a[0] === b[0] && a[1] === b[1])) continue;
+        const e = normalizeHVEdge(a, b, meta);
+        if (e) segEdges.push(e);
+      }
+      edges.push(...mergeHVEdgesAlongPolyline(segEdges));
+    }
+
+    const seen = new Set();
+    const rows = [];
+    for (let i = 0; i < edges.length; i++) {
+      for (let j = i + 1; j < edges.length; j++) {
+        const e1 = edges[i];
+        const e2 = edges[j];
+        if (e1.rKey === e2.rKey) continue;
+        if (e1.kind !== e2.kind) continue;
+
+        if (e1.kind === 'H') {
+          if (Math.abs(e1.y - e2.y) > alignTol) continue;
+          const ov = overlap1d(e1.x1, e1.x2, e2.x1, e2.x2);
+          if (!ov) continue;
+          const y = (e1.y + e2.y) / 2;
+          const rk = [e1.rKey, e2.rKey].sort().join('||');
+          const dedupeKey = `H|${rk}|${y}|${ov[0]}|${ov[1]}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          const la = e1.routeLabel;
+          const lb = e2.routeLabel;
+          const [ra, rb] = la.localeCompare(lb, 'zh-Hant') <= 0 ? [la, lb] : [lb, la];
+          rows.push({
+            pairKey: rk,
+            routeA: ra,
+            routeB: rb,
+            start: [ov[0], y],
+            end: [ov[1], y],
+          });
+        } else {
+          if (Math.abs(e1.x - e2.x) > alignTol) continue;
+          const ov = overlap1d(e1.y1, e1.y2, e2.y1, e2.y2);
+          if (!ov) continue;
+          const x = (e1.x + e2.x) / 2;
+          const rk = [e1.rKey, e2.rKey].sort().join('||');
+          const dedupeKey = `V|${rk}|${x}|${ov[0]}|${ov[1]}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          const la = e1.routeLabel;
+          const lb = e2.routeLabel;
+          const [ra, rb] = la.localeCompare(lb, 'zh-Hant') <= 0 ? [la, lb] : [lb, la];
+          rows.push({
+            pairKey: rk,
+            routeA: ra,
+            routeB: rb,
+            start: [x, ov[0]],
+            end: [x, ov[1]],
+          });
+        }
+      }
+    }
+
+    const mergeTol = 1e-6;
+    /** 內繪區 px 已 snap 時，軸向以整數 px 合併可避免浮點造成同線多筆 */
+    const cSnapPx = (v) => Math.round(Number(v) || 0);
+    const toSpan = (r) => {
+      const x0 = Number(r.start[0]);
+      const y0 = Number(r.start[1]);
+      const x1 = Number(r.end[0]);
+      const y1 = Number(r.end[1]);
+      if (Math.abs(y0 - y1) <= mergeTol) {
+        const c = (y0 + y1) / 2;
+        return {
+          pairKey: r.pairKey,
+          routeA: r.routeA,
+          routeB: r.routeB,
+          kind: 'H',
+          c,
+          cSnap: cSnapPx(c),
+          from: Math.min(x0, x1),
+          to: Math.max(x0, x1),
+        };
+      }
+      if (Math.abs(x0 - x1) <= mergeTol) {
+        const c = (x0 + x1) / 2;
+        return {
+          pairKey: r.pairKey,
+          routeA: r.routeA,
+          routeB: r.routeB,
+          kind: 'V',
+          c,
+          cSnap: cSnapPx(c),
+          from: Math.min(y0, y1),
+          to: Math.max(y0, y1),
+        };
+      }
+      return null;
+    };
+
+    const spans = rows.map(toSpan).filter((s) => s && s.to - s.from > mergeTol);
+    spans.sort((a, b) => {
+      const pk = a.pairKey.localeCompare(b.pairKey, 'en');
+      if (pk !== 0) return pk;
+      if (a.kind !== b.kind) return a.kind === 'H' ? -1 : 1;
+      if (a.cSnap !== b.cSnap) return a.cSnap - b.cSnap;
+      if (a.from !== b.from) return a.from - b.from;
+      return a.to - b.to;
+    });
+
+    const mergedSpans = [];
+    for (const s of spans) {
+      const prev = mergedSpans[mergedSpans.length - 1];
+      if (
+        prev &&
+        prev.pairKey === s.pairKey &&
+        prev.kind === s.kind &&
+        prev.cSnap === s.cSnap &&
+        s.from <= prev.to + mergeTol
+      ) {
+        prev.to = Math.max(prev.to, s.to);
+      } else {
+        mergedSpans.push({ ...s });
+      }
+    }
+
+    const mergedRows = mergedSpans.map((s) =>
+      s.kind === 'H'
+        ? {
+            routeA: s.routeA,
+            routeB: s.routeB,
+            start: [s.from, s.c],
+            end: [s.to, s.c],
+          }
+        : {
+            routeA: s.routeA,
+            routeB: s.routeB,
+            start: [s.c, s.from],
+            end: [s.c, s.to],
+          }
+    );
+
+    return {
+      total: mergedRows.length,
+      rows: mergedRows.slice(0, 60),
+      truncated: mergedRows.length > 60,
+    };
+  });
+
+  /** taipei_i2：權重放大預設關（圖層欄位）；其餘 f／g／h 層用全域 store */
+  const taipeiFGridScalingChecked = computed(() => {
+    const lyr = currentLayer.value;
+    if (lyr?.layerId === 'taipei_i2') {
+      return lyr.taipeiFSpaceNetworkGridScaling === true;
+    }
+    return dataStore.taipeiFSpaceNetworkGridScaling !== false;
+  });
+
+  const onTaipeiFGridScalingChange = (checked) => {
+    const lyr = currentLayer.value;
+    if (lyr?.layerId === 'taipei_i2') {
+      lyr.taipeiFSpaceNetworkGridScaling = checked;
+      return;
+    }
+    dataStore.setTaipeiFSpaceNetworkGridScaling(checked);
+  };
+
+  /** 空間網絡網格測試_3：各圖層 Control 分頁可獨立選「正方形網格」或預設（充滿繪區） */
+  const setSquareGridCellsTaipeiTest3 = (layer, on) => {
+    const lyr = dataStore.findLayerById(layer?.layerId);
+    if (!lyr || !isTaipeiTest3BcdeLayerTab(layer.layerId)) return;
+    lyr.squareGridCellsTaipeiTest3 = !!on;
+  };
+
+  /** taipei_h2：路線導航（起迄站選取、最短路徑與圖面高亮） */
+  const isTaipeiH2TrafficLayer = computed(() => currentLayer.value?.layerId === 'taipei_h2');
+  /** taipei_c5：路線導航（起迄站選取、最短路徑與圖面高亮） */
+  const isTaipeiC5TrafficLayer = computed(() => currentLayer.value?.layerId === 'taipei_c5');
+
+  const taipeiH2TrafficStationOptions = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || layer.layerId !== 'taipei_h2') return [];
+    const redOpts = [];
+    const cd = layer.spaceNetworkGridJsonData_ConnectData;
+    if (Array.isArray(cd)) {
+      const seenCn = new Set();
+      for (const c of cd) {
+        if (!c) continue;
+        const cn = c.connect_number ?? c.tags?.connect_number;
+        if (cn == null || seenCn.has(Number(cn))) continue;
+        seenCn.add(Number(cn));
+        const name = (c.station_name ?? c.tags?.station_name ?? c.tags?.name ?? '')
+          .toString()
+          .trim();
+        const label = name ? `紅點 · ${name}（#${cn}）` : `紅點 · Connect #${cn}`;
+        redOpts.push({
+          value: JSON.stringify({ t: 'c', n: Number(cn) }),
+          label,
+        });
+      }
+    }
+    redOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+    const blackOpts = [];
+    const rows = collectLineStationGridPointsFromStationData(
+      layer.spaceNetworkGridJsonData_StationData
+    );
+    for (const row of rows) {
+      const sid = row.meta?.station_id ?? row.meta?.tags?.station_id;
+      const labelBase = row.name || '黑點';
+      const label = `黑點 · ${labelBase}（${row.x}, ${row.y}）`;
+      blackOpts.push({
+        value: JSON.stringify({
+          t: 'b',
+          x: row.x,
+          y: row.y,
+          i: sid != null ? String(sid) : '',
+        }),
+        label,
+      });
+    }
+    blackOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+    return [...redOpts, ...blackOpts];
+  });
+  const taipeiC5TrafficStationOptions = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || layer.layerId !== 'taipei_c5') return [];
+    const redOpts = [];
+    const cd = layer.spaceNetworkGridJsonData_ConnectData;
+    if (Array.isArray(cd)) {
+      const seenCn = new Set();
+      for (const c of cd) {
+        if (!c) continue;
+        const cn = c.connect_number ?? c.tags?.connect_number;
+        if (cn == null || seenCn.has(Number(cn))) continue;
+        seenCn.add(Number(cn));
+        const name = (c.station_name ?? c.tags?.station_name ?? c.tags?.name ?? '')
+          .toString()
+          .trim();
+        const label = name ? `紅點 · ${name}（#${cn}）` : `紅點 · Connect #${cn}`;
+        redOpts.push({
+          value: JSON.stringify({ t: 'c', n: Number(cn) }),
+          label,
+        });
+      }
+    }
+    redOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+    const blackOpts = [];
+    const rows = collectLineStationGridPointsFromStationData(
+      layer.spaceNetworkGridJsonData_StationData
+    );
+    for (const row of rows) {
+      const sid = row.meta?.station_id ?? row.meta?.tags?.station_id;
+      const labelBase = row.name || '黑點';
+      const label = `黑點 · ${labelBase}（${row.x}, ${row.y}）`;
+      blackOpts.push({
+        value: JSON.stringify({
+          t: 'b',
+          x: row.x,
+          y: row.y,
+          i: sid != null ? String(sid) : '',
+        }),
+        label,
+      });
+    }
+    blackOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+    return [...redOpts, ...blackOpts];
+  });
+
+  // 導航下拉先暫存；按「確定導航」才真正寫入 store 觸發計算
+  const taipeiH2TrafficDraftKeys = ref(['', '']);
+  const taipeiC5TrafficDraftKeys = ref(['', '']);
+  const syncTaipeiH2TrafficDraftFromStore = () => {
+    taipeiH2TrafficDraftKeys.value = [
+      dataStore.taipeiH2TrafficHighlightKeys[0] ?? '',
+      dataStore.taipeiH2TrafficHighlightKeys[1] ?? '',
+    ];
+  };
+  const syncTaipeiC5TrafficDraftFromStore = () => {
+    taipeiC5TrafficDraftKeys.value = [
+      dataStore.taipeiC5TrafficHighlightKeys[0] ?? '',
+      dataStore.taipeiC5TrafficHighlightKeys[1] ?? '',
+    ];
+  };
+  syncTaipeiH2TrafficDraftFromStore();
+  syncTaipeiC5TrafficDraftFromStore();
+
+  const onTaipeiH2TrafficHighlightChange = (slot, event) => {
+    const raw = event?.target?.value;
+    const s = slot === 1 ? 1 : 0;
+    const next = [...taipeiH2TrafficDraftKeys.value];
+    next[s] = raw && String(raw).trim() !== '' ? String(raw).trim() : '';
+    taipeiH2TrafficDraftKeys.value = next;
+  };
+  const onTaipeiC5TrafficHighlightChange = (slot, event) => {
+    const raw = event?.target?.value;
+    const s = slot === 1 ? 1 : 0;
+    const next = [...taipeiC5TrafficDraftKeys.value];
+    next[s] = raw && String(raw).trim() !== '' ? String(raw).trim() : '';
+    taipeiC5TrafficDraftKeys.value = next;
+  };
+  const confirmTaipeiH2TrafficNavigation = () => {
+    dataStore.setTaipeiH2TrafficHighlightKey(0, taipeiH2TrafficDraftKeys.value[0] || null);
+    dataStore.setTaipeiH2TrafficHighlightKey(1, taipeiH2TrafficDraftKeys.value[1] || null);
+    syncTaipeiH2TrafficDraftFromStore();
+  };
+  const confirmTaipeiC5TrafficNavigation = () => {
+    dataStore.setTaipeiC5TrafficHighlightKey(0, taipeiC5TrafficDraftKeys.value[0] || null);
+    dataStore.setTaipeiC5TrafficHighlightKey(1, taipeiC5TrafficDraftKeys.value[1] || null);
+    syncTaipeiC5TrafficDraftFromStore();
+  };
+  const clearTaipeiH2TrafficNavigation = () => {
+    dataStore.clearTaipeiH2TrafficHighlights();
+    syncTaipeiH2TrafficDraftFromStore();
+  };
+  const clearTaipeiC5TrafficNavigation = () => {
+    dataStore.clearTaipeiC5TrafficHighlights();
+    syncTaipeiC5TrafficDraftFromStore();
+  };
+
+  /** 與 Python 範例相同語意：起迄間最短路徑上的所有車站（含端點），以「、」串接 */
+  const taipeiH2ShortestPathUi = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || layer.layerId !== 'taipei_h2') return null;
+    const keys = dataStore.taipeiH2TrafficHighlightKeys;
+    return taipeiH2ComputeShortestPathOverlay(layer, keys);
+  });
+  const taipeiC5ShortestPathUi = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || layer.layerId !== 'taipei_c5') return null;
+    const keys = dataStore.taipeiC5TrafficHighlightKeys;
+    return taipeiH2ComputeShortestPathOverlay(layer, keys);
+  });
+
+  /** taipei_c6：路線導航（與 c5 分狀態／store 複製） */
+  const isTaipeiC6TrafficLayer = computed(() => currentLayer.value?.layerId === 'taipei_c6');
+
+  const taipeiC6TrafficStationOptions = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || layer.layerId !== 'taipei_c6') return [];
+    const redOpts = [];
+    const cd = layer.spaceNetworkGridJsonData_ConnectData;
+    if (Array.isArray(cd)) {
+      const seenCn = new Set();
+      for (const c of cd) {
+        if (!c) continue;
+        const cn = c.connect_number ?? c.tags?.connect_number;
+        if (cn == null || seenCn.has(Number(cn))) continue;
+        seenCn.add(Number(cn));
+        const name = (c.station_name ?? c.tags?.station_name ?? c.tags?.name ?? '')
+          .toString()
+          .trim();
+        const label = name ? `紅點 · ${name}（#${cn}）` : `紅點 · Connect #${cn}`;
+        redOpts.push({
+          value: JSON.stringify({ t: 'c', n: Number(cn) }),
+          label,
+        });
+      }
+    }
+    redOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+    const blackOpts = [];
+    const rows = collectLineStationGridPointsFromStationData(
+      layer.spaceNetworkGridJsonData_StationData
+    );
+    for (const row of rows) {
+      const sid = row.meta?.station_id ?? row.meta?.tags?.station_id;
+      const labelBase = row.name || '黑點';
+      const label = `黑點 · ${labelBase}（${row.x}, ${row.y}）`;
+      blackOpts.push({
+        value: JSON.stringify({
+          t: 'b',
+          x: row.x,
+          y: row.y,
+          i: sid != null ? String(sid) : '',
+        }),
+        label,
+      });
+    }
+    blackOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+    return [...redOpts, ...blackOpts];
+  });
+
+  const taipeiC6TrafficDraftKeys = ref(['', '']);
+  const syncTaipeiC6TrafficDraftFromStore = () => {
+    taipeiC6TrafficDraftKeys.value = [
+      dataStore.taipeiC6TrafficHighlightKeys[0] ?? '',
+      dataStore.taipeiC6TrafficHighlightKeys[1] ?? '',
+    ];
+  };
+  syncTaipeiC6TrafficDraftFromStore();
+
+  const onTaipeiC6TrafficHighlightChange = (slot, event) => {
+    const raw = event?.target?.value;
+    const s = slot === 1 ? 1 : 0;
+    const next = [...taipeiC6TrafficDraftKeys.value];
+    next[s] = raw && String(raw).trim() !== '' ? String(raw).trim() : '';
+    taipeiC6TrafficDraftKeys.value = next;
+  };
+  const confirmTaipeiC6TrafficNavigation = () => {
+    dataStore.setTaipeiC6TrafficHighlightKey(0, taipeiC6TrafficDraftKeys.value[0] || null);
+    dataStore.setTaipeiC6TrafficHighlightKey(1, taipeiC6TrafficDraftKeys.value[1] || null);
+    syncTaipeiC6TrafficDraftFromStore();
+  };
+  const clearTaipeiC6TrafficNavigation = () => {
+    dataStore.clearTaipeiC6TrafficHighlights();
+    syncTaipeiC6TrafficDraftFromStore();
+  };
+
+  const taipeiC6ShortestPathUi = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || layer.layerId !== 'taipei_c6') return null;
+    const keys = dataStore.taipeiC6TrafficHighlightKeys;
+    return taipeiH2ComputeShortestPathOverlay(layer, keys);
+  });
+
+  const taipeiFHighlightMatchesCurrentLayer = (h) =>
+    h &&
+    currentLayer.value &&
+    h.layerId === currentLayer.value.layerId &&
+    isTaipeiTestFLayerTab(h.layerId);
+
+  /** SectionData 紅點間路段高亮／其他路段高亮（空間網路欄列 overlay） */
+  const TAIPEI_F_HL_SECTION = '#c62828';
+  const TAIPEI_F_HL_OTHER = '#2e7d32';
+
+  /** taipei_f：「下一筆 Col」逐步索引（與 buildTaipeiFColHighlightPlan 順序一致） */
+  const taipeiFColHighlightStep = ref(-1);
+  /** taipei_f：「下一筆 Row」逐步索引（與 buildTaipeiFRowHighlightPlan 順序一致） */
+  const taipeiFRowHighlightStep = ref(-1);
+
+  const taipeiFColHighlightSummary = computed(() => {
+    const h = dataStore.taipeiFColRouteHighlight;
+    if (!taipeiFHighlightMatchesCurrentLayer(h)) return '';
+    const total = h.planLength ?? '?';
+    const step = (h.stepIndex ?? 0) + 1;
+    const d = h.delta ?? 0;
+    const dStr = d > 0 ? `→+${d}` : d < 0 ? `→${d}` : '（不移動）';
+    return `欄 x=${h.gridX}（${step}／${total}）${dStr}`;
+  });
+
+  /** taipei_f：欄位移後拓撲檢查（L 變 T、頂點未跟欄移動） */
+  const taipeiFColTopologyError = computed(() => {
+    const h = dataStore.taipeiFColRouteHighlight;
+    if (!taipeiFHighlightMatchesCurrentLayer(h)) return '';
+    return h.topologyError || '';
+  });
+
+  const taipeiFRowHighlightSummary = computed(() => {
+    const h = dataStore.taipeiFRowRouteHighlight;
+    if (!taipeiFHighlightMatchesCurrentLayer(h)) return '';
+    const total = h.planLength ?? '?';
+    const step = (h.stepIndex ?? 0) + 1;
+    const d = h.delta ?? 0;
+    const dStr = d > 0 ? `→+${d}` : d < 0 ? `→${d}` : '（不移動）';
+    return `列 y=${h.gridY}（${step}／${total}）${dStr}`;
+  });
+
+  const taipeiFRowTopologyError = computed(() => {
+    const h = dataStore.taipeiFRowRouteHighlight;
+    if (!taipeiFHighlightMatchesCurrentLayer(h)) return '';
+    return h.topologyError || '';
+  });
+
+  /** 紅點間路段（略過兩端皆為多路段共用紅點之筆） */
+  const taipeiFSectionRouteList = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId)) return [];
+    const sd = layer.spaceNetworkGridJsonData_SectionData;
+    if (!Array.isArray(sd) || sd.length === 0) return [];
+    return listSectionRoutesBetweenConnects(sd);
+  });
+
+  const advanceTaipeiFColHighlight = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId)) return;
+    dataStore.clearTaipeiFRowRouteHighlight();
+    taipeiFRowHighlightStep.value = -1;
+    const flat = getFlatSegmentsFromLayer(layer);
+    const plan = buildTaipeiFColHighlightPlan(flat);
+    if (!plan.length) {
+      taipeiFColHighlightStep.value = -1;
+      dataStore.clearTaipeiFColRouteHighlight();
+      return;
+    }
+    const next = (taipeiFColHighlightStep.value + 1) % plan.length;
+    taipeiFColHighlightStep.value = next;
+    const e = plan[next];
+
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    for (const seg of flat) {
+      for (const pt of seg.points || []) {
+        const x = Number(Array.isArray(pt) ? pt[0] : pt.x);
+        if (Number.isFinite(x)) {
+          xMin = Math.min(xMin, x);
+          xMax = Math.max(xMax, x);
+        }
+      }
+    }
+    xMin = Math.floor(xMin);
+    xMax = Math.ceil(xMax) + 1;
+
+    const stationFeaturesForShift = [];
+    for (const seg of flat) {
+      const pts = seg.points;
+      if (!Array.isArray(pts) || pts.length === 0) continue;
+      const addPt = (pt, nodeType) => {
+        const x = Number(Array.isArray(pt) ? pt[0] : pt.x);
+        const y = Number(Array.isArray(pt) ? pt[1] : pt.y);
+        const props = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+        stationFeaturesForShift.push({
+          geometry: { coordinates: [x, y] },
+          nodeType: props?.node_type || nodeType,
+          properties: props,
+        });
+      };
+      addPt(pts[0], 'connect');
+      if (pts.length > 1) addPt(pts[pts.length - 1], 'connect');
+    }
+    if (Array.isArray(layer.spaceNetworkGridJsonData_StationData)) {
+      const rows = collectLineStationGridPointsFromStationData(
+        layer.spaceNetworkGridJsonData_StationData
+      );
+      for (const row of rows) {
+        stationFeaturesForShift.push({
+          geometry: { coordinates: [Number(row.x), Number(row.y)] },
+          nodeType: 'line',
+          properties: row.meta || {},
+        });
+      }
+    }
+
+    const { delta, shiftedPaths } = computeTaipeiFColHighlightShift({
+      flatSegments: flat,
+      stationFeatures: stationFeaturesForShift,
+      verticalPaths: e.verticalPaths,
+      xMin,
+      xMax,
+    });
+
+    let shiftMeta = { topologyError: null };
+    let effectiveDelta = delta;
+    let pathsForStore = delta !== 0 ? shiftedPaths : e.verticalPaths;
+    if (delta !== 0) {
+      let snap = null;
+      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
+        snap = snapshotTaipeiFNetworkLayer(layer);
+      }
+      shiftMeta = applyTaipeiFColShiftToLayerData(layer, e.verticalPaths, delta, e.segmentIndices);
+      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
+        const guard = validateTaipeiF2ColRowShiftResult(layer);
+        const badTopo = !!shiftMeta.topologyError;
+        if (!guard.ok || badTopo) {
+          restoreTaipeiFNetworkLayer(layer, snap);
+          dataStore.requestSpaceNetworkGridFullRedraw();
+          const parts = [];
+          if (badTopo && shiftMeta.topologyError) parts.push(shiftMeta.topologyError);
+          if (!guard.ok) parts.push(guard.reason);
+          shiftMeta = {
+            columnXBefore: 0,
+            columnXAfter: 0,
+            topologyError: parts.join(' ') || 'taipei_f2：欄位移已還原。',
+          };
+          effectiveDelta = 0;
+          pathsForStore = e.verticalPaths;
+        }
+      }
+    }
+
+    const sectionSegSet = buildSectionDataFlatSegmentIndexSet(layer);
+    const verticalPathColors =
+      Array.isArray(e.verticalPathSegIndices) &&
+      e.verticalPathSegIndices.length === pathsForStore.length
+        ? e.verticalPathSegIndices.map((si) =>
+            sectionSegSet.has(si) ? TAIPEI_F_HL_SECTION : TAIPEI_F_HL_OTHER
+          )
+        : null;
+
+    dataStore.setTaipeiFColRouteHighlight({
+      layerId: layer.layerId,
+      gridX: e.gridX,
+      componentIndex: e.componentIndex,
+      segmentIndices: e.segmentIndices,
+      verticalPaths: pathsForStore,
+      verticalPathColors,
+      stepIndex: next,
+      planLength: plan.length,
+      delta: effectiveDelta,
+      topologyError: shiftMeta.topologyError ?? null,
+    });
+  };
+
+  const advanceTaipeiFRowHighlight = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId)) return;
+    dataStore.clearTaipeiFColRouteHighlight();
+    taipeiFColHighlightStep.value = -1;
+    const flat = getFlatSegmentsFromLayer(layer);
+    const plan = buildTaipeiFRowHighlightPlan(flat);
+    if (!plan.length) {
+      taipeiFRowHighlightStep.value = -1;
+      dataStore.clearTaipeiFRowRouteHighlight();
+      return;
+    }
+    const next = (taipeiFRowHighlightStep.value + 1) % plan.length;
+    taipeiFRowHighlightStep.value = next;
+    const e = plan[next];
+
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    for (const seg of flat) {
+      for (const pt of seg.points || []) {
+        const y = Number(Array.isArray(pt) ? pt[1] : pt.y);
+        if (Number.isFinite(y)) {
+          yMin = Math.min(yMin, y);
+          yMax = Math.max(yMax, y);
+        }
+      }
+    }
+    yMin = Math.floor(yMin);
+    yMax = Math.ceil(yMax) + 1;
+
+    const stationFeaturesForShift = [];
+    for (const seg of flat) {
+      const pts = seg.points;
+      if (!Array.isArray(pts) || pts.length === 0) continue;
+      const addPt = (pt, nodeType) => {
+        const x = Number(Array.isArray(pt) ? pt[0] : pt.x);
+        const y = Number(Array.isArray(pt) ? pt[1] : pt.y);
+        const props = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+        stationFeaturesForShift.push({
+          geometry: { coordinates: [x, y] },
+          nodeType: props?.node_type || nodeType,
+          properties: props,
+        });
+      };
+      addPt(pts[0], 'connect');
+      if (pts.length > 1) addPt(pts[pts.length - 1], 'connect');
+    }
+    if (Array.isArray(layer.spaceNetworkGridJsonData_StationData)) {
+      const rows = collectLineStationGridPointsFromStationData(
+        layer.spaceNetworkGridJsonData_StationData
+      );
+      for (const row of rows) {
+        stationFeaturesForShift.push({
+          geometry: { coordinates: [Number(row.x), Number(row.y)] },
+          nodeType: 'line',
+          properties: row.meta || {},
+        });
+      }
+    }
+
+    const { delta, shiftedPaths } = computeTaipeiFRowHighlightShift({
+      flatSegments: flat,
+      stationFeatures: stationFeaturesForShift,
+      horizontalPaths: e.horizontalPaths,
+      yMin,
+      yMax,
+    });
+
+    let shiftMeta = { topologyError: null };
+    let effectiveDelta = delta;
+    let pathsForStore = delta !== 0 ? shiftedPaths : e.horizontalPaths;
+    if (delta !== 0) {
+      let snap = null;
+      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
+        snap = snapshotTaipeiFNetworkLayer(layer);
+      }
+      shiftMeta = applyTaipeiFRowShiftToLayerData(
+        layer,
+        e.horizontalPaths,
+        delta,
+        e.segmentIndices
+      );
+      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
+        const guard = validateTaipeiF2ColRowShiftResult(layer);
+        const badTopo = !!shiftMeta.topologyError;
+        if (!guard.ok || badTopo) {
+          restoreTaipeiFNetworkLayer(layer, snap);
+          dataStore.requestSpaceNetworkGridFullRedraw();
+          const parts = [];
+          if (badTopo && shiftMeta.topologyError) parts.push(shiftMeta.topologyError);
+          if (!guard.ok) parts.push(guard.reason);
+          shiftMeta = {
+            rowYBefore: 0,
+            rowYAfter: 0,
+            topologyError: parts.join(' ') || 'taipei_f2：列位移已還原。',
+          };
+          effectiveDelta = 0;
+          pathsForStore = e.horizontalPaths;
+        }
+      }
+    }
+
+    const sectionSegSetRow = buildSectionDataFlatSegmentIndexSet(layer);
+    const horizontalPathColors =
+      Array.isArray(e.horizontalPathSegIndices) &&
+      e.horizontalPathSegIndices.length === pathsForStore.length
+        ? e.horizontalPathSegIndices.map((si) =>
+            sectionSegSetRow.has(si) ? TAIPEI_F_HL_SECTION : TAIPEI_F_HL_OTHER
+          )
+        : null;
+
+    dataStore.setTaipeiFRowRouteHighlight({
+      layerId: layer.layerId,
+      gridY: e.gridY,
+      componentIndex: e.componentIndex,
+      segmentIndices: e.segmentIndices,
+      horizontalPaths: pathsForStore,
+      horizontalPathColors,
+      stepIndex: next,
+      planLength: plan.length,
+      delta: effectiveDelta,
+      topologyError: shiftMeta.topologyError ?? null,
+    });
+  };
+
+  /**
+   * 一鍵依序執行：以「當下圖層」建出的欄計畫長度連續跑完每一筆 Col，再以跑完後的圖層建列計畫並連續跑完每一筆 Row（等同手動各點一輪）。
+   */
+  const runTaipeiFColThenRowAll = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId)) return;
+    stopTaipeiFCenteringAutoAdvance();
+
+    dataStore.clearTaipeiFRowRouteHighlight();
+    taipeiFRowHighlightStep.value = -1;
+    taipeiFColHighlightStep.value = -1;
+    dataStore.clearTaipeiFColRouteHighlight();
+
+    const flat0 = getFlatSegmentsFromLayer(layer);
+    const colPlan0 = buildTaipeiFColHighlightPlan(flat0);
+    const nCol = colPlan0.length;
+    for (let k = 0; k < nCol; k++) {
+      advanceTaipeiFColHighlight();
+    }
+
+    dataStore.clearTaipeiFColRouteHighlight();
+    taipeiFColHighlightStep.value = -1;
+    taipeiFRowHighlightStep.value = -1;
+    dataStore.clearTaipeiFRowRouteHighlight();
+
+    const flat1 = getFlatSegmentsFromLayer(layer);
+    const rowPlan0 = buildTaipeiFRowHighlightPlan(flat1);
+    const nRow = rowPlan0.length;
+    for (let k = 0; k < nRow; k++) {
+      advanceTaipeiFRowHighlight();
+    }
+  };
+
+  /**
+   * taipei_f：刪除整欄／整列皆無黑點、紅點或路線轉折頂點之格，並將路段與 Section／Connect／Station 座標塌縮重映射。
+   */
+  const pruneTaipeiFEmptyGridRowsColsFromControl = async () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId)) return;
+    if (
+      !Array.isArray(layer.spaceNetworkGridJsonData) ||
+      layer.spaceNetworkGridJsonData.length === 0
+    )
+      return;
+    if (!applyTaipeiFPruneEmptyGridRowsCols(layer)) return;
+    layer.layoutGridJsonData = JSON.parse(JSON.stringify(layer.spaceNetworkGridJsonData));
+    layer._taipeiFListedGraySnapshotDone = false;
+    layer.dataTableData = buildTaipeiFDataTableRowsFromSpaceNetwork(
+      layer.spaceNetworkGridJsonData,
+      {
+        connectData: layer.spaceNetworkGridJsonData_ConnectData,
+        stationData: layer.spaceNetworkGridJsonData_StationData,
+        sectionData: layer.spaceNetworkGridJsonData_SectionData,
+      }
+    );
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  /** 一鍵依序：清單路段向心 → 非清單向心 → 欄／列批次 → 空欄／空列縮減（單輪內部步驟） */
+  const taipeiFOneClickPipelineRunning = ref(false);
+  const TAIPEI_F_ONE_CLICK_PIPELINE_ROUNDS_REPEAT = 6;
+
+  const runTaipeiFOneClickPipelineSteps = async () => {
+    runTaipeiFListedSectionStationsTowardSchematicCenterComplete();
+    await nextTick();
+    runTaipeiFLineStationsTowardSchematicCenter();
+    await nextTick();
+    runTaipeiFColThenRowAll();
+    await nextTick();
+    await pruneTaipeiFEmptyGridRowsColsFromControl();
+  };
+
+  const runTaipeiFOneClickPipeline = async () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId) || !layer.spaceNetworkGridJsonData?.length)
+      return;
+    if (taipeiFOneClickPipelineRunning.value) return;
+    taipeiFOneClickPipelineRunning.value = true;
+    try {
+      await runTaipeiFOneClickPipelineSteps();
+    } finally {
+      taipeiFOneClickPipelineRunning.value = false;
+    }
+  };
+
+  /** 同上四步一輪，連續執行 6 輪（1-2-3-4 重複 6 次） */
+  const runTaipeiFOneClickPipelineSixRounds = async () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId) || !layer.spaceNetworkGridJsonData?.length)
+      return;
+    if (taipeiFOneClickPipelineRunning.value) return;
+    taipeiFOneClickPipelineRunning.value = true;
+    try {
+      for (let r = 0; r < TAIPEI_F_ONE_CLICK_PIPELINE_ROUNDS_REPEAT; r++) {
+        await runTaipeiFOneClickPipelineSteps();
+        await nextTick();
+      }
+    } finally {
+      taipeiFOneClickPipelineRunning.value = false;
+    }
+  };
+
+  /** taipei_f 自動執行（向心／清單路段／欄／列）共用間隔 */
+  const TAIPEI_F_AUTO_INTERVAL_MS = 100;
+
+  /** 欄／列逐步檢視：自動每 0.1 秒執行一步（互斥：啟動一邊會停另一邊） */
+  const taipeiFColAutoIntervalId = ref(null);
+  const taipeiFRowAutoIntervalId = ref(null);
+  /** 向心靠攏：每 0.1 秒一步，依序 0…n−1，每步皆高亮該黑點（含未位移）；一輪結束若該輪完全無位移則停止 */
+  const taipeiFCenteringAutoIntervalId = ref(null);
+  const taipeiFCenteringAutoStationIndex = ref(0);
+  const taipeiFCenteringAutoRoundMoves = ref(0);
+  const taipeiFCenteringAutoSummary = ref('');
+
+  const stopTaipeiFColAutoAdvance = () => {
+    if (taipeiFColAutoIntervalId.value != null) {
+      clearInterval(taipeiFColAutoIntervalId.value);
+      taipeiFColAutoIntervalId.value = null;
+    }
+  };
+
+  const stopTaipeiFRowAutoAdvance = () => {
+    if (taipeiFRowAutoIntervalId.value != null) {
+      clearInterval(taipeiFRowAutoIntervalId.value);
+      taipeiFRowAutoIntervalId.value = null;
+    }
+  };
+
+  const stopTaipeiFCenteringAutoTimerOnly = () => {
+    if (taipeiFCenteringAutoIntervalId.value != null) {
+      clearInterval(taipeiFCenteringAutoIntervalId.value);
+      taipeiFCenteringAutoIntervalId.value = null;
+    }
+  };
+
+  const stopTaipeiFCenteringAutoAdvance = () => {
+    stopTaipeiFCenteringAutoTimerOnly();
+    taipeiFCenteringAutoSummary.value = '';
+    dataStore.setHighlightedBlackStation(null);
+  };
+
+  /** 向心：處理目前索引那一顆黑點（自動／手動共用） */
+  const runTaipeiFCenteringSingleTick = () => {
+    const layer = currentLayer.value;
+    if (
+      !layer ||
+      !isTaipeiTestFLayerTab(layer.layerId) ||
+      !layer.spaceNetworkGridJsonData?.length
+    ) {
+      stopTaipeiFCenteringAutoAdvance();
+      return;
+    }
+
+    const probe = probeLineStationCentering(layer);
+    if (!probe.ok) {
+      taipeiFCenteringAutoSummary.value =
+        probe.reason === 'no_bounds' ? '無法取得示意圖邊界，已停止' : '無路段鄰接圖，已停止';
+      stopTaipeiFCenteringAutoAdvance();
+      return;
+    }
+    const n = probe.rowCount;
+    if (n === 0) {
+      taipeiFCenteringAutoSummary.value = '無黑點站，已停止';
+      stopTaipeiFCenteringAutoAdvance();
+      return;
+    }
+
+    const idx = ((taipeiFCenteringAutoStationIndex.value % n) + n) % n;
+
+    if (idx === 0) {
+      taipeiFCenteringAutoRoundMoves.value = 0;
+    }
+
+    const r = stepOneLineStationTowardSchematicCenter(layer, idx);
+    if (!r.ok) {
+      taipeiFCenteringAutoSummary.value =
+        r.reason === 'no_bounds' ? '無法取得示意圖邊界，已停止' : '無路段鄰接圖，已停止';
+      stopTaipeiFCenteringAutoAdvance();
+      return;
+    }
+
+    if (r.moved) {
+      taipeiFCenteringAutoRoundMoves.value += 1;
+    }
+
+    const hbAfter = { layerId: layer.layerId, x: r.highlightX, y: r.highlightY };
+    if (r.stationId != null && String(r.stationId).trim() !== '') hbAfter.stationId = r.stationId;
+    hbAfter.color = !r.moved ? '#f9a825' : r.isListedSectionStation ? '#c62828' : '#2e7d32';
+    dataStore.setHighlightedBlackStation(hbAfter);
+
+    const label = r.stationName ? r.stationName : '黑點';
+    const scopeLabel = r.isListedSectionStation ? '清單路段' : '非清單路段';
+    const sectionLabel = r.sectionRouteLabel ? ` · ${r.sectionRouteLabel}` : '';
+    taipeiFCenteringAutoSummary.value = `(${idx + 1}/${n}) [${scopeLabel}]${sectionLabel} · ${label} ${r.moved ? '已位移' : r.canMove ? '暫時受阻' : '無法移動'} → (${Math.round(r.highlightX)},${Math.round(r.highlightY)})`;
+
+    if (idx === n - 1 && taipeiFCenteringAutoRoundMoves.value === 0) {
+      stopTaipeiFCenteringAutoTimerOnly();
+      taipeiFCenteringAutoSummary.value = '本輪無位移（已停止自動／可再按「下一步」從頭掃）';
+      taipeiFCenteringAutoStationIndex.value = 0;
+      taipeiFCenteringAutoRoundMoves.value = 0;
+      return;
+    }
+
+    taipeiFCenteringAutoStationIndex.value = (idx + 1) % n;
+  };
+
+  const tickTaipeiFCenteringAuto = () => {
+    runTaipeiFCenteringSingleTick();
+  };
+
+  /** 手動：每按一次只執行一顆黑點（與自動相同順序，會停止進行中的自動計時） */
+  const stepTaipeiFCenteringOnce = () => {
+    stopTaipeiFCenteringAutoTimerOnly();
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    taipeiFColHighlightStep.value = -1;
+    taipeiFRowHighlightStep.value = -1;
+    dataStore.clearTaipeiFColRouteHighlight();
+    dataStore.clearTaipeiFRowRouteHighlight();
+    runTaipeiFCenteringSingleTick();
+  };
+
+  const toggleTaipeiFCenteringAutoAdvance = () => {
+    if (taipeiFCenteringAutoIntervalId.value != null) {
+      stopTaipeiFCenteringAutoAdvance();
+      return;
+    }
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    taipeiFColHighlightStep.value = -1;
+    taipeiFRowHighlightStep.value = -1;
+    dataStore.clearTaipeiFColRouteHighlight();
+    dataStore.clearTaipeiFRowRouteHighlight();
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId) || !layer.spaceNetworkGridJsonData?.length)
+      return;
+    taipeiFCenteringAutoStationIndex.value = 0;
+    taipeiFCenteringAutoRoundMoves.value = 0;
+    tickTaipeiFCenteringAuto();
+    taipeiFCenteringAutoIntervalId.value = setInterval(
+      tickTaipeiFCenteringAuto,
+      TAIPEI_F_AUTO_INTERVAL_MS
+    );
+  };
+
+  // ── 紅點間路段（SectionData）專用黑點位移 ──────────────────────────────────
+  const taipeiFSectionCenteringAutoIntervalId = ref(null);
+  const taipeiFSectionCenteringStationIndex = ref(0);
+  const taipeiFSectionCenteringRoundMoves = ref(0);
+  const taipeiFSectionCenteringSummary = ref('');
+
+  const stopTaipeiFSectionCenteringTimerOnly = () => {
+    if (taipeiFSectionCenteringAutoIntervalId.value != null) {
+      clearInterval(taipeiFSectionCenteringAutoIntervalId.value);
+      taipeiFSectionCenteringAutoIntervalId.value = null;
+    }
+  };
+
+  const stopTaipeiFSectionCenteringAuto = () => {
+    stopTaipeiFSectionCenteringTimerOnly();
+    taipeiFSectionCenteringSummary.value = '';
+    dataStore.setHighlightedBlackStation(null);
+  };
+
+  const runTaipeiFSectionCenteringSingleTick = () => {
+    const layer = currentLayer.value;
+    if (
+      !layer ||
+      !isTaipeiTestFLayerTab(layer.layerId) ||
+      !layer.spaceNetworkGridJsonData?.length
+    ) {
+      stopTaipeiFSectionCenteringAuto();
+      return;
+    }
+    const idx = taipeiFSectionCenteringStationIndex.value;
+    if (idx === 0) taipeiFSectionCenteringRoundMoves.value = 0;
+
+    const r = stepOneSectionStationTowardSchematicCenter(layer, idx);
+    if (!r.ok) {
+      taipeiFSectionCenteringSummary.value =
+        r.reason === 'no_bounds' ? '無法取得示意圖邊界' : '無路段鄰接圖';
+      stopTaipeiFSectionCenteringAuto();
+      return;
+    }
+    if (r.rowCount === 0) {
+      taipeiFSectionCenteringSummary.value = '清單內無黑點站';
+      stopTaipeiFSectionCenteringAuto();
+      return;
+    }
+
+    if (r.moved) taipeiFSectionCenteringRoundMoves.value += 1;
+
+    const hb = { layerId: layer.layerId, x: r.highlightX, y: r.highlightY };
+    if (r.stationId != null && String(r.stationId).trim() !== '') hb.stationId = r.stationId;
+    hb.color = r.moved ? '#c62828' : '#f9a825';
+    dataStore.setHighlightedBlackStation(hb);
+
+    const lbl = r.stationName || '黑點';
+    const secLbl = r.sectionRouteLabel ? ` · ${r.sectionRouteLabel}` : '';
+    taipeiFSectionCenteringSummary.value = `(${idx + 1}/${r.rowCount})${secLbl} · ${lbl} ${r.moved ? '已位移' : r.canMove ? '暫時受阻' : '無法移動'} → (${Math.round(r.highlightX)},${Math.round(r.highlightY)})`;
+
+    const n = r.rowCount;
+    if (idx === n - 1 && taipeiFSectionCenteringRoundMoves.value === 0) {
+      stopTaipeiFSectionCenteringTimerOnly();
+      taipeiFSectionCenteringSummary.value = '本輪無位移（可再按「下一步」從頭掃）';
+      taipeiFSectionCenteringStationIndex.value = 0;
+      taipeiFSectionCenteringRoundMoves.value = 0;
+      return;
+    }
+    taipeiFSectionCenteringStationIndex.value = (idx + 1) % n;
+  };
+
+  const stepTaipeiFSectionCenteringOnce = () => {
+    stopTaipeiFSectionCenteringTimerOnly();
+    stopTaipeiFCenteringAutoTimerOnly();
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    taipeiFColHighlightStep.value = -1;
+    taipeiFRowHighlightStep.value = -1;
+    dataStore.clearTaipeiFColRouteHighlight();
+    dataStore.clearTaipeiFRowRouteHighlight();
+    runTaipeiFSectionCenteringSingleTick();
+  };
+
+  const toggleTaipeiFSectionCenteringAuto = () => {
+    if (taipeiFSectionCenteringAutoIntervalId.value != null) {
+      stopTaipeiFSectionCenteringAuto();
+      return;
+    }
+    stopTaipeiFCenteringAutoAdvance();
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    taipeiFColHighlightStep.value = -1;
+    taipeiFRowHighlightStep.value = -1;
+    dataStore.clearTaipeiFColRouteHighlight();
+    dataStore.clearTaipeiFRowRouteHighlight();
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId) || !layer.spaceNetworkGridJsonData?.length)
+      return;
+    taipeiFSectionCenteringStationIndex.value = 0;
+    taipeiFSectionCenteringRoundMoves.value = 0;
+    runTaipeiFSectionCenteringSingleTick();
+    taipeiFSectionCenteringAutoIntervalId.value = setInterval(
+      runTaipeiFSectionCenteringSingleTick,
+      TAIPEI_F_AUTO_INTERVAL_MS
+    );
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const toggleTaipeiFAutoAdvance = (axis) => {
+    if (axis === 'col') {
+      if (taipeiFColAutoIntervalId.value != null) {
+        stopTaipeiFColAutoAdvance();
+        return;
+      }
+      stopTaipeiFRowAutoAdvance();
+      stopTaipeiFCenteringAutoAdvance();
+      const layer = currentLayer.value;
+      if (!layer || !isTaipeiTestFLayerTab(layer.layerId)) return;
+      advanceTaipeiFColHighlight();
+      taipeiFColAutoIntervalId.value = setInterval(
+        () => advanceTaipeiFColHighlight(),
+        TAIPEI_F_AUTO_INTERVAL_MS
+      );
+      return;
+    }
+    if (axis !== 'row') return;
+    if (taipeiFRowAutoIntervalId.value != null) {
+      stopTaipeiFRowAutoAdvance();
+      return;
+    }
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFCenteringAutoAdvance();
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId)) return;
+    advanceTaipeiFRowHighlight();
+    taipeiFRowAutoIntervalId.value = setInterval(
+      () => advanceTaipeiFRowHighlight(),
+      TAIPEI_F_AUTO_INTERVAL_MS
+    );
+  };
+
+  watch(currentLayer, () => {
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    stopTaipeiFCenteringAutoAdvance();
+    stopTaipeiFSectionCenteringAuto();
+    stopTaipeiL3ReductionAuto();
+  });
+
+  onUnmounted(() => {
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    stopTaipeiFCenteringAutoAdvance();
+    stopTaipeiFSectionCenteringAuto();
+    stopTaipeiL3ReductionAuto();
+  });
+
+  /** 黑點站向示意圖幾何中心（藍虛線）靠攏；僅更新黑點格座標，不修改折線轉折 */
+  const runTaipeiFLineStationsTowardSchematicCenter = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId) || !layer.spaceNetworkGridJsonData?.length)
+      return;
+    stopTaipeiFCenteringAutoAdvance();
+    stopTaipeiFSectionCenteringAuto();
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    taipeiFColHighlightStep.value = -1;
+    taipeiFRowHighlightStep.value = -1;
+    dataStore.clearTaipeiFColRouteHighlight();
+    dataStore.clearTaipeiFRowRouteHighlight();
+    const stats = runLineStationsTowardSchematicCenter(layer);
+    layer.dashboardData = {
+      ...(typeof layer.dashboardData === 'object' && layer.dashboardData
+        ? layer.dashboardData
+        : {}),
+      centeringTowardSchematicWithRoutes: stats,
+    };
+  };
+
+  /** 僅清單路段黑點：外層輪重複至該子集無人可動（與向心一鍵相同收斂條件，僅篩選對象不同） */
+  const runTaipeiFListedSectionStationsTowardSchematicCenterComplete = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestFLayerTab(layer.layerId) || !layer.spaceNetworkGridJsonData?.length)
+      return;
+    stopTaipeiFCenteringAutoAdvance();
+    stopTaipeiFSectionCenteringAuto();
+    stopTaipeiFColAutoAdvance();
+    stopTaipeiFRowAutoAdvance();
+    taipeiFColHighlightStep.value = -1;
+    taipeiFRowHighlightStep.value = -1;
+    dataStore.clearTaipeiFColRouteHighlight();
+    dataStore.clearTaipeiFRowRouteHighlight();
+    const stats = runListedSectionStationsTowardSchematicCenter(layer);
+    layer.dashboardData = {
+      ...(typeof layer.dashboardData === 'object' && layer.dashboardData
+        ? layer.dashboardData
+        : {}),
+      centeringTowardSchematicListedSection: stats,
+    };
+  };
+
+  watch(
+    () => currentLayer.value?.layerId,
+    (id) => {
+      if (!isTaipeiTestFLayerTab(id)) {
+        taipeiFColHighlightStep.value = -1;
+        taipeiFRowHighlightStep.value = -1;
+        dataStore.clearTaipeiFColRouteHighlight();
+        dataStore.clearTaipeiFRowRouteHighlight();
+        stopTaipeiFCenteringAutoAdvance();
+      }
+      if (id !== 'taipei_h2') {
+        dataStore.leaveTaipeiH2NavigationContext();
+        syncTaipeiH2TrafficDraftFromStore();
+      }
+      if (id !== 'taipei_c5') {
+        dataStore.clearTaipeiC5TrafficHighlights();
+        syncTaipeiC5TrafficDraftFromStore();
+      }
+      if (id !== 'taipei_c6') {
+        dataStore.clearTaipeiC6TrafficHighlights();
+        syncTaipeiC6TrafficDraftFromStore();
+      }
+    }
+  );
+
+  const unwrapLayoutTest3Routes = () => {
+    const d = currentLayer.value?.layoutGridJsonData_Test3;
+    if (!d) return null;
+    if (Array.isArray(d)) return d;
+    if (typeof d === 'object' && Array.isArray(d.routes)) return d.routes;
+    return null;
+  };
+
+  /** test2：操作 tab 改動 Test3 版面後，同步空間網路分頁用的 routes */
+  const syncSpaceNetworkFromTest2Layout = () => {
+    if (currentLayer.value?.layerId !== 'taipei_6_1_test2') return;
+    const routes = unwrapLayoutTest3Routes();
+    if (!routes) return;
+    currentLayer.value.spaceNetworkGridJsonData = JSON.parse(JSON.stringify(routes));
+  };
+
+  /** test3／test4：改動 Test4 版面後同步 spaceNetworkGridJsonData */
+  const syncSpaceNetworkFromTest3Layout = () => {
+    const id = currentLayer.value?.layerId;
+    if (!isTaipei6_1Test3Or4LayerId(id)) return;
+    const layout = currentLayer.value.layoutGridJsonData_Test4;
+    if (!Array.isArray(layout)) return;
+    currentLayer.value.spaceNetworkGridJsonData = JSON.parse(JSON.stringify(layout));
+  };
+
+  const isTaipeiTestStraightening = computed(() => {
+    return currentLayer.value && isTaipeiTestStraighteningLayerId(currentLayer.value.layerId);
+  });
+
+  /** 執行下一步：具 geojson／layout／space 路網；k3／l3 另認分頁專用路網欄位 */
+  const currentLayerHasExecuteInputData = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer) return false;
+    if (
+      layer.layerId === 'taipei_k3' ||
+      layer.layerId === 'taipei_sn4_k' ||
+      layer.layerId === 'taipei_k3_dp_nd' ||
+      layer.layerId === 'taipei_k3_dp_nd_2' ||
+      layer.layerId === 'taipei_a4' ||
+      layer.layerId === 'taipei_b4' ||
+      layer.layerId === 'taipei_c4' ||
+      layer.layerId === 'taipei_a5' ||
+      layer.layerId === 'taipei_b5' ||
+      layer.layerId === 'taipei_c5' ||
+      layer.layerId === 'taipei_a6' ||
+      layer.layerId === 'taipei_b6' ||
+      layer.layerId === 'taipei_c6'
+    ) {
+      const hasK3Tab =
+        Array.isArray(layer.spaceNetworkGridJsonDataK3Tab) &&
+        layer.spaceNetworkGridJsonDataK3Tab.length > 0;
+      const hasSn =
+        Array.isArray(layer.spaceNetworkGridJsonData) && layer.spaceNetworkGridJsonData.length > 0;
+      return !!(layer.geojsonData || layer.layoutGridJsonData || hasSn || hasK3Tab);
+    }
+    if (layer.layerId === 'taipei_l3' || layer.layerId === 'taipei_sn4_l') {
+      const hasL3Tab =
+        Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) &&
+        layer.spaceNetworkGridJsonDataL3Tab.length > 0;
+      const hasSn =
+        Array.isArray(layer.spaceNetworkGridJsonData) && layer.spaceNetworkGridJsonData.length > 0;
+      return !!(layer.geojsonData || layer.layoutGridJsonData || hasSn || hasL3Tab);
+    }
+    if (layer.layerId === 'taipei_m3' || layer.layerId === 'taipei_sn4_m') {
+      const hasM3Tab =
+        Array.isArray(layer.spaceNetworkGridJsonDataM3Tab) &&
+        layer.spaceNetworkGridJsonDataM3Tab.length > 0;
+      const hasSn =
+        Array.isArray(layer.spaceNetworkGridJsonData) && layer.spaceNetworkGridJsonData.length > 0;
+      return !!(layer.geojsonData || layer.layoutGridJsonData || hasSn || hasM3Tab);
+    }
+    return !!(layer.geojsonData || layer.layoutGridJsonData || layer.spaceNetworkGridJsonData);
+  });
+
+  const isNetworkDrawSketchLayer = computed(() =>
+    isRegisteredNetworkDrawSketchLayerId(currentLayer.value?.layerId)
+  );
+
+  const isNetworkDrawSketchSn4Layer = computed(() =>
+    isRegisteredNetworkDrawSketchSn4LayerId(currentLayer.value?.layerId)
+  );
+
+  const networkDrawSketchHasLines = computed(() => {
+    const lid = currentLayer.value?.layerId;
+    if (!isRegisteredNetworkDrawSketchLayerId(lid)) return false;
+    const lines = dataStore.getNetworkDrawSketchPolylinesForLayer(lid);
+    if (!Array.isArray(lines)) return false;
+    return lines.some((pl) => Array.isArray(pl) && pl.length >= 2);
+  });
+
+  /** 手繪「加站點」於 store 之紫色標記數（與 NetworkDrawTab 同步） */
+  const networkDrawSketchStationCount = computed(() => {
+    const lid = currentLayer.value?.layerId;
+    if (!isRegisteredNetworkDrawSketchLayerId(lid)) return 0;
+    const m = dataStore.getNetworkDrawSketchMarkersForLayer(lid);
+    const s = m?.station;
+    return Array.isArray(s) ? s.length : 0;
+  });
+
+  const networkDrawSketchSn4HasLines = computed(() => {
+    const lid = currentLayer.value?.layerId;
+    if (!isRegisteredNetworkDrawSketchSn4LayerId(lid)) return false;
+    const lines = dataStore.getNetworkDrawSketchSn4PolylinesForLayer(lid);
+    if (!Array.isArray(lines)) return false;
+    return lines.some((pl) => Array.isArray(pl) && pl.length >= 2);
+  });
+
+  const networkDrawSketchSn4StationCount = computed(() => {
+    const lid = currentLayer.value?.layerId;
+    if (!isRegisteredNetworkDrawSketchSn4LayerId(lid)) return 0;
+    const m = dataStore.getNetworkDrawSketchSn4MarkersForLayer(lid);
+    const s = m?.station;
+    return Array.isArray(s) ? s.length : 0;
+  });
+
+  const networkDrawSketchWgs84GeoJsonDownloadableForLayerId = (layerId) => {
+    if (!isRegisteredNetworkDrawSketchLayerId(layerId)) return false;
+    if (!dataStore.getNetworkDrawSketchUseGeoForLayer(layerId)) return false;
+    const lines = dataStore.getNetworkDrawSketchPolylinesForLayer(layerId);
+    if (Array.isArray(lines) && lines.some((pl) => pl && pl.length >= 2)) return true;
+    const fc = dataStore.findLayerById(layerId)?.networkDrawSketchExportWgs84GeoJson;
+    return !!(
+      fc &&
+      fc.type === 'FeatureCollection' &&
+      Array.isArray(fc.features) &&
+      fc.features.length > 0
+    );
+  };
+
+  const networkDrawSketchSn4Wgs84GeoJsonDownloadableForLayerId = (layerId) => {
+    if (!isRegisteredNetworkDrawSketchSn4LayerId(layerId)) return false;
+    if (!dataStore.getNetworkDrawSketchSn4UseGeoForLayer(layerId)) return false;
+    const layer = dataStore.findLayerById(layerId);
+    const gj = layer?.geojsonData;
+    if (gj?.features?.length) return true;
+    const fc = layer?.networkDrawSketchExportWgs84GeoJson;
+    return !!(
+      fc &&
+      fc.type === 'FeatureCollection' &&
+      Array.isArray(fc.features) &&
+      fc.features.length > 0
+    );
+  };
+
+  const controlExecuteNextDisabled = computed(() => {
+    if (isNetworkDrawSketchLayer.value) return !networkDrawSketchHasLines.value;
+    if (isNetworkDrawSketchSn4Layer.value) {
+      const L = currentLayer.value;
+      const hasGj = !!(L?.geojsonData?.features && L.geojsonData.features.length > 0);
+      return !hasGj && !networkDrawSketchSn4HasLines.value;
+    }
+    return !currentLayerHasExecuteInputData.value;
+  });
+
+  /** taipei_d3：c3→d3 座標正規化後之網格長寬、四分樹／Grid Unit、最近兩點（dashboard 由 executeTaipeiTest3_C3_To_D3 寫入） */
+  const taipeiD3CoordNormalizeReport = computed(() => {
+    const layer = currentLayer.value;
+    const d = layer?.dashboardData;
+    if (
+      (layer?.layerId !== 'taipei_d3' && layer?.layerId !== 'taipei_sn4_d') ||
+      !d?.coordNormalize ||
+      !d.gridSizeCells
+    )
+      return null;
+    return d;
+  });
+
+  /**
+   * taipei_e3：僅「路網上有連線」之 connect–connect 邊（同一路段 points 上相鄰兩格皆為 connect）；
+   * 紅＝路網 degree≥2，藍＝degree≤1。角度採離散標註（與路網僅水平／垂直／斜向一致）：
+   * 水平與垂直皆 0°；左上–右下、右上–左下等斜向（|Δx| 與 |Δy| 皆 >0）皆 45°。無向邊去重；起迄依格鍵排序。
+   */
+  const taipeiE3RedBluePairsAngleReport = computed(() => {
+    const layer = currentLayer.value;
+    if (
+      (layer?.layerId !== 'taipei_e3' && layer?.layerId !== 'taipei_sn4_e') ||
+      !Array.isArray(layer.spaceNetworkGridJsonData)
+    ) {
+      return null;
+    }
+    const segments = layer.spaceNetworkGridJsonData;
+    if (segments.length === 0) return { rows: [], points: [] };
+
+    const hasValue = (v) => v !== undefined && v !== null;
+    const getXY = (pt) =>
+      Array.isArray(pt) ? [Number(pt[0]), Number(pt[1])] : [Number(pt?.x ?? 0), Number(pt?.y ?? 0)];
+    const ptKey = (x, y) => `${Math.round(Number(x))},${Math.round(Number(y))}`;
+
+    const isConnectAt = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+      const nodeType =
+        node?.node_type ||
+        ptProps?.node_type ||
+        tags?.node_type ||
+        (hasValue(node?.connect_number) ? 'connect' : '');
+      const hasConnectNumber =
+        hasValue(node?.connect_number) ||
+        hasValue(tags?.connect_number) ||
+        hasValue(ptProps?.connect_number) ||
+        hasValue(ptProps?.tags?.connect_number);
+      return nodeType === 'connect' || hasConnectNumber;
+    };
+
+    const connectNumberAt = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+      const cn =
+        node?.connect_number ??
+        tags?.connect_number ??
+        ptProps?.connect_number ??
+        ptProps?.tags?.connect_number;
+      return hasValue(cn) ? String(cn) : '';
+    };
+
+    const stationNameAt = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+      const raw =
+        node?.station_name ||
+        ptProps?.station_name ||
+        tags?.station_name ||
+        node?.tags?.name ||
+        tags?.name ||
+        ptProps?.name ||
+        '';
+      const s = String(raw).trim();
+      return s === '—' || s === '－' ? '' : s;
+    };
+
+    const nameByGridKey = new Map();
+    const nameByConnectNumber = new Map();
+    const cd = layer.spaceNetworkGridJsonData_ConnectData;
+    if (Array.isArray(cd)) {
+      for (const c of cd) {
+        if (!c) continue;
+        const xg = Number(c.x_grid ?? c.tags?.x_grid);
+        const yg = Number(c.y_grid ?? c.tags?.y_grid);
+        if (Number.isFinite(xg) && Number.isFinite(yg)) {
+          const gk = ptKey(xg, yg);
+          const nm = (c.station_name ?? c.tags?.station_name ?? c.tags?.name ?? '')
+            .toString()
+            .trim();
+          if (nm && nm !== '—' && nm !== '－' && !nameByGridKey.has(gk)) nameByGridKey.set(gk, nm);
+        }
+        const cnum = c.connect_number ?? c.tags?.connect_number;
+        if (hasValue(cnum)) {
+          const cks = String(cnum);
+          const nm = (c.station_name ?? c.tags?.station_name ?? c.tags?.name ?? '')
+            .toString()
+            .trim();
+          if (nm && nm !== '—' && nm !== '－' && !nameByConnectNumber.has(cks)) {
+            nameByConnectNumber.set(cks, nm);
+          }
+        }
+      }
+    }
+
+    const resolveStationName = (seg, idx, gridKey, cnStr) => {
+      let nm = stationNameAt(seg, idx);
+      if (!nm) nm = nameByGridKey.get(gridKey) || '';
+      if (!nm && cnStr) nm = nameByConnectNumber.get(cnStr) || '';
+      return nm;
+    };
+
+    const degreeMap = new Map();
+    for (const seg of segments) {
+      const pts = seg.points || [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay] = getXY(pts[i]);
+        const [bx, by] = getXY(pts[i + 1]);
+        const k1 = ptKey(ax, ay);
+        const k2 = ptKey(bx, by);
+        if (k1 === k2) continue;
+        degreeMap.set(k1, (degreeMap.get(k1) || 0) + 1);
+        degreeMap.set(k2, (degreeMap.get(k2) || 0) + 1);
+      }
+    }
+
+    const connectByKey = new Map();
+    for (const seg of segments) {
+      const pts = seg.points || [];
+      for (let idx = 0; idx < pts.length; idx++) {
+        if (!isConnectAt(seg, idx)) continue;
+        const [x, y] = getXY(pts[idx]);
+        const key = ptKey(x, y);
+        const deg = degreeMap.get(key) || 0;
+        const rb = deg >= 2 ? '紅' : '藍';
+        const cn = connectNumberAt(seg, idx);
+        const stationName = resolveStationName(seg, idx, key, cn);
+        if (!connectByKey.has(key)) {
+          connectByKey.set(key, {
+            key,
+            x: Math.round(x),
+            y: Math.round(y),
+            rb,
+            degree: deg,
+            connectNumber: cn,
+            stationName,
+          });
+        } else {
+          const ex = connectByKey.get(key);
+          if (!ex.stationName && stationName) ex.stationName = stationName;
+          if (!ex.connectNumber && cn) ex.connectNumber = cn;
+        }
+      }
+    }
+
+    const points = Array.from(connectByKey.values());
+
+    const vertexAt = (seg, idx) => {
+      const [x, y] = getXY(seg.points[idx]);
+      const key = ptKey(x, y);
+      const found = connectByKey.get(key);
+      if (found) return found;
+      const deg = degreeMap.get(key) || 0;
+      const cn = connectNumberAt(seg, idx);
+      return {
+        key,
+        x: Math.round(x),
+        y: Math.round(y),
+        rb: deg >= 2 ? '紅' : '藍',
+        degree: deg,
+        connectNumber: cn,
+        stationName: resolveStationName(seg, idx, key, cn),
+      };
+    };
+
+    /** 水平、垂直 → 0°；斜向（|Δx|、|Δy| 皆 >0）→ 45° */
+    const discreteEdgeAngleDeg = (dx, dy) => {
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+      if (adx === 0 && ady === 0) return null;
+      if (adx === 0 || ady === 0) return 0;
+      return 45;
+    };
+
+    const seenUndirectedEdge = new Set();
+    const rows = [];
+    for (const seg of segments) {
+      const pts = seg.points || [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (!isConnectAt(seg, i) || !isConnectAt(seg, i + 1)) continue;
+        const a = vertexAt(seg, i);
+        const b = vertexAt(seg, i + 1);
+        const uk = a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`;
+        if (seenUndirectedEdge.has(uk)) continue;
+        seenUndirectedEdge.add(uk);
+        const from = a.key <= b.key ? a : b;
+        const to = a.key <= b.key ? b : a;
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const angleDeg = discreteEdgeAngleDeg(dx, dy);
+        if (angleDeg == null) continue;
+        rows.push({
+          angleDeg,
+          from,
+          to,
+          dx,
+          dy,
+          dist: Math.abs(dx) + Math.abs(dy),
+        });
+      }
+    }
+
+    rows.sort((u, v) => {
+      if (u.angleDeg !== v.angleDeg) return u.angleDeg - v.angleDeg;
+      if (u.dist !== v.dist) return u.dist - v.dist;
+      return `${u.from.key}->${u.to.key}`.localeCompare(`${v.from.key}->${v.to.key}`);
+    });
+
+    return { rows, points };
+  });
+
+  /** 目前圖層：路段車站節點（不含純幾何轉折；與地圖 isRealStation 一致）；支援扁平或 2-5 式 routes */
+  const layerSegmentStationNodesReport = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer) return null;
+    /** taipei_k3／taipei_k4／taipei_l3：黑點相銜權重改見 Data 分頁 dataTableData，此處不列節點清單 */
+    if (
+      layer.layerId === 'taipei_k3' ||
+      layer.layerId === 'taipei_sn4_k' ||
+      layer.layerId === 'taipei_a4' ||
+      layer.layerId === 'taipei_b4' ||
+      layer.layerId === 'taipei_c4' ||
+      layer.layerId === 'taipei_a5' ||
+      layer.layerId === 'taipei_b5' ||
+      layer.layerId === 'taipei_c5' ||
+      layer.layerId === 'taipei_a6' ||
+      layer.layerId === 'taipei_b6' ||
+      layer.layerId === 'taipei_c6' ||
+      layer.layerId === 'taipei_l3' ||
+      layer.layerId === 'taipei_sn4_l' ||
+      layer.layerId === 'taipei_m3' ||
+      layer.layerId === 'taipei_sn4_m'
+    ) {
+      return null;
+    }
+    if (isTaipeiTestStraighteningLayerId(layer.layerId)) return null;
+    if (!layer.isLoaded) {
+      return {
+        layerId: layer.layerId,
+        layerName: layer.layerName ?? layer.layerId,
+        flatSegmentCount: 0,
+        segments: [],
+        notLoaded: true,
+        noSpaceNetwork: false,
+      };
+    }
+    if (layer.spaceNetworkGridJsonData == null) {
+      return {
+        layerId: layer.layerId,
+        layerName: layer.layerName ?? layer.layerId,
+        flatSegmentCount: 0,
+        segments: [],
+        notLoaded: false,
+        noSpaceNetwork: true,
+      };
+    }
+    const segs = normalizeSpaceNetworkDataToFlatSegments(layer.spaceNetworkGridJsonData);
+    if (!Array.isArray(segs) || segs.length === 0) {
+      return {
+        layerId: layer.layerId,
+        layerName: layer.layerName ?? layer.layerId,
+        flatSegmentCount: 0,
+        segments: [],
+        notLoaded: false,
+        noSpaceNetwork: false,
+      };
+    }
+
+    const isH3 = layer.layerId === 'taipei_h3' || layer.layerId === 'taipei_sn4_h';
+    const a3Layer = isH3
+      ? dataStore.findLayerById(layer.layerId === 'taipei_sn4_h' ? 'taipei_sn4_a' : 'taipei_a3')
+      : null;
+    const a3Rows = a3Layer?.processedJsonData;
+    const a3Ok = isH3 && isMapDrawnRoutesExportArray(a3Rows);
+
+    const fmt = (v) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return '?';
+      return Number.isInteger(n * 2) ? String(n) : n.toFixed(4);
+    };
+
+    const exportRowPerSeg = mapFlatSegmentsToExportRowsOrNull(segs);
+
+    const isStationNode = (node) => {
+      if (!node || typeof node !== 'object') return false;
+      const nodeType = node.node_type ?? 'line';
+      if (nodeType === 'connect') return true;
+      const sname = (node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? '').trim();
+      const sid = (node.station_id ?? node.tags?.station_id ?? '').toString().trim();
+      if (sname || sid) return true;
+      return Boolean(node.tags?._forceDrawBlackDot);
+    };
+
+    const segments = segs
+      .map((seg, segIdx) => {
+        const routeName = seg.route_name ?? seg.name ?? '未知路線';
+        const pts = seg.points ?? [];
+        const nodes = seg.nodes ?? [];
+        const exportRow = exportRowPerSeg[segIdx] ?? null;
+        let stationNodes = exportRow ? exportRowToControlStationNodes(exportRow, pts, fmt) : [];
+        if (stationNodes.length === 0) {
+          for (let i = 0; i < pts.length; i++) {
+            const node = nodes[i] ?? null;
+            if (!isStationNode(node)) continue;
+            const pt = pts[i];
+            const x = Array.isArray(pt) ? pt[0] : pt?.x;
+            const y = Array.isArray(pt) ? pt[1] : pt?.y;
+            const nodeType = node?.node_type ?? 'line';
+            const sname = (
+              node?.station_name ??
+              node?.tags?.station_name ??
+              node?.tags?.name ??
+              ''
+            ).trim();
+            const sid = (node?.station_id ?? node?.tags?.station_id ?? '').toString().trim();
+            stationNodes.push({
+              idx: i,
+              x: fmt(x),
+              y: fmt(y),
+              nodeType,
+              stationName: sname,
+              stationId: sid,
+            });
+          }
+        }
+        const a3Row = a3Ok ? findBestA3RowForSegment(seg, a3Rows) : null;
+        const a3Mids = a3Row ? a3MidStationLabels(a3Row) : [];
+        const a3Correspondence = a3Row
+          ? {
+              summary: a3ExportRowEndpointSummary(a3Row),
+              midCount: (a3Row.segment?.stations || []).length,
+              midLabels: a3Mids,
+            }
+          : null;
+        return {
+          segIdx: segIdx + 1,
+          routeName,
+          stationNodes,
+          a3Correspondence,
+        };
+      })
+      .filter((s) => s.stationNodes.length > 0);
+
+    return {
+      layerId: layer.layerId,
+      layerName: layer.layerName ?? layer.layerId,
+      flatSegmentCount: segs.length,
+      segments,
+      notLoaded: false,
+      noSpaceNetwork: false,
+    };
+  });
+
+  /** (7→8) 迴圈執行次數：追蹤一鍵流程中串接Flip → ㄈ縮減的迴圈次數 */
+  const connectFlipNShapeLoopCount = ref(0);
+
+  /** 網格正規化／結果圖層：顯示紅點＋黑點最小水平／垂直間距 */
+  const isGridNormStationMetricsLayer = computed(() => {
+    const id = currentLayer.value?.layerId;
+    return isTaipeiTestGridNormLayerTab(id);
+  });
+
+  /** 疊加縮減預覽：自動「下一步」 */
+  const isOverlayShrinkAutoRunning = ref(false);
+  let overlayShrinkAutoHighlightTimer = null;
+
+  /** 疊加縮減預覽：逐步高亮「會保留」的欄／列（b→c 未套用前） */
+  const overlayShrinkPreviewPlanLength = computed(() => {
+    const p = currentLayer.value?.overlayShrinkStepPlan;
+    return Array.isArray(p) ? p.length : 0;
+  });
+
+  const advanceOverlayShrinkHighlight = () => {
+    const layer = currentLayer.value;
+    if (!layer?.overlayShrinkApplyPending || !layer.overlayShrinkStepPlan?.length) return;
+    const plan = layer.overlayShrinkStepPlan;
+    let idx = (layer.overlayShrinkStepIndex ?? -1) + 1;
+    if (idx >= plan.length) idx = 0;
+    layer.overlayShrinkStepIndex = idx;
+    const step = plan[idx];
+    dataStore.setHighlightedOverlayShrinkStrip({
+      layerId: layer.layerId,
+      kind: step.kind,
+      index: step.index,
+    });
+  };
+
+  /** 自動執行：每 0.1 秒下一步（點擊切換開／關） */
+  const runOverlayShrinkAutoHighlight = () => {
+    if (overlayShrinkAutoHighlightTimer) {
+      clearInterval(overlayShrinkAutoHighlightTimer);
+      overlayShrinkAutoHighlightTimer = null;
+      isOverlayShrinkAutoRunning.value = false;
+      return;
+    }
+    if (!currentLayer.value?.overlayShrinkApplyPending || !overlayShrinkPreviewPlanLength.value)
+      return;
+    isOverlayShrinkAutoRunning.value = true;
+    overlayShrinkAutoHighlightTimer = setInterval(advanceOverlayShrinkHighlight, 100);
+  };
+
+  const applyTaipeiCOverlayShrink = async () => {
+    if (overlayShrinkAutoHighlightTimer) {
+      clearInterval(overlayShrinkAutoHighlightTimer);
+      overlayShrinkAutoHighlightTimer = null;
+      isOverlayShrinkAutoRunning.value = false;
+    }
+    const tab = activeLayerTab.value;
+    if (!isTaipeiTestCLayerTab(tab)) return;
+    const layer = dataStore.findLayerById(tab);
+    if (!layer?.spaceNetworkGridJsonData) return;
+    applyOverlayNormalizedGridCoordinates(layer);
+    const repNorm = computeGridStationMinAxisDistances(layer);
+    if (repNorm.minWidth != null && repNorm.minHeight != null && repNorm.pointCount >= 2) {
+      layer.minSpacingOverlayCell = { cellW: repNorm.minWidth, cellH: repNorm.minHeight };
+    } else {
+      layer.minSpacingOverlayCell = null;
+    }
+    await nextTick();
+  };
+
+  /** 切換圖層時：離開清除 highlight；進入 taipei_c 且有黑點時設 highlight */
+  watch(
+    () => activeLayerTab.value,
+    (tab) => {
+      if (overlayShrinkAutoHighlightTimer) {
+        clearInterval(overlayShrinkAutoHighlightTimer);
+        overlayShrinkAutoHighlightTimer = null;
+        isOverlayShrinkAutoRunning.value = false;
+      }
+      if (!isTaipeiTestCLayerTab(tab)) {
+        dataStore.setHighlightedBlackStation(null);
+        dataStore.setHighlightedOverlayShrinkStrip(null);
+        return;
+      }
+      const rows = gridNormBlackStationRows.value;
+      if (rows.length > 0) {
+        const row = rows[0];
+        dataStore.setHighlightedBlackStation({
+          layerId: tab,
+          x: row.x,
+          y: row.y,
+          stationId: row.meta?.station_id ?? row.meta?.tags?.station_id ?? null,
+        });
+      } else {
+        dataStore.setHighlightedBlackStation(null);
+      }
+    },
+    { immediate: true }
+  );
+
+  const gridStationMinAxisReport = computed(() => {
+    if (!isGridNormStationMetricsLayer.value || !currentLayer.value) return null;
+    return computeGridStationMinAxisDistances(currentLayer.value);
+  });
+
+  /** b→c 四等分疊加網格（execute_b_to_c_test 寫入 dashboardData） */
+  const overlayQuadSubdivideInfo = computed(
+    () => currentLayer.value?.dashboardData?.overlayQuadSubdivide ?? null
+  );
+
+  /** 與 gridNormalizationMinDistance 之 station 鍵一致，供 taipei_b 對照「疊加網格前」座標 */
+  const blackStationPlacementLookupKey = (p) => {
+    const id = p.meta?.station_id ?? p.meta?.tags?.station_id;
+    if (id != null && String(id).trim() !== '') return `id:${String(id).trim()}`;
+    const nm = String(p.name ?? '')
+      .trim()
+      .replace(/^—$/, '')
+      .replace(/^－$/, '');
+    return nm ? `name:${nm}` : `pos:${p.name}|${Number(p.x).toFixed(5)},${Number(p.y).toFixed(5)}`;
+  };
+
+  /** 網格正規化（taipei_c／d／e）：黑點刪減後座標＝ StationData x_grid,y_grid（與 JSON 一致，不依路段重算） */
+  const gridNormBlackStationRows = computed(() => {
+    if (!isGridNormStationMetricsLayer.value || !currentLayer.value) return [];
+
+    const bId = getTaipeiTestLayerBForGridNormLayer(currentLayer.value.layerId);
+    const layerB = bId ? dataStore.findLayerById(bId) : null;
+    const preMap = new Map();
+    if (
+      layerB &&
+      Array.isArray(layerB.spaceNetworkGridJsonData) &&
+      layerB.spaceNetworkGridJsonData.length &&
+      Array.isArray(layerB.spaceNetworkGridJsonData_ConnectData) &&
+      Array.isArray(layerB.spaceNetworkGridJsonData_SectionData)
+    ) {
+      const rawB = collectStationPlacementPoints(layerB).filter((p) => p.kind === 'station');
+      const seenB = new Set();
+      for (const p of rawB) {
+        const key = blackStationPlacementLookupKey(p);
+        if (seenB.has(key)) continue;
+        seenB.add(key);
+        preMap.set(key, { x: p.x, y: p.y });
+      }
+    }
+
+    const rows = collectLineStationGridPointsFromStationData(
+      currentLayer.value.spaceNetworkGridJsonData_StationData
+    );
+    const bounds = getSchematicPlotBoundsFromLayer(currentLayer.value);
+    return rows.map((row) => {
+      const lk = blackStationPlacementLookupKey(row);
+      const pre = preMap.get(lk) ?? null;
+      const base = {
+        ...row,
+        preOverlayX: pre?.x ?? null,
+        preOverlayY: pre?.y ?? null,
+      };
+      if (!bounds) {
+        return { ...base, towardCenterLabel: '—' };
+      }
+      const [px, py] = mapNetworkToSchematicPlotXY(currentLayer.value, row.x, row.y);
+      return {
+        ...base,
+        towardCenterLabel: towardCenterMoveLabel(
+          px,
+          py,
+          bounds.centerX,
+          bounds.centerY,
+          !!row.seg_is_h,
+          !!row.seg_is_v
+        ),
+      };
+    });
+  });
+
+  const gridNormCompanionBLayerId = computed(
+    () => getTaipeiTestLayerBForGridNormLayer(currentLayer.value?.layerId) ?? 'taipei_b'
+  );
+
+  /** 黑點一覽表格列高亮：與地圖上目前 highlight 的黑點一致（僅 taipei_c） */
+  const isTaipeiCBlackRowTableActive = (row) => {
+    const lid = currentLayer.value?.layerId;
+    if (!isTaipeiTestCLayerTab(lid)) return false;
+    const h = dataStore.highlightedBlackStation;
+    return !!(h && h.layerId === lid && h.x === row.x && h.y === row.y);
+  };
+
+  const fmtGridXY = (x, y) => {
+    const fx = Number(x);
+    const fy = Number(y);
+    const xs = Number.isFinite(fx) ? fx.toFixed(2) : String(x);
+    const ys = Number.isFinite(fy) ? fy.toFixed(2) : String(y);
+    return `(${xs}, ${ys})`;
+  };
+
+  /** taipei_c：整數座標顯示整數；非整數保留兩位，避免不同黑點看似重疊 */
+  const fmtGridNormCoord = (x, y) => {
+    if (isTaipeiTestCLayerTab(currentLayer.value?.layerId)) {
+      const fx = Number(x);
+      const fy = Number(y);
+      const nearInt = (v) => Number.isFinite(v) && Math.abs(v - Math.round(v)) < 1e-6;
+      const xs = nearInt(fx) ? String(Math.round(fx)) : fx.toFixed(2);
+      const ys = nearInt(fy) ? String(Math.round(fy)) : fy.toFixed(2);
+      return `(${xs}, ${ys})`;
+    }
+    return fmtGridXY(x, y);
+  };
+
+  /**
+   * 黑點表兩欄：列表／JSON 在套用縮減後已是「刪減後」座標，須用 gridTooltipMaps 還原「縮減前」疊加格。
+   * overlayReducedTooltipPair：若輸入為塌縮後索引則 overlay＝刪空前、reduced＝輸入；若輸入為疊加大座標則相反。
+   */
+  const fmtBlackStationCoordBeforeRemoval = (row) => {
+    const gm = currentLayer.value?.gridTooltipMaps;
+    const ix = Math.round(Number(row.x));
+    const iy = Math.round(Number(row.y));
+    if (!gm?.collapseSortedX?.length || !gm?.collapseSortedY?.length) {
+      return fmtGridNormCoord(ix, iy);
+    }
+    const pair = overlayReducedTooltipPair(ix, iy, gm);
+    if (pair.overlay != null) {
+      return fmtGridNormCoord(pair.overlay[0], pair.overlay[1]);
+    }
+    return fmtGridNormCoord(ix, iy);
+  };
+
+  const fmtBlackStationCoordAfterRemoval = (row) => {
+    const gm = currentLayer.value?.gridTooltipMaps;
+    const ix = Math.round(Number(row.x));
+    const iy = Math.round(Number(row.y));
+    if (!gm?.collapseSortedX?.length || !gm?.collapseSortedY?.length) {
+      return fmtGridNormCoord(ix, iy);
+    }
+    const pair = overlayReducedTooltipPair(ix, iy, gm);
+    return fmtGridNormCoord(pair.reduced[0], pair.reduced[1]);
+  };
+
+  /** taipei_b 層、尚未做四等分／疊加塌縮前之示意座標（與弧長配置同源） */
+  const fmtBlackStationCoordPreOverlay = (row) => {
+    if (row.preOverlayX == null || row.preOverlayY == null) return '—';
+    return fmtGridXY(row.preOverlayX, row.preOverlayY);
+  };
+
+  /** taipei_c：最小軸向間距在疊加格上為整數格寬／高 */
+  const fmtMinAxisDelta = (n) => {
+    if (n == null || !Number.isFinite(Number(n))) return '—';
+    const v = Number(n);
+    if (isTaipeiTestCLayerTab(currentLayer.value?.layerId)) return String(Math.round(v));
+    return v.toFixed(4);
+  };
+
+  /** taipei_a 的總段數；順序為同一 route_name 由頭到尾，再換下一個 route */
+  const hvZSegmentTotal = computed(() => {
+    if (!currentLayer.value || !isTaipeiTestStraighteningLayerId(currentLayer.value.layerId))
+      return 0;
+    return countHVZSegments(currentLayer.value.spaceNetworkGridJsonData);
+  });
+
+  /**
+   * 直線路段列表（供 flip 分析用）
+   */
+  const getTaipeiTestLayoutData = (routesData) => {
+    if (!Array.isArray(routesData)) return [];
+    if (routesData.length > 0 && routesData[0]?.segments && !routesData[0]?.points) {
+      return routesData.flatMap((route) =>
+        (route.segments || []).map((segment) => ({
+          ...segment,
+          name: route.route_name || route.name || 'Unknown',
+        }))
+      );
+    }
+    return routesData;
+  };
+
+  const straightSegments = computed(() => {
+    const data = currentLayer.value?.spaceNetworkGridJsonData;
+    return buildStraightSegments(getTaipeiTestLayoutData(data));
+  });
+
+  /** 偵測重疊路段（只高亮重疊區段），並設定 store 高亮 */
+  const detectOverlappingSegments = () => {
+    const segs = straightSegments.value;
+    const ranges = findOverlappingSegmentRanges(segs);
+    dataStore.setOverlappingSegmentHighlight(ranges);
+    dataStore.clearConnectOnOtherRouteHighlight();
+  };
+
+  /** taipei_a：一鍵執行 — 儲存車站資訊 → 路線直線化 → Z形 → Flip L → 末端簡化 → 路線串接 → (串接Flip → ㄈ縮減為L)loop 直到無 flip 且無縮減 → 重算交叉點 → 車站配置 */
+  const executeOneClickPipeline = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    if (!layer.spaceNetworkGridJsonData?.length) return;
+    saveStationInfo();
+    runStraightenCurrentLayer();
+    executeHVZAll();
+    executeFlipAll();
+    executeEndpointSimplify();
+    executeConnectFlipPreprocess();
+    // (7 → 8) loop：串接Flip 全部 → ㄈ縮減為L，重複直到本輪完全沒有 flip 與縮減
+    connectFlipNShapeLoopCount.value = 0;
+    let didWork = true;
+    while (didWork) {
+      connectFlipNShapeLoopCount.value++;
+      const flipped = executeConnectThenFlipAll();
+      const reduced = executeNShapeAll();
+      didWork = flipped || reduced;
+    }
+    executeReconfigureStations();
+    layer.showStationPlacement = true;
+    dataStore.advanceFlipStep();
+  };
+  dataStore.setTaipeiTestStraighteningPipeline(executeOneClickPipeline);
+
+  /** taipei_a：儲存車站資訊到 SectionData/ConnectData/StationData，存好後紅點黑點改由車站配置控制 */
+  const saveStationInfo = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    const { sectionData, connectData, stationData } = computeStationDataFromRoutes(data);
+    layer.spaceNetworkGridJsonData_SectionData = sectionData;
+    layer.spaceNetworkGridJsonData_ConnectData = connectData;
+    layer.spaceNetworkGridJsonData_StationData = stationData;
+    dataStore.advanceFlipStep();
+  };
+
+  /** 路線直線化：對當前圖層執行網格吸附＋插值（邏輯複製自 execute_2_1_to_2_2） */
+  const runStraightenCurrentLayer = () => {
+    const layer = currentLayer.value;
+    if (!layer || !layer.spaceNetworkGridJsonData?.length) return;
+    straightenRoutesOnCurrentLayer(layer);
+  };
+
+  /** 直線 Z 形水平垂直化（演算法見 applyHVZToSpaceNetwork.js） */
+  const executeHVZStep = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    dataStore.hvZNextIndex = applyHVZStepToSpaceNetworkData(data, dataStore.hvZNextIndex);
+    dataStore.advanceHVZStep();
+  };
+
+  /** taipei_a：一鍵完成，全部改為水平垂直，絕不留下非 HV 線；同路線不可重疊 */
+  const executeHVZAll = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    applyHVZAllToSpaceNetworkData(data);
+    dataStore.hvZNextIndex = countHVZSegments(data);
+    dataStore.advanceHVZStep();
+  };
+
+  /** taipei_a：Flip L 型總數（straightSegments 中相鄰兩段形成一個 L） */
+  const hvFlipLTotal = computed(() => {
+    const segs = straightSegments.value;
+    return Math.max(0, (segs?.length ?? 0) - 1);
+  });
+
+  /** taipei_a：下一步 flip 一個 L 型 */
+  const executeFlipStep = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    const totalL = hvFlipLTotal.value;
+    if (totalL <= 0) return;
+    const { nextFlipIndex, routesData } = applyFlipLStepToSpaceNetworkData(
+      data,
+      dataStore.hvFlipNextIndex
+    );
+    layer.spaceNetworkGridJsonData = routesData;
+    dataStore.hvFlipNextIndex = nextFlipIndex % Math.max(1, totalL);
+    dataStore.advanceFlipStep();
+  };
+
+  /** taipei_a：一鍵完成，flip 所有可 flip 的 L 型 */
+  const executeFlipAll = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    layer.spaceNetworkGridJsonData = applyFlipLAllToSpaceNetworkData(data);
+    dataStore.hvFlipNextIndex = 0;
+    dataStore.advanceFlipStep();
+  };
+
+  /** 串接Flip L型：末端簡化 — 末端裁切＋車站均勻分佈（與 Colab 2-6 同邏輯） */
+  const executeEndpointSimplify = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    layer.spaceNetworkGridJsonData = endpointSimplifyOnLayer(data);
+    dataStore.hvFlipNextIndex = 0;
+    dataStore.setConnectFlipOverlayVisible(false);
+    dataStore.advanceFlipStep();
+  };
+
+  /** 串接Flip L型：重新計算交叉點，把路線斷開（只更新 spaceNetworkGridJsonData；SectionData/ConnectData/StationData 由「儲存車站資訊」寫入後不再被此覆寫） */
+  const executeReconfigureStations = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    const oldConnect = layer.spaceNetworkGridJsonData_ConnectData ?? null;
+    const { routesData } = reconfigureStations(data, oldConnect);
+    layer.spaceNetworkGridJsonData = routesData;
+    dataStore.hvFlipNextIndex = 0;
+    dataStore.setConnectFlipOverlayVisible(false);
+    dataStore.advanceFlipStep();
+  };
+
+  /** 路線串接 — 同 route_name 串接成一條路線，移除紅點與黑點 */
+  const executeConnectFlipPreprocess = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return;
+    layer.spaceNetworkGridJsonData = mergeAndStripConnectPoints(data);
+    dataStore.hvFlipNextIndex = 0;
+    dataStore.setConnectFlipOverlayVisible(false);
+    dataStore.advanceFlipStep();
+  };
+
+  /** 串接Flip L型 專用 options：取消紅點會移動／與其他路線交叉；改用 ABCD 矩形內有其他路線轉折點／起迄點／線段正交交叉點 */
+  const CONNECT_FLIP_OPTIONS = {
+    skipConnectMove: true,
+    skipCrossing: true,
+    useRectangleOtherRouteCheck: true,
+  };
+
+  /** 空間網絡網格測試_2（taipei_a2）：轉折點有紅點則不可串接 Flip */
+  const getConnectFlipOptions = () => ({
+    ...CONNECT_FLIP_OPTIONS,
+    ...(currentLayer.value?.layerId === 'taipei_a2' ? { forbidFlipIfLCornerHasConnect: true } : {}),
+  });
+
+  /** taipei_a：串接Flip L型 - 下一步（串接後，若綠虛線則執行 flip 並重新計算，再切到下一 L）
+   * @returns {{ didFlip: boolean }} 本步是否有執行 flip
+   */
+  const executeConnectThenFlipStep = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return { didFlip: false };
+    let data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return { didFlip: false };
+    const merged = mergeRoutesByCoords(data);
+    data = merged;
+
+    const layoutData = getTaipeiTestLayoutData(data);
+    const straightSegs = buildStraightSegments(layoutData);
+    const totalL = Math.max(0, straightSegs.length - 1);
+    let didFlip = false;
+    if (totalL > 0) {
+      const idx = dataStore.hvFlipNextIndex % totalL;
+      const result = flipLShapeInRoutesData(data, idx, getConnectFlipOptions());
+      if (result.changed) {
+        data = result.routesData;
+        didFlip = true;
+      }
+      dataStore.hvFlipNextIndex = (dataStore.hvFlipNextIndex + 1) % totalL;
+    }
+    layer.spaceNetworkGridJsonData = data;
+    dataStore.advanceFlipStep();
+    dataStore.setConnectFlipOverlayVisible(true);
+    return { didFlip };
+  };
+
+  /** 串接Flip L型 自動執行：每步間隔後自動呼叫「下一步」，讓使用者看到逐步動畫 */
+  const connectFlipAutoRunning = ref(false);
+  let connectFlipAutoTimer = null;
+  const connectFlipAutoDelay = ref(600);
+
+  const stopConnectFlipAuto = () => {
+    connectFlipAutoRunning.value = false;
+    if (connectFlipAutoTimer) {
+      clearTimeout(connectFlipAutoTimer);
+      connectFlipAutoTimer = null;
+    }
+  };
+
+  /** 串接Flip L型 自動執行：與一鍵完成相同邏輯 — 每輪跑完整 network，若有 flip 則新一輪從頭跑，直到該輪無 flip 才停止 */
+  const startConnectFlipAuto = () => {
+    if (connectFlipAutoRunning.value) {
+      stopConnectFlipAuto();
+      return;
+    }
+    connectFlipAutoRunning.value = true;
+    dataStore.setConnectFlipOverlayVisible(true);
+    let flippedInThisLoop = false;
+    const runNext = () => {
+      if (!connectFlipAutoRunning.value) return;
+      const layer = currentLayer.value;
+      if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) {
+        stopConnectFlipAuto();
+        return;
+      }
+      const layoutDataBefore = getTaipeiTestLayoutData(layer.spaceNetworkGridJsonData);
+      const straightSegsBefore = buildStraightSegments(layoutDataBefore);
+      const totalLBefore = Math.max(0, straightSegsBefore.length - 1);
+      if (totalLBefore <= 0) {
+        stopConnectFlipAuto();
+        return;
+      }
+      const { didFlip } = executeConnectThenFlipStep();
+      if (didFlip) flippedInThisLoop = true;
+
+      const layoutDataAfter = getTaipeiTestLayoutData(layer.spaceNetworkGridJsonData);
+      const straightSegsAfter = buildStraightSegments(layoutDataAfter);
+      const totalLAfter = Math.max(0, straightSegsAfter.length - 1);
+      const finishedLoop = dataStore.hvFlipNextIndex === 0;
+
+      if (finishedLoop) {
+        if (!flippedInThisLoop) {
+          stopConnectFlipAuto();
+          return;
+        }
+        flippedInThisLoop = false;
+      }
+      if (totalLAfter <= 0) {
+        stopConnectFlipAuto();
+        return;
+      }
+      connectFlipAutoTimer = setTimeout(runNext, connectFlipAutoDelay.value);
+    };
+    runNext();
+  };
+
+  /** taipei_a：串接Flip L型 - 一鍵完成
+   * 邏輯：完整執行整個 network 為一輪 loop；若有任一次 flip，從頭開始新一輪；直到某一輪沒有任何 flip 才停止
+   * @returns {boolean} 本輪是否有執行任何 flip
+   */
+  const executeConnectThenFlipAll = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return false;
+    let data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return false;
+    data = mergeRoutesByCoords(data);
+
+    let anyFlip = false;
+    for (let pass = 0; pass < 100; pass++) {
+      const layoutData = getTaipeiTestLayoutData(data);
+      const straightSegs = buildStraightSegments(layoutData);
+      const totalL = Math.max(0, straightSegs.length - 1);
+      if (totalL <= 0) break;
+      let changedAny = false;
+      for (let idx = 0; idx < totalL; idx++) {
+        const result = flipLShapeInRoutesData(data, idx, getConnectFlipOptions());
+        if (result.changed) {
+          data = result.routesData;
+          changedAny = true;
+          anyFlip = true;
+        }
+      }
+      if (!changedAny) break;
+    }
+    layer.spaceNetworkGridJsonData = data;
+    dataStore.hvFlipNextIndex = 0;
+    dataStore.advanceFlipStep();
+    dataStore.setConnectFlipOverlayVisible(true);
+    return anyFlip;
+  };
+
+  // ──────────────────────────────────────────────────────────────────
+  // ㄈ 縮減為 L 型
+  // ──────────────────────────────────────────────────────────────────
+
+  /** 串接Flip L型 的相同 options 也用於 ㄈ縮減 */
+  const REDUCE_N_OPTIONS = {
+    skipConnectMove: true,
+    skipCrossing: true,
+    useRectangleOtherRouteCheck: true,
+  };
+
+  /** ㄈ 型清單 computed（依當前 spaceNetworkGridJsonData 即時計算） */
+  const nShapeList = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return [];
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return [];
+    const layoutData = getTaipeiTestLayoutData(data);
+    const straightSegs = buildStraightSegments(layoutData);
+    return buildNShapeList(straightSegs);
+  });
+
+  const nShapeTotal = computed(() => nShapeList.value.length);
+
+  /** ㄈ縮減 下一步：取當前 nShapeList 中的第一個 ㄈ，嘗試縮減 */
+  const executeNShapeStep = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return { didReduce: false };
+    let data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return { didReduce: false };
+    const layoutData = getTaipeiTestLayoutData(data);
+    const straightSegs = buildStraightSegments(layoutData);
+    const list = buildNShapeList(straightSegs);
+    if (list.length === 0) return { didReduce: false };
+    const idx = dataStore.nShapeNextIndex % list.length;
+    const segStartIdx = list[idx];
+    const result = reduceNShapeInRoutesData(data, segStartIdx, REDUCE_N_OPTIONS);
+    if (result.changed) {
+      data = result.routesData;
+    }
+    dataStore.nShapeNextIndex = (dataStore.nShapeNextIndex + 1) % Math.max(1, list.length);
+    layer.spaceNetworkGridJsonData = data;
+    dataStore.advanceNShapeStep();
+    dataStore.setNShapeOverlayVisible(true);
+    return { didReduce: result.changed };
+  };
+
+  /** ㄈ縮減 一鍵完成：整輪掃過所有 ㄈ，有縮減則從頭再跑，直到某輪無縮減為止
+   * @returns {boolean} 本輪是否有執行任何縮減
+   */
+  const executeNShapeAll = () => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return false;
+    let data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return false;
+    let anyReduce = false;
+    for (let pass = 0; pass < 100; pass++) {
+      const layoutData = getTaipeiTestLayoutData(data);
+      const straightSegs = buildStraightSegments(layoutData);
+      const list = buildNShapeList(straightSegs);
+      if (list.length === 0) break;
+      let changedAny = false;
+      for (const segStartIdx of list) {
+        const result = reduceNShapeInRoutesData(data, segStartIdx, REDUCE_N_OPTIONS);
+        if (result.changed) {
+          data = result.routesData;
+          changedAny = true;
+          anyReduce = true;
+        }
+      }
+      if (!changedAny) break;
+    }
+    layer.spaceNetworkGridJsonData = data;
+    dataStore.nShapeNextIndex = 0;
+    dataStore.advanceNShapeStep();
+    dataStore.setNShapeOverlayVisible(true);
+    return anyReduce;
+  };
+
+  /** ㄈ縮減 自動執行 */
+  const nShapeAutoRunning = ref(false);
+  let nShapeAutoTimer = null;
+  const nShapeAutoDelay = ref(600);
+
+  const stopNShapeAuto = () => {
+    nShapeAutoRunning.value = false;
+    if (nShapeAutoTimer) {
+      clearTimeout(nShapeAutoTimer);
+      nShapeAutoTimer = null;
+    }
+  };
+
+  const startNShapeAuto = () => {
+    if (nShapeAutoRunning.value) {
+      stopNShapeAuto();
+      return;
+    }
+    nShapeAutoRunning.value = true;
+    dataStore.setNShapeOverlayVisible(true);
+    let reducedInThisLoop = false;
+    const runNext = () => {
+      if (!nShapeAutoRunning.value) return;
+      const layer = currentLayer.value;
+      if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) {
+        stopNShapeAuto();
+        return;
+      }
+      const listBefore = nShapeList.value;
+      if (listBefore.length === 0) {
+        stopNShapeAuto();
+        return;
+      }
+      const { didReduce } = executeNShapeStep();
+      if (didReduce) reducedInThisLoop = true;
+      const finishedLoop = dataStore.nShapeNextIndex === 0;
+      if (finishedLoop) {
+        if (!reducedInThisLoop) {
+          stopNShapeAuto();
+          return;
+        }
+        reducedInThisLoop = false;
+      }
+      if (nShapeList.value.length === 0) {
+        stopNShapeAuto();
+        return;
+      }
+      nShapeAutoTimer = setTimeout(runNext, nShapeAutoDelay.value);
+    };
+    runNext();
+  };
+
+  /** ㄈ縮減 當前選中 ㄈ 的分析 */
+  const nShapeAnalysis = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return null;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const list = nShapeList.value;
+    if (list.length === 0) return null;
+    const idx = dataStore.nShapeNextIndex % list.length;
+    const segStartIdx = list[idx];
+    const layoutData = getTaipeiTestLayoutData(data);
+    const straightSegs = buildStraightSegments(layoutData);
+    return computeNShapeAnalysis(straightSegs, segStartIdx, REDUCE_N_OPTIONS);
+  });
+
+  /**
+   * 儲存車站配置結果為 08_compact_layout 格式的 JSON
+   * 開發環境：優先 POST 到 /api/save-result 自動寫入 public/data/result/
+   * 若 API 不可用（如 build 後）：改為觸發下載
+   */
+  const saveCompactLayoutToResult = async () => {
+    const layer = currentLayer.value;
+    if (!layer || !layer.spaceNetworkGridJsonData) return;
+    const raw = layer.spaceNetworkGridJsonData;
+    const flat = getTaipeiTestLayoutData(raw);
+    if (!Array.isArray(flat) || flat.length === 0) return;
+    const normalized = flat.map((seg) => ({
+      name: seg.name ?? seg.route_name ?? 'Unknown',
+      processed: seg.processed ?? false,
+      points: Array.isArray(seg.points) ? seg.points : [],
+      properties_start: seg.properties_start ?? null,
+      properties_end: seg.properties_end ?? null,
+      way_properties: seg.way_properties ?? null,
+      segment_counts: Array.isArray(seg.segment_counts)
+        ? seg.segment_counts
+        : [seg.points?.length ?? 0],
+      length: typeof seg.length === 'number' ? seg.length : (seg.points?.length ?? 0),
+      nodes: Array.isArray(seg.nodes) ? seg.nodes : [],
+    }));
+    const json = JSON.stringify(normalized, null, 2);
+    try {
+      const res = await fetch('/api/save-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: json,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`已儲存至 ${data.path ?? 'data/result/08_compact_layout_taipei.json'}`);
+        return;
+      }
+    } catch {
+      /* API 不可用時改為下載 */
+    }
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '08_compact_layout_taipei.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /** taipei_a 串接Flip L型：當前選中 L 的 flip 分析（用放寬規則顯示不能 flip 的原因） */
+  const connectFlipAnalysis = computed(() => {
+    const layer = currentLayer.value;
+    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return null;
+    const data = layer.spaceNetworkGridJsonData;
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const layoutData = getTaipeiTestLayoutData(data);
+    const straightSegs = buildStraightSegments(layoutData);
+    const totalL = Math.max(0, (straightSegs?.length ?? 0) - 1);
+    if (totalL <= 0) return null;
+    const segStartIdx = dataStore.hvFlipNextIndex % totalL;
+    return computeFlipAnalysis(straightSegs, segStartIdx, layoutData, getConnectFlipOptions());
+  });
+
+  /** 切換圖層時清除「曾 flip 的紅點」紀錄；離開直線化測試時隱藏串接Flip 高亮並停止自動執行 */
+  watch(activeLayerTab, (tab) => {
+    lastFlippedConnectPoints.value = {};
+    stopConnectFlipAuto();
+    stopNShapeAuto();
+    if (!isTaipeiTestStraighteningLayerId(tab)) {
+      dataStore.setConnectFlipOverlayVisible(false);
+      dataStore.setNShapeOverlayVisible(false);
+    }
+  });
+
+  /** 與空間網路地圖分頁共用：目前操作分頁選中的圖層 */
+  watch(
+    activeLayerTab,
+    (tab) => {
+      dataStore.setControlActiveLayerId(tab ?? null);
+    },
+    { immediate: true }
+  );
+
+  /**
+   * 手繪「執行下一步」等由 store 指定圖層時，同步本頁選取；否則 activeLayerTab 仍停在 network_draw_sketch
+   * 會在下一輪把 controlActiveLayerId 覆寫回去，導致網格分頁無法切到手繪匯出所指定的圖層。
+   */
+  watch(
+    () => dataStore.controlActiveLayerId,
+    (id) => {
+      if (!id || activeLayerTab.value === id) return;
+      if (
+        !Array.isArray(visibleLayers.value) ||
+        !visibleLayers.value.some((l) => l?.layerId === id)
+      )
+        return;
+      activeLayerTab.value = id;
+    }
+  );
+
+  /**
+   * 📊 取得 LayoutGridTab_Test2 當前尺寸 (Get LayoutGridTab_Test2 Current Dimensions)
+   * 從 dataStore 中獲取 LayoutGridTab_Test2 的當前尺寸（以 pt 為單位）
+   *
+   * @type {ComputedRef<{x: number, y: number}>}
+   * @returns {{x: number, y: number}} 當前尺寸的 x（寬度）和 y（高度）
+   */
+  const layoutGridTabTest2Dimensions = computed(() => {
+    return dataStore.layoutGridTabTest2Dimensions;
+  });
+
+  /**
+   * 📊 取得 LayoutGridTab_Test2 網格最小尺寸 (Get LayoutGridTab_Test2 Min Cell Dimensions)
+   * 從 dataStore 中獲取 LayoutGridTab_Test2 的網格最小尺寸（以 pt 為單位）
+   *
+   * @type {ComputedRef<{minWidth: number, minHeight: number}>}
+   * @returns {{minWidth: number, minHeight: number}} 最小寬度和最小高度
+   */
+  const layoutGridTabTest2MinCellDimensions = computed(() => {
+    return dataStore.layoutGridTabTest2MinCellDimensions;
+  });
+
+  /**
+   * 📊 取得 LayoutGridTab_Test3 當前尺寸 (Get LayoutGridTab_Test3 Current Dimensions)
+   * 從 dataStore 中獲取 LayoutGridTab_Test3 的當前尺寸（以 pt 為單位）
+   *
+   * @type {ComputedRef<{x: number, y: number}>}
+   * @returns {{x: number, y: number}} 當前尺寸的 x（寬度）和 y（高度）
+   */
+  const layoutGridTabTest3Dimensions = computed(() => {
+    return dataStore.layoutGridTabTest3Dimensions;
+  });
+
+  /**
+   * 📊 取得 LayoutGridTab_Test3 網格最小尺寸 (Get LayoutGridTab_Test3 Min Cell Dimensions)
+   * 從 dataStore 中獲取 LayoutGridTab_Test3 的網格最小尺寸（以 pt 為單位）
+   *
+   * @type {ComputedRef<{minWidth: number, minHeight: number}>}
+   * @returns {{minWidth: number, minHeight: number}} 最小寬度和最小高度
+   */
+  const layoutGridTabTest3MinCellDimensions = computed(() => {
+    return dataStore.layoutGridTabTest3MinCellDimensions;
+  });
+
+  /**
+   * 📊 取得 LayoutGridTab_Test4 當前尺寸 (Get LayoutGridTab_Test4 Current Dimensions)
+   * 從 dataStore 中獲取 LayoutGridTab_Test4 的當前尺寸（以 pt 為單位）
+   *
+   * @type {ComputedRef<{x: number, y: number}>}
+   * @returns {{x: number, y: number}} 當前尺寸的 x（寬度）和 y（高度）
+   */
+  const layoutGridTabTest4Dimensions = computed(() => {
+    return dataStore.layoutGridTabTest4Dimensions;
+  });
+
+  /**
+   * 📊 取得 LayoutGridTab_Test4 網格最小尺寸 (Get LayoutGridTab_Test4 Min Cell Dimensions)
+   * 從 dataStore 中獲取 LayoutGridTab_Test4 的網格最小尺寸（以 pt 為單位）
+   *
+   * @type {ComputedRef<{minWidth: number, minHeight: number}>}
+   * @returns {{minWidth: number, minHeight: number}} 最小寬度和最小高度
+   */
+  const layoutGridTabTest4MinCellDimensions = computed(() => {
+    return dataStore.layoutGridTabTest4MinCellDimensions;
+  });
+
+  /**
+   * 📊 取得 LayoutGridTab_Test4 滑鼠網格座標 (Get LayoutGridTab_Test4 Mouse Grid Coordinate)
+   * 從 dataStore 中獲取 LayoutGridTab_Test4 的滑鼠網格座標
+   */
+  const layoutGridTabTest4MouseGridCoordinate = computed(() => {
+    return dataStore.layoutGridTabTest4MouseGridCoordinate;
+  });
+
+  /** taipei_g 空間網路：目前縮放下最小格寬／高（pt） */
+  const spaceNetworkGridMinCellDimensions = computed(() => {
+    return dataStore.spaceNetworkGridMinCellDimensions;
+  });
+
+  /** taipei_g：最近一次 resize 自動合併門檻觸發的合併紀錄（權重差 N 與手動「合併黑點路段 (權重差≤N)」同義） */
+  const taipeiFResizeLastAutoMergeInfo = computed(() => dataStore.taipeiFResizeLastAutoMergeInfo);
+
+  const formatTaipeiFResizeAutoMergeTime = (at) => {
+    if (at == null || !Number.isFinite(Number(at))) return '';
+    return new Date(Number(at)).toLocaleString();
+  };
+
+  /**
+   * 📊 取得當前網格實際長寬 (Get Current Grid Actual Dimensions)
+   * 從 layoutGridJsonData_Test2（LayoutGridTab_Test2）中獲取當前網格的實際長寬（經過合併和縮減後）
+   * 優先從 meta 中讀取，如果沒有則從實際座標計算
+   * 使用 computed 確保在數據變化時自動更新
+   *
+   * @type {ComputedRef<{width: number, height: number}>}
+   * @returns {{width: number, height: number}} 當前網格的寬度和高度
+   */
+  const currentGridDimensions = computed(() => {
+    if (!currentLayer.value || !currentLayer.value.layoutGridJsonData_Test2) {
+      return { width: 0, height: 0 };
+    }
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test2;
+
+    // 處理兩種格式：Array 或 Object（有 meta）
+    let routes;
+    let meta;
+    if (Array.isArray(layoutData)) {
+      routes = layoutData;
+      meta = null;
+    } else if (layoutData && typeof layoutData === 'object' && Array.isArray(layoutData.routes)) {
+      routes = layoutData.routes;
+      meta = layoutData.meta || null;
+    } else {
+      return { width: 0, height: 0 };
+    }
+
+    // 優先從 meta 中讀取
+    if (meta && typeof meta.gridWidth === 'number' && typeof meta.gridHeight === 'number') {
+      return {
+        width: meta.gridWidth,
+        height: meta.gridHeight,
+      };
+    }
+
+    // 如果沒有 meta，從實際座標計算
+    const usedCols = new Set();
+    const usedRows = new Set();
+
+    routes.forEach((route) => {
+      const segments = route?.segments || [];
+      segments.forEach((seg) => {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        points.forEach((pt) => {
+          const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+          const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+          usedCols.add(Math.round(x));
+          usedRows.add(Math.round(y));
+        });
+      });
+    });
+
+    if (usedCols.size === 0 || usedRows.size === 0) {
+      return { width: 0, height: 0 };
+    }
+
+    const sortedCols = Array.from(usedCols).sort((a, b) => a - b);
+    const sortedRows = Array.from(usedRows).sort((a, b) => a - b);
+    const minX = sortedCols[0];
+    const maxX = sortedCols[sortedCols.length - 1];
+    const minY = sortedRows[0];
+    const maxY = sortedRows[sortedRows.length - 1];
+
+    return {
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  });
+
+  /**
+   * 📊 取得當前網格實際長寬 (Get Current Grid Actual Dimensions for Test3)
+   * 從 layoutGridJsonData_Test3（LayoutGridTab_Test3）中獲取當前網格的實際長寬（經過合併和縮減後）
+   * 優先從 meta 中讀取，如果沒有則從實際座標計算
+   * 使用 computed 確保在數據變化時自動更新
+   *
+   * @type {ComputedRef<{width: number, height: number}>}
+   * @returns {{width: number, height: number}} 當前網格的寬度和高度
+   */
+  const currentGridDimensions3 = computed(() => {
+    if (!currentLayer.value || !currentLayer.value.layoutGridJsonData_Test3) {
+      return { width: 0, height: 0 };
+    }
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test3;
+
+    // 處理兩種格式：Array 或 Object（有 meta）
+    let routes;
+    let meta;
+    if (Array.isArray(layoutData)) {
+      routes = layoutData;
+      meta = null;
+    } else if (layoutData && typeof layoutData === 'object' && Array.isArray(layoutData.routes)) {
+      routes = layoutData.routes;
+      meta = layoutData.meta || null;
+    } else {
+      return { width: 0, height: 0 };
+    }
+
+    // 優先從 meta 中讀取
+    if (meta && typeof meta.gridWidth === 'number' && typeof meta.gridHeight === 'number') {
+      return {
+        width: meta.gridWidth,
+        height: meta.gridHeight,
+      };
+    }
+
+    // 如果沒有 meta，從實際座標計算
+    const usedCols = new Set();
+    const usedRows = new Set();
+
+    routes.forEach((route) => {
+      const segments = route?.segments || [];
+      segments.forEach((seg) => {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        points.forEach((pt) => {
+          const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+          const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+          usedCols.add(Math.round(x));
+          usedRows.add(Math.round(y));
+        });
+      });
+    });
+
+    if (usedCols.size === 0 || usedRows.size === 0) {
+      return { width: 0, height: 0 };
+    }
+
+    const sortedCols = Array.from(usedCols).sort((a, b) => a - b);
+    const sortedRows = Array.from(usedRows).sort((a, b) => a - b);
+    const minX = sortedCols[0];
+    const maxX = sortedCols[sortedCols.length - 1];
+    const minY = sortedRows[0];
+    const maxY = sortedRows[sortedRows.length - 1];
+
+    return {
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  });
+
+  /**
+   * 從 routes 版面（陣列或 { routes, meta }）推算網格寬高；Test4 與 taipei_g 共用。
+   * taipei_g 載入 e_final（地圖路段匯出）後為「扁平 segments」陣列：每筆頂層有 points，無 segments。
+   */
+  const gridDimensionsFromRoutesLayoutData = (layoutData) => {
+    if (!layoutData) return { width: 0, height: 0 };
+    let routes;
+    let meta;
+    if (Array.isArray(layoutData)) {
+      routes = layoutData;
+      meta = null;
+    } else if (layoutData && typeof layoutData === 'object' && Array.isArray(layoutData.routes)) {
+      routes = layoutData.routes;
+      meta = layoutData.meta || null;
+    } else {
+      return { width: 0, height: 0 };
+    }
+    if (meta) {
+      const w =
+        typeof meta.gridWidth === 'number'
+          ? meta.gridWidth
+          : typeof meta.width === 'number'
+            ? meta.width
+            : null;
+      const h =
+        typeof meta.gridHeight === 'number'
+          ? meta.gridHeight
+          : typeof meta.height === 'number'
+            ? meta.height
+            : null;
+      if (w != null && h != null && w > 0 && h > 0) {
+        return { width: w, height: h };
+      }
+    }
+    const usedCols = new Set();
+    const usedRows = new Set();
+    const addPoint = (pt) => {
+      const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+      const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+      usedCols.add(Math.round(x));
+      usedRows.add(Math.round(y));
+    };
+    routes.forEach((item) => {
+      const segs = item?.segments;
+      if (Array.isArray(segs) && segs.length > 0) {
+        segs.forEach((seg) => {
+          (Array.isArray(seg.points) ? seg.points : []).forEach(addPoint);
+        });
+      } else if (Array.isArray(item?.points)) {
+        item.points.forEach(addPoint);
+      }
+    });
+    if (usedCols.size === 0 || usedRows.size === 0) {
+      return { width: 0, height: 0 };
+    }
+    const sortedCols = Array.from(usedCols).sort((a, b) => a - b);
+    const sortedRows = Array.from(usedRows).sort((a, b) => a - b);
+    const minX = sortedCols[0];
+    const maxX = sortedCols[sortedCols.length - 1];
+    const minY = sortedRows[0];
+    const maxY = sortedRows[sortedRows.length - 1];
+    return {
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  };
+
+  /**
+   * 📊 取得當前網格實際長寬 (Get Current Grid Actual Dimensions for Test4)
+   * 從 layoutGridJsonData_Test4（LayoutGridTab_Test4）中獲取當前網格的實際長寬（經過合併和縮減後）
+   * 優先從 meta 中讀取，如果沒有則從實際座標計算
+   * 使用 computed 確保在數據變化時自動更新
+   *
+   * @type {ComputedRef<{width: number, height: number}>}
+   * @returns {{width: number, height: number}} 當前網格的寬度和高度
+   */
+  const currentGridDimensions4 = computed(() => {
+    if (!currentLayer.value || !currentLayer.value.layoutGridJsonData_Test4) {
+      return { width: 0, height: 0 };
+    }
+    return gridDimensionsFromRoutesLayoutData(currentLayer.value.layoutGridJsonData_Test4);
+  });
+
+  /** taipei_g／taipei_h：與 Test4 相同演算法，資料來自 loadSpaceNetworkGridJson 寫入的 layoutGridJsonData */
+  const currentGridDimensionsTaipeiF = computed(() => {
+    if (!currentLayer.value || !isTaipeiTestGOrHWeightLayerTab(currentLayer.value.layerId)) {
+      return { width: 0, height: 0 };
+    }
+    return gridDimensionsFromRoutesLayoutData(currentLayer.value.layoutGridJsonData);
+  });
+
+  // ==================== 🔧 核心功能函數定義 (Core Function Definitions) ====================
+
+  /**
+   * 📑 設定作用中圖層分頁 (Set Active Layer Tab)
+   * 切換當前選中的圖層分頁
+   */
+  const setActiveLayerTab = (layerId) => {
+    activeLayerTab.value = layerId;
+  };
+
+  /**
+   * 圖層在 upperViewTabs 中可開啟之上半部捷徑（與 UpperView 分頁鈕同 30px 圓鈕樣式）
+   * @param {{ upperViewTabs?: string[] } | null} layer
+   */
+  const layerUpperTabShortcuts = (layer) => {
+    if (!layer || !Array.isArray(layer.upperViewTabs)) return [];
+    const t = layer.upperViewTabs;
+    const out = [];
+    if (t.includes('network-draw-lines')) {
+      out.push({
+        tab: 'network-draw-lines',
+        iconKey: 'network_sketch',
+        title: '開啟上半部手繪網絡線',
+      });
+    }
+    if (t.includes('network-draw-lines-sn4')) {
+      out.push({
+        tab: 'network-draw-lines-sn4',
+        iconKey: 'network_sketch',
+        title: '開啟上半部手繪網絡線（測試_4）',
+      });
+    }
+    return out;
+  };
+
+  const openHomeUpperTab = (tab) => {
+    if (typeof tab === 'string' && tab) {
+      dataStore.requestHomeActiveUpperTab(tab);
+    }
+  };
+
+  /**
+   * 執行當前圖層的 executeFunction
+   */
+  const executeLayerFunction = async () => {
+    if (!currentLayer.value || !currentLayer.value.executeFunction) {
+      console.warn('當前圖層沒有 executeFunction');
+      return;
+    }
+
+    // Taipei 流程：taipei_1_0 使用 geojsonData，後續流程使用 layoutGridJsonData / spaceNetworkGridJsonData
+    // 測試圖層：可能使用 jsonData
+    const L = currentLayer.value;
+    const isTaipeiLayer = L.layerId?.startsWith('taipei_');
+    let jsonData = isTaipeiLayer
+      ? L.geojsonData || L.layoutGridJsonData || L.spaceNetworkGridJsonData
+      : L.geojsonData || L.layoutGridJsonData || L.spaceNetworkGridJsonData || L.jsonData;
+    if (
+      !jsonData &&
+      (L.layerId === 'taipei_l3' || L.layerId === 'taipei_sn4_l') &&
+      Array.isArray(L.spaceNetworkGridJsonDataL3Tab) &&
+      L.spaceNetworkGridJsonDataL3Tab.length > 0
+    ) {
+      jsonData = L.spaceNetworkGridJsonDataL3Tab;
+    }
+    if (
+      !jsonData &&
+      (L.layerId === 'taipei_m3' || L.layerId === 'taipei_sn4_m') &&
+      Array.isArray(L.spaceNetworkGridJsonDataM3Tab) &&
+      L.spaceNetworkGridJsonDataM3Tab.length > 0
+    ) {
+      jsonData = L.spaceNetworkGridJsonDataM3Tab;
+    }
+    // taipei_osm_geojson_2／taipei_osm_geojson_sn4：executeFunction 不依賴此參數；僅須非空以便通過檢查
+    if (!jsonData && isRegisteredNetworkDrawSketchSn4LayerId(L.layerId)) {
+      jsonData = L.networkDrawSketchExportWgs84GeoJson ||
+        L.geojsonData || { type: 'FeatureCollection', features: [] };
+    }
+    if (!jsonData && isRegisteredNetworkDrawSketchLayerId(L.layerId)) {
+      jsonData = L.networkDrawSketchExportWgs84GeoJson ||
+        L.geojsonData || { type: 'FeatureCollection', features: [] };
+    }
+    if (!jsonData) {
+      const missingFields = isTaipeiLayer
+        ? 'geojsonData / layoutGridJsonData / spaceNetworkGridJsonData（l3 可為 spaceNetworkGridJsonDataL3Tab；m3 可為 spaceNetworkGridJsonDataM3Tab）'
+        : 'geojsonData / layoutGridJsonData / spaceNetworkGridJsonData / jsonData';
+      console.warn(`當前圖層沒有 ${missingFields}`);
+      return;
+    }
+
+    isExecuting.value = true;
+
+    try {
+      // 等待 UI 更新以顯示"計算中"畫面
+      await nextTick();
+
+      if (getTaipeiTestPipelineByExecuteLayer(currentLayer.value.layerId)) {
+        dataStore.setTaipeiTestExecuteSourceLayerId(currentLayer.value.layerId);
+      }
+      // 執行函數（可為 async）
+      await Promise.resolve(currentLayer.value.executeFunction(jsonData));
+
+      // 稍微延遲後關閉，確保用戶能看到"計算中"畫面
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    } catch (error) {
+      console.error('執行圖層函數時發生錯誤:', error);
+      isExecuting.value = false;
+    }
+  };
+
+  const onControlExecuteNextClick = () => {
+    executeLayerFunction();
+  };
+
+  const TAIPEI_OSM_GEOJSON_SN4_LAYER_ID = 'taipei_osm_geojson_sn4';
+
+  const mergeTaipeiOsmSn4LoaderResultIntoLayer = (layer, result) => {
+    layer.jsonData = result.jsonData ?? null;
+    layer.processedJsonData = result.processedJsonData ?? null;
+    layer.geojsonData = result.geojsonData ?? null;
+    layer.dashboardData = result.dashboardData ?? null;
+    layer.dataTableData = result.dataTableData ?? null;
+    layer.layerInfoData = result.layerInfoData ?? null;
+    layer.isLoaded = true;
+    layer.isLoading = false;
+  };
+
+  const onTaipeiOsmSn4OsmPathCommit = (layer, raw) => {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    layer.osmFileName = v || null;
+    dataStore.saveLayerState(layer.layerId, { osmFileName: layer.osmFileName });
+  };
+
+  const onTaipeiOsmSn4ReloadFromPublicData = async (layer) => {
+    if (!layer.visible) return;
+    await dataStore.reloadLayer(layer.layerId);
+  };
+
+  const onTaipeiOsmSn4PickLocalFileClick = () => {
+    document.getElementById('taipei-osm-sn4-local-file-input')?.click();
+  };
+
+  const onTaipeiOsmSn4LocalFileInputChange = async (event) => {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    const layer = dataStore.findLayerById(TAIPEI_OSM_GEOJSON_SN4_LAYER_ID);
+    if (!file || !layer) return;
+    try {
+      layer.isLoading = true;
+      const text = await file.text();
+      const result = parseOsmXmlStringToRouteGeoJsonLoadResult(text);
+      layer.osmFileName = file.name;
+      mergeTaipeiOsmSn4LoaderResultIntoLayer(layer, result);
+      dataStore.saveLayerState(layer.layerId, {
+        osmFileName: layer.osmFileName,
+        jsonData: layer.jsonData,
+        processedJsonData: layer.processedJsonData,
+        geojsonData: layer.geojsonData,
+        dashboardData: layer.dashboardData,
+        dataTableData: layer.dataTableData,
+        layerInfoData: layer.layerInfoData,
+        isLoaded: layer.isLoaded,
+        isLoading: layer.isLoading,
+      });
+    } catch (err) {
+      console.error('本機 OSM 讀取失敗:', err);
+      layer.isLoading = false;
+      dataStore.saveLayerState(layer.layerId, { isLoading: false });
+    }
+  };
+
+  // ==================== 👀 響應式監聽器 (Reactive Watchers) ====================
+
+  /**
+   * 記錄上一次的圖層列表用於比較變化
+   * 用於偵測新增的圖層並自動切換到最新圖層
+   */
+  const previousLayers = ref([]);
+
+  /**
+   * 👀 監聽可見圖層變化，自動切換到新開啟的圖層分頁
+   */
+  watch(
+    () => visibleLayers.value,
+    (newLayers) => {
+      // 確保 newLayers 是有效的陣列
+      if (!Array.isArray(newLayers)) {
+        activeLayerTab.value = null;
+        previousLayers.value = [];
+        return;
+      }
+
+      // 如果沒有可見圖層，清除選中的分頁
+      if (newLayers.length === 0) {
+        activeLayerTab.value = null;
+        previousLayers.value = [];
+        return;
+      }
+
+      // 確保所有圖層都有有效的 layerId
+      const validLayers = newLayers.filter((layer) => layer && layer.layerId);
+
+      // 如果沒有有效圖層，清除選中的分頁
+      if (validLayers.length === 0) {
+        activeLayerTab.value = null;
+        previousLayers.value = [];
+        return;
+      }
+
+      // 使用 nextTick 確保在 DOM 更新後再進行狀態更新
+      nextTick(() => {
+        // 找出新增的圖層（比較新舊圖層列表）
+        const previousLayerIds = (previousLayers.value || [])
+          .filter((layer) => layer && layer.layerId)
+          .map((layer) => layer.layerId);
+        const newLayerIds = validLayers.map((layer) => layer.layerId);
+        const addedLayerIds = newLayerIds.filter((id) => !previousLayerIds.includes(id));
+
+        // 如果有新增的圖層，自動切換到最新新增的圖層
+        if (addedLayerIds.length > 0) {
+          const newestAddedLayerId = addedLayerIds[addedLayerIds.length - 1];
+          if (validLayers.find((layer) => layer.layerId === newestAddedLayerId)) {
+            activeLayerTab.value = newestAddedLayerId;
+          }
+        }
+        // 如果當前沒有選中分頁，或選中的分頁不在可見列表中，選中第一個
+        else if (
+          !activeLayerTab.value ||
+          !validLayers.find((layer) => layer.layerId === activeLayerTab.value)
+        ) {
+          if (validLayers[0] && validLayers[0].layerId) {
+            activeLayerTab.value = validLayers[0].layerId;
+          }
+        }
+
+        // 更新記錄的圖層列表（只記錄有效的圖層）
+        previousLayers.value = [...validLayers];
+      });
+    },
+    { deep: false, immediate: true }
+  );
+
+  // ==================== 🎯 網格預覽功能 (Grid Preview Functions) ====================
+
+  /**
+   * 🎨 網格預覽尺寸 (Grid Preview Size)
+   * 設定網格預覽的 SVG 尺寸
+   */
+  const previewGridSize = 120;
+
+  /**
+   * 📊 取得預覽節點數據 (Get Preview Nodes Data)
+   * 從當前圖層的 processedJsonData 中提取節點信息用於預覽
+   * 使用原始數據，不受刪除邏輯影響
+   */
+  const getPreviewNodes = () => {
+    if (!activeLayerTab.value) return [];
+
+    if (!Array.isArray(visibleLayers.value) || visibleLayers.value.length === 0) {
+      return [];
+    }
+
+    const currentLayer = visibleLayers.value.find(
+      (layer) => layer && layer.layerId === activeLayerTab.value
+    );
+
+    if (!currentLayer || !currentLayer.processedJsonData) return [];
+
+    // 🎯 只使用 processedJsonData 中的原始數據
+    if (
+      currentLayer.processedJsonData.nodes &&
+      Array.isArray(currentLayer.processedJsonData.nodes)
+    ) {
+      return currentLayer.processedJsonData.nodes;
+    }
+
+    return [];
+  };
+
+  /**
+   * 📊 計算每列的最大值 (Calculate Column Max Values)
+   * 用於顯示列的最大值標籤
+   */
+  const getColumnMaxValues = () => {
+    const nodes = getPreviewNodes();
+    const { gridX } = getOriginalGridDimensions();
+
+    if (!Array.isArray(nodes) || gridX <= 0) {
+      return [];
+    }
+
+    const columnMaxValues = new Array(gridX).fill(0);
+
+    nodes.forEach((node) => {
+      if (node && typeof node.x === 'number' && node.x >= 0 && node.x < gridX) {
+        columnMaxValues[node.x] = Math.max(columnMaxValues[node.x], node.value || 0);
+      }
+    });
+
+    return columnMaxValues;
+  };
+
+  /**
+   * 📊 計算每行的最大值 (Calculate Row Max Values)
+   * 用於顯示行的最大值標籤
+   */
+  const getRowMaxValues = () => {
+    const nodes = getPreviewNodes();
+    const { gridY } = getOriginalGridDimensions();
+
+    if (!Array.isArray(nodes) || gridY <= 0) {
+      return [];
+    }
+
+    const rowMaxValues = new Array(gridY).fill(0);
+
+    nodes.forEach((node) => {
+      if (node && typeof node.y === 'number' && node.y >= 0 && node.y < gridY) {
+        rowMaxValues[node.y] = Math.max(rowMaxValues[node.y], node.value || 0);
+      }
+    });
+
+    return rowMaxValues;
+  };
+
+  /**
+   * 📊 取得原始網格尺寸 (Get Original Grid Dimensions)
+   * 從 processedJsonData 中獲取原始網格尺寸，不受刪除邏輯影響
+   */
+  const getOriginalGridDimensions = () => {
+    if (!activeLayerTab.value) return { gridX: 0, gridY: 0 };
+
+    if (!Array.isArray(visibleLayers.value) || visibleLayers.value.length === 0) {
+      return { gridX: 0, gridY: 0 };
+    }
+
+    const currentLayer = visibleLayers.value.find(
+      (layer) => layer && layer.layerId === activeLayerTab.value
+    );
+
+    if (!currentLayer || !currentLayer.processedJsonData) {
+      return { gridX: 0, gridY: 0 };
+    }
+
+    return {
+      gridX: currentLayer.processedJsonData.gridX || 0,
+      gridY: currentLayer.processedJsonData.gridY || 0,
+    };
+  };
+
+  /**
+   * 📍 計算節點 X 座標 (Calculate Node X Position)
+   * 根據節點的 x 索引計算在預覽中的 X 座標
+   */
+  const getNodeX = (nodeX) => {
+    const { gridX } = getOriginalGridDimensions();
+    if (gridX === 0) return 0;
+    return (nodeX + 0.5) * (previewGridSize / gridX);
+  };
+
+  /**
+   * 📍 計算節點 Y 座標 (Calculate Node Y Position)
+   * 根據節點的 y 索引計算在預覽中的 Y 座標
+   */
+  const getNodeY = (nodeY) => {
+    const { gridY } = getOriginalGridDimensions();
+    if (gridY === 0) return 0;
+    return (nodeY + 0.5) * (previewGridSize / gridY);
+  };
+
+  /**
+   * 🎲 隨機產生權重 (Randomize Weights)
+   * 根據指定的權重值和機率分佈重新產生所有權重
+   * 同時更新 layoutGridJsonData_Test 和 dataTableData
+   */
+  const randomizeWeights = () => {
+    if (!currentLayer.value) {
+      console.warn('當前圖層不存在');
+      return;
+    }
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test;
+    if (!Array.isArray(layoutData)) {
+      console.warn('layoutGridJsonData_Test 不是 Array');
+      return;
+    }
+
+    // 權重值和機率分佈
+    const WEIGHT_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const WEIGHT_PROBS = [256, 128, 64, 32, 16, 8, 4, 2, 1];
+
+    // 計算總機率
+    const totalProb = WEIGHT_PROBS.reduce((sum, prob) => sum + prob, 0);
+
+    // 產生隨機權重的函數
+    const generateRandomWeight = () => {
+      const random = Math.random() * totalProb;
+      let cumulative = 0;
+      for (let i = 0; i < WEIGHT_VALUES.length; i++) {
+        cumulative += WEIGHT_PROBS[i];
+        if (random <= cumulative) {
+          return WEIGHT_VALUES[i];
+        }
+      }
+      return WEIGHT_VALUES[0]; // 預設返回最小值
+    };
+
+    // 遍歷所有路線，重新產生 station_weights
+    layoutData.forEach((route) => {
+      if (!route || !Array.isArray(route.segments)) return;
+
+      route.segments.forEach((seg) => {
+        if (!seg || !Array.isArray(seg.station_weights)) return;
+
+        // 重新產生每個 station_weight 的權重值
+        seg.station_weights.forEach((weightInfo) => {
+          if (weightInfo && typeof weightInfo.weight === 'number') {
+            weightInfo.weight = generateRandomWeight();
+          }
+        });
+      });
+    });
+
+    // 🔄 重新生成 dataTableData（基於更新後的權重）
+    const dataTableData = [];
+
+    // 輔助函數：從 node 物件中提取 station_name
+    const getStationName = (node) => {
+      if (!node) return '';
+      return node.station_name || node.tags?.station_name || node.tags?.name || '';
+    };
+
+    const getStationId = (node) => {
+      if (!node) return '';
+      return node.station_id || node.tags?.station_id || '';
+    };
+
+    // 盡量用穩定且唯一的 key（優先 node.id，其次 station_id，其次 station_name + grid）
+    const getNodeKey = (node) => {
+      if (!node) return 'node:unknown';
+      if (Number.isFinite(node.id)) return `id:${node.id}`;
+      const sid = getStationId(node);
+      if (sid) return `station_id:${sid}`;
+      const name = getStationName(node) || 'unknown';
+      const x = node.x_grid ?? node.tags?.x_grid ?? '';
+      const y = node.y_grid ?? node.tags?.y_grid ?? '';
+      return `name:${name}|x:${x}|y:${y}`;
+    };
+
+    // key -> { node, weights: number[], routeName: string, routeColor: string }
+    const nodeAdj = new Map();
+
+    const ensureNodeEntry = (node, routeName, routeColor) => {
+      const key = `${routeName}|${getNodeKey(node)}`;
+      if (!nodeAdj.has(key)) {
+        nodeAdj.set(key, { node, weights: [], routeName, routeColor: routeColor || '' });
+      } else {
+        // 用資訊更完整的 node 覆蓋（避免先遇到空物件）
+        const cur = nodeAdj.get(key);
+        const curName = getStationName(cur.node);
+        const newName = getStationName(node);
+        if (!curName && newName) cur.node = node;
+        if (!cur.routeColor && routeColor) cur.routeColor = routeColor;
+      }
+      return key;
+    };
+
+    const addWeightToNode = (node, weight, routeName, routeColor) => {
+      if (!node) return;
+      const key = ensureNodeEntry(node, routeName, routeColor);
+      if (typeof weight === 'number' && Number.isFinite(weight)) {
+        nodeAdj.get(key).weights.push(weight);
+      }
+    };
+
+    // 遍歷所有路線和 segments，收集權重
+    for (const route of layoutData) {
+      const routeName = route.route_name || 'Unknown';
+      const defaultRouteColor = route.original_props?.colour || route.color || '#999999';
+      const segments = route.segments || [];
+
+      for (let segIndex = 0; segIndex < segments.length; segIndex++) {
+        const seg = segments[segIndex];
+        const routeColor =
+          seg.way_properties?.tags?.color || seg.way_properties?.tags?.colour || defaultRouteColor;
+        const nodes = seg.nodes || [];
+        const propertiesStart = seg.properties_start;
+        const propertiesEnd = seg.properties_end;
+        const stationWeights = Array.isArray(seg.station_weights) ? seg.station_weights : null;
+
+        if (stationWeights && stationWeights.length > 0) {
+          // 處理 station_weights（兩個黑點之間一個權重）
+          for (let wIndex = 0; wIndex < stationWeights.length; wIndex++) {
+            const wInfo = stationWeights[wIndex];
+            const startIdx = Number.isFinite(wInfo?.start_idx) ? wInfo.start_idx : null;
+            const endIdx = Number.isFinite(wInfo?.end_idx) ? wInfo.end_idx : null;
+            const weight = wInfo?.weight;
+
+            const startNode =
+              startIdx === 0 ? propertiesStart || nodes[0] : nodes[startIdx] || nodes[0];
+            const endNode =
+              endIdx === nodes.length - 1
+                ? propertiesEnd || nodes[endIdx]
+                : nodes[endIdx] || nodes[nodes.length - 1];
+
+            // 兩端節點都要收到這條邊的 weight
+            addWeightToNode(startNode, weight, routeName, routeColor);
+            addWeightToNode(endNode, weight, routeName, routeColor);
+          }
+        }
+      }
+    }
+
+    // 產生 table rows：每個節點 1 row，取最小的兩個 weight（由小到大）
+    let rowIndex = 1;
+    for (const entry of nodeAdj.values()) {
+      const node = entry.node;
+      const weights = (entry.weights || []).filter(
+        (w) => typeof w === 'number' && Number.isFinite(w)
+      );
+      weights.sort((a, b) => a - b);
+
+      // 依需求：每筆一定要有 2 個與該黑點相連的 weight（不足 2 的通常是路線端點，直接略過）
+      if (weights.length < 2) continue;
+
+      const w1 = weights[0];
+      const w2 = weights[1];
+
+      const stationId = getStationId(node);
+      const xGrid = node?.x_grid ?? node?.tags?.x_grid ?? null;
+      const yGrid = node?.y_grid ?? node?.tags?.y_grid ?? null;
+
+      dataTableData.push({
+        '#': rowIndex++,
+        route_name: entry.routeName || '',
+        route_color: entry.routeColor || '',
+        station_id: stationId || '',
+        station_name: getStationName(node),
+        node_type: node?.node_type ?? '',
+        x_grid: xGrid,
+        y_grid: yGrid,
+        weight_1: w1,
+        weight_2: w2,
+        合併: 'X',
+        合併2: 'X',
+      });
+    }
+
+    // 排序：先看 weight_1，再看 weight_2（都由小到大）
+    dataTableData.sort((a, b) => {
+      const a1 = a.weight_1 ?? Number.POSITIVE_INFINITY;
+      const b1 = b.weight_1 ?? Number.POSITIVE_INFINITY;
+      if (a1 !== b1) return a1 - b1;
+      const a2 = a.weight_2 ?? Number.POSITIVE_INFINITY;
+      const b2 = b.weight_2 ?? Number.POSITIVE_INFINITY;
+      return a2 - b2;
+    });
+
+    // 重新編號（排序後更新 # 欄位）
+    dataTableData.forEach((row, index) => {
+      row['#'] = index + 1;
+    });
+
+    // 🔄 更新 dataTableData
+    currentLayer.value.dataTableData = dataTableData;
+
+    // 🔄 用新引用觸發 LayoutGridTab_Test 的 deep watch，讓權重更新後自動重繪
+    currentLayer.value.layoutGridJsonData_Test = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+    );
+
+    // 🔄 將更新後的 layoutGridJsonData_Test 也複製到 layoutGridJsonData_Test2
+    currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+    );
+
+    // 🔄 將更新後的 layoutGridJsonData_Test 也複製到 layoutGridJsonData_Test3
+    currentLayer.value.layoutGridJsonData_Test3 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+    );
+
+    console.log(
+      '已重新產生所有權重值並更新 dataTableData、layoutGridJsonData_Test2 和 layoutGridJsonData_Test3'
+    );
+  };
+
+  /**
+   * 🔗 合併一筆路線 (Merge One Route)
+   * 依據 dataTableData 裡面的順序，找到第一筆符合條件的項目，將其合併改成 "V"
+   * 略過條件：
+   * - node_type = 'connect' 的項目
+   * - weight_1 與 weight_2 不同的項目
+   * 每次點擊必須執行一筆，如果當前筆不符合條件就找下一筆，直到找到或全部執行完
+   *
+   * 🎯 新功能：實際刪除黑點並合併路段
+   * 1. 找到對應的黑點在 layoutGridJsonData_Test 中的位置
+   * 2. 把經過該點的兩段路（帶各自 weight）合併成一段
+   * 3. 從 points 陣列中刪除該點
+   * 4. 更新所有 station_weights 的索引
+   */
+  const mergeOneRoute = (gap = 0) => {
+    if (!currentLayer.value) return;
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test;
+    if (!Array.isArray(layoutData)) {
+      console.warn('layoutGridJsonData_Test 不是 Array（目前只支援 2-5 routes array 格式）');
+      return;
+    }
+
+    // ✅ 直接從 station_weights 找「連續兩段 weight 差 <= gap」的中間點，不再依賴 station_id/station_name 來定位 points 索引
+    // 規則：
+    // - Math.abs(w1.weight - w2.weight) <= gap（允許權重差在 gap 範圍內）
+    // - w1.end_idx === w2.start_idx（共用中間點）
+    // - 中間點不是 connect（避免刪紅點/轉乘點）
+    let merged = false;
+    let mergedRouteName = '';
+
+    const isConnectNodeAt = (seg, idx) => {
+      const hasValue = (v) => v !== undefined && v !== null;
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      const nodeType =
+        node?.node_type ||
+        ptProps?.node_type ||
+        tags?.node_type ||
+        (hasValue(node?.connect_number) ? 'connect' : '');
+      const hasConnectNumber =
+        hasValue(node?.connect_number) ||
+        hasValue(tags?.connect_number) ||
+        hasValue(ptProps?.connect_number) ||
+        hasValue(ptProps?.tags?.connect_number);
+      return nodeType === 'connect' || hasConnectNumber;
+    };
+
+    /**
+     * 判斷是否為真正的車站（有 station_name 的點）
+     * 只有真正的車站才可被合併刪除
+     * 幾何轉折點（無 station_name）和 connect 節點不應被刪除
+     */
+    const isRealStation = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      // 有 station_name 才算真正的車站
+      const hasStationName = !!(
+        node?.station_name ||
+        ptProps?.station_name ||
+        tags?.station_name ||
+        ptProps?.tags?.station_name
+      );
+
+      return hasStationName;
+    };
+
+    /**
+     * 判斷某個點是否為幾何轉折點（前後線段方向不同）
+     * 如果是轉折點，刪除後需要保留座標以維持路線形狀
+     */
+    const isBendPoint = (points, idx) => {
+      if (idx <= 0 || idx >= points.length - 1) return false;
+
+      const prev = points[idx - 1];
+      const curr = points[idx];
+      const next = points[idx + 1];
+
+      const px = Array.isArray(prev) ? prev[0] : prev.x || 0;
+      const py = Array.isArray(prev) ? prev[1] : prev.y || 0;
+      const cx = Array.isArray(curr) ? curr[0] : curr.x || 0;
+      const cy = Array.isArray(curr) ? curr[1] : curr.y || 0;
+      const nx = Array.isArray(next) ? next[0] : next.x || 0;
+      const ny = Array.isArray(next) ? next[1] : next.y || 0;
+
+      // 計算前段向量和後段向量
+      const dx1 = cx - px;
+      const dy1 = cy - py;
+      const dx2 = nx - cx;
+      const dy2 = ny - cy;
+
+      // 如果向量方向不同（不共線），就是轉折點
+      // 使用叉積判斷：如果叉積不為 0，表示不共線
+      const crossProduct = dx1 * dy2 - dy1 * dx2;
+      const epsilon = 0.001; // 容許微小誤差
+
+      return Math.abs(crossProduct) > epsilon;
+    };
+
+    for (const route of layoutData) {
+      if (merged) break;
+      const routeName = route?.route_name || '';
+      const segments = route?.segments || [];
+
+      for (const seg of segments) {
+        if (merged) break;
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        const weights = Array.isArray(seg.station_weights) ? seg.station_weights : [];
+        if (points.length < 3 || weights.length < 2) continue;
+
+        for (let i = 0; i < weights.length - 1; i++) {
+          const w1 = weights[i];
+          const w2 = weights[i + 1];
+          if (!w1 || !w2) continue;
+          // 使用 gap 參數：允許 weight 差 <= gap
+          const weightDiff = Math.abs((w1.weight || 0) - (w2.weight || 0));
+          if (weightDiff > gap) continue;
+          if (w1.end_idx !== w2.start_idx) continue;
+
+          const midIdx = w1.end_idx;
+          // 不刪端點，避免破壞線段
+          if (midIdx <= 0 || midIdx >= points.length - 1) continue;
+          // 不刪 connect/轉乘點
+          if (isConnectNodeAt(seg, midIdx)) continue;
+          // 不刪幾何轉折點（只刪真正的車站）
+          if (!isRealStation(seg, midIdx)) continue;
+
+          // 1) 合併兩段 weight：把 w1 end 延伸到 w2 end，並移除 w2
+          w1.end_idx = w2.end_idx;
+          weights.splice(i + 1, 1);
+
+          // 2) 檢查是否為幾何轉折點
+          const isBend = isBendPoint(points, midIdx);
+
+          if (isBend) {
+            // 如果是轉折點，保留座標但移除車站屬性
+            // 將該點轉換為純幾何點 [x, y]
+            const pt = points[midIdx];
+            const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+            const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+            points[midIdx] = [x, y]; // 只保留座標，不保留屬性
+
+            // 🎯 將 nodes 對應位置標記為幾何轉折點（不刪除，保持索引一致）
+            if (Array.isArray(seg.nodes)) {
+              // 確保 nodes 數組長度與 points 一致
+              while (seg.nodes.length < points.length) {
+                seg.nodes.push({});
+              }
+              // 將該位置標記為幾何點，node_type: 'line' 表示非車站點
+              seg.nodes[midIdx] = { node_type: 'line' };
+            }
+
+            // ⚠️ 注意：因為 points 沒有刪除（只是改成純座標），所以 station_weights 的索引不需要調整
+          } else {
+            // 如果不是轉折點，直接刪除該點
+            seg.points.splice(midIdx, 1);
+            if (Array.isArray(seg.nodes) && seg.nodes.length > midIdx) {
+              seg.nodes.splice(midIdx, 1);
+            }
+
+            // 3) 修正所有 station_weights 的索引（刪除點後，midIdx 之後的索引都要 -1）
+            for (const w of weights) {
+              if (w.start_idx > midIdx) w.start_idx--;
+              if (w.end_idx > midIdx) w.end_idx--;
+            }
+          }
+
+          merged = true;
+          mergedRouteName = routeName;
+          break;
+        }
+      }
+    }
+
+    if (!merged) {
+      console.log('所有項目都已處理完畢，沒有需要合併的項目');
+      return;
+    }
+
+    // 在 dataTableData 中把最可能對應的那一筆設成 V（維持 UI 的「合併欄位」行為）
+    if (Array.isArray(currentLayer.value.dataTableData)) {
+      const row = currentLayer.value.dataTableData.find(
+        (r) =>
+          r &&
+          r.合併 !== 'V' &&
+          r.node_type !== 'connect' &&
+          Math.abs((r.weight_1 || 0) - (r.weight_2 || 0)) <= gap &&
+          String(r.route_name || '') === String(mergedRouteName || '')
+      );
+      if (row) row.合併 = 'V';
+    }
+
+    // 🔄 用新引用觸發 LayoutGridTab_Test 的 deep watch，讓點消失後自動重繪
+    currentLayer.value.layoutGridJsonData_Test = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+    );
+
+    // 🔄 同步更新到 layoutGridJsonData_Test2
+    currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+    );
+  };
+
+  /**
+   * 🔗 合併一筆路線2 (Merge One Route 2)
+   * - 依據 DataTableTab 目前的 dataTableData 順序，找到第一筆可合併的項目（使用「合併2」欄位記錄）
+   * - 使用該筆的 route_name + weight_1/weight_2（必要時再用 station_id/station_name）去 layoutGridJsonData_Test2 定位並合併
+   * - 合併成功後：將該 row 的 合併2 設為 "V"
+   *
+   * @param {number} gap - 允許的權重差
+   * @param {string} direction - 方向篩選：'V' (垂直線) 或 'H' (水平線) 或 null (不篩選)
+   * @returns {boolean} 是否有成功合併
+   */
+  const mergeOneRoute2 = (gap = 0, direction = null) => {
+    if (!currentLayer.value) return false;
+
+    const tableData = currentLayer.value.dataTableData;
+    if (!Array.isArray(tableData) || tableData.length === 0) {
+      console.warn('dataTableData 為空，無法依表格順序合併');
+      return false;
+    }
+
+    const layoutData2 = currentLayer.value.layoutGridJsonData_Test2;
+    if (!Array.isArray(layoutData2)) {
+      console.warn('layoutGridJsonData_Test2 不是 Array（目前只支援 2-5 routes array 格式）');
+      return false;
+    }
+
+    const isConnectNodeAt = (seg, idx) => {
+      const hasValue = (v) => v !== undefined && v !== null;
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      const nodeType =
+        node?.node_type ||
+        ptProps?.node_type ||
+        tags?.node_type ||
+        (hasValue(node?.connect_number) ? 'connect' : '');
+      const hasConnectNumber =
+        hasValue(node?.connect_number) ||
+        hasValue(tags?.connect_number) ||
+        hasValue(ptProps?.connect_number) ||
+        hasValue(ptProps?.tags?.connect_number);
+      return nodeType === 'connect' || hasConnectNumber;
+    };
+
+    const isRealStation = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      const hasStationName = !!(
+        node?.station_name ||
+        ptProps?.station_name ||
+        tags?.station_name ||
+        ptProps?.tags?.station_name
+      );
+      return hasStationName;
+    };
+
+    const isBendPoint = (points, idx) => {
+      if (idx <= 0 || idx >= points.length - 1) return false;
+
+      const prev = points[idx - 1];
+      const curr = points[idx];
+      const next = points[idx + 1];
+
+      const px = Array.isArray(prev) ? prev[0] : prev.x || 0;
+      const py = Array.isArray(prev) ? prev[1] : prev.y || 0;
+      const cx = Array.isArray(curr) ? curr[0] : curr.x || 0;
+      const cy = Array.isArray(curr) ? curr[1] : curr.y || 0;
+      const nx = Array.isArray(next) ? next[0] : next.x || 0;
+      const ny = Array.isArray(next) ? next[1] : next.y || 0;
+
+      const dx1 = cx - px;
+      const dy1 = cy - py;
+      const dx2 = nx - cx;
+      const dy2 = ny - cy;
+
+      const crossProduct = dx1 * dy2 - dy1 * dx2;
+      const epsilon = 0.001;
+      return Math.abs(crossProduct) > epsilon;
+    };
+
+    const matchesTableWeights = (wA, wB, segW1, segW2) => {
+      // 允許交換順序
+      return (wA === segW1 && wB === segW2) || (wA === segW2 && wB === segW1);
+    };
+
+    const getStationMetaAt = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      const stationId =
+        node?.station_id ||
+        ptProps?.station_id ||
+        tags?.station_id ||
+        ptProps?.tags?.station_id ||
+        '';
+      const stationName =
+        node?.station_name ||
+        ptProps?.station_name ||
+        tags?.station_name ||
+        ptProps?.tags?.station_name ||
+        '';
+
+      return {
+        station_id: String(stationId || ''),
+        station_name: String(stationName || ''),
+      };
+    };
+
+    // 依 DataTable 的順序逐筆嘗試合併：
+    // 若某筆 row 找不到對應可合併點，不能直接 return false（否則「執行完成2」會提早停止）
+    // 而是跳過它，繼續往後找下一筆。
+    const candidateRows = tableData.filter(
+      (r) =>
+        r &&
+        r.node_type !== 'connect' &&
+        r.合併2 !== 'V' &&
+        r.合併2 !== 'F' &&
+        Math.abs((r.weight_1 || 0) - (r.weight_2 || 0)) <= gap &&
+        // 如果有指定方向，只處理符合方向的節點
+        (direction === null || !r['V/H'] || r['V/H'] === direction)
+    );
+
+    if (candidateRows.length === 0) {
+      return false;
+    }
+
+    for (const targetRow of candidateRows) {
+      const targetRouteName = String(targetRow.route_name || '');
+      const targetW1 = Number(targetRow.weight_1);
+      const targetW2 = Number(targetRow.weight_2);
+      const targetStationId = String(targetRow.station_id || '');
+      const targetStationName = String(targetRow.station_name || '');
+
+      let merged = false;
+
+      for (const route of layoutData2) {
+        if (merged) break;
+        const routeName = String(route?.route_name || '');
+
+        // 如果表格有 route_name，就先限制只在該路線中找
+        if (targetRouteName && routeName && routeName !== targetRouteName) continue;
+
+        const segments = route?.segments || [];
+        for (const seg of segments) {
+          if (merged) break;
+
+          const points = Array.isArray(seg.points) ? seg.points : [];
+          const weights = Array.isArray(seg.station_weights) ? seg.station_weights : [];
+          if (points.length < 3 || weights.length < 2) continue;
+
+          for (let i = 0; i < weights.length - 1; i++) {
+            const w1 = weights[i];
+            const w2 = weights[i + 1];
+            if (!w1 || !w2) continue;
+
+            const ww1 = Number(w1.weight);
+            const ww2 = Number(w2.weight);
+            if (!Number.isFinite(ww1) || !Number.isFinite(ww2)) continue;
+
+            // 需要對應表格的那一筆（weight_1/weight_2）
+            if (!matchesTableWeights(targetW1, targetW2, ww1, ww2)) continue;
+
+            // 沿用原本合併規則：gap 允許範圍內、且兩段 weight 是連續的中間點
+            const weightDiff = Math.abs((w1.weight || 0) - (w2.weight || 0));
+            if (weightDiff > gap) continue;
+            if (w1.end_idx !== w2.start_idx) continue;
+
+            const midIdx = w1.end_idx;
+            if (midIdx <= 0 || midIdx >= points.length - 1) continue; // 不刪端點
+            if (isConnectNodeAt(seg, midIdx)) continue; // 不刪 connect
+            if (!isRealStation(seg, midIdx)) continue; // 只刪真正車站
+
+            // 如果表格提供 station_id/station_name，就再做一次精準比對
+            if (targetStationId || targetStationName) {
+              const meta = getStationMetaAt(seg, midIdx);
+              if (targetStationId && meta.station_id && meta.station_id !== targetStationId)
+                continue;
+              if (targetStationName && meta.station_name && meta.station_name !== targetStationName)
+                continue;
+            }
+
+            // 1) 合併兩段 weight：把 w1 end 延伸到 w2 end，並移除 w2
+            w1.end_idx = w2.end_idx;
+            weights.splice(i + 1, 1);
+
+            // 2) 檢查是否為幾何轉折點
+            const isBend = isBendPoint(points, midIdx);
+
+            if (isBend) {
+              const pt = points[midIdx];
+              const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+              const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+              points[midIdx] = [x, y];
+
+              // 🎯 將 nodes 對應位置標記為幾何轉折點（不刪除，保持索引一致）
+              if (Array.isArray(seg.nodes)) {
+                // 確保 nodes 數組長度與 points 一致
+                while (seg.nodes.length < points.length) {
+                  seg.nodes.push({});
+                }
+                // 將該位置標記為幾何點，node_type: 'line' 表示非車站點
+                seg.nodes[midIdx] = { node_type: 'line' };
+              }
+              // points 未刪除 => station_weights 索引不需要調整
+            } else {
+              seg.points.splice(midIdx, 1);
+              if (Array.isArray(seg.nodes) && seg.nodes.length > midIdx) {
+                seg.nodes.splice(midIdx, 1);
+              }
+              // 3) 修正索引
+              for (const w of weights) {
+                if (w.start_idx > midIdx) w.start_idx--;
+                if (w.end_idx > midIdx) w.end_idx--;
+              }
+            }
+
+            merged = true;
+            break;
+          }
+        }
+      }
+
+      if (merged) {
+        // 記錄在 DataTable 的「合併2」欄位
+        targetRow.合併2 = 'V';
+
+        // 觸發重繪：只更新 Test2（LayoutGridTab_Test2 的 watch 會自動監聽並重繪）
+        // 重繪時會自動更新最小尺寸（在 drawGridNodes 函數中）
+        currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
+          JSON.stringify(currentLayer.value.layoutGridJsonData_Test2)
+        );
+
+        return true;
+      }
+
+      // 這筆 row 在 layoutGridJsonData_Test2 找不到可合併點：標記為 F，避免「執行完成2」一直卡在同一筆
+      targetRow.合併2 = 'F';
+    }
+
+    return false;
+  };
+
+  /**
+   * 📉 縮減網格2 (Reduce Grid 2)
+   * 專門針對 layoutGridJsonData_Test2 的縮減網格功能
+   * 刪除整個 col 或 row 沒有黑點或路線的網格，並調整座標讓網格大小縮減
+   */
+  const reduceGrid2 = () => {
+    if (!currentLayer.value) return;
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test2;
+    if (!layoutData) {
+      console.warn('layoutGridJsonData_Test2 為空');
+      return;
+    }
+
+    // 處理兩種格式：Array 或 Object（有 meta）
+    let routes;
+    let meta;
+    if (Array.isArray(layoutData)) {
+      routes = layoutData;
+      meta = null;
+    } else if (layoutData && typeof layoutData === 'object' && Array.isArray(layoutData.routes)) {
+      routes = layoutData.routes;
+      meta = layoutData.meta || null;
+    } else {
+      console.warn(
+        'layoutGridJsonData_Test2 格式不支援（目前只支援 Array 或 {routes, meta} 格式）'
+      );
+      return;
+    }
+
+    // 1. 統計所有使用的座標
+    const usedCols = new Set();
+    const usedRows = new Set();
+
+    routes.forEach((route) => {
+      const segments = route?.segments || [];
+      segments.forEach((seg) => {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        points.forEach((pt) => {
+          const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+          const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+          usedCols.add(Math.round(x));
+          usedRows.add(Math.round(y));
+        });
+      });
+    });
+
+    // 2. 找出空 col/row 並建立映射表（舊座標 -> 新座標）
+    const colMap = new Map(); // 舊 x -> 新 x
+    const rowMap = new Map(); // 舊 y -> 新 y
+
+    if (usedCols.size === 0 || usedRows.size === 0) {
+      console.warn('沒有找到任何使用的座標');
+      return;
+    }
+
+    // 計算 col 映射（刪除空的 col）
+    const sortedCols = Array.from(usedCols).sort((a, b) => a - b);
+    const minX = sortedCols[0];
+    const maxX = sortedCols[sortedCols.length - 1];
+
+    let newX = 0;
+    for (let oldX = minX; oldX <= maxX; oldX++) {
+      if (usedCols.has(oldX)) {
+        colMap.set(oldX, newX);
+        newX++;
+      }
+    }
+
+    // 計算 row 映射（刪除空的 row）
+    const sortedRows = Array.from(usedRows).sort((a, b) => a - b);
+    const minY = sortedRows[0];
+    const maxY = sortedRows[sortedRows.length - 1];
+
+    let newY = 0;
+    for (let oldY = minY; oldY <= maxY; oldY++) {
+      if (usedRows.has(oldY)) {
+        rowMap.set(oldY, newY);
+        newY++;
+      }
+    }
+
+    const removedCols = maxX - minX + 1 - newX;
+    const removedRows = maxY - minY + 1 - newY;
+
+    if (removedCols === 0 && removedRows === 0) {
+      console.log('沒有空的 col/row 需要刪除');
+      return;
+    }
+
+    console.log(`📉 縮減網格2：刪除 ${removedCols} 個空 col，${removedRows} 個空 row`);
+
+    // 3. 調整所有點的座標
+    routes.forEach((route) => {
+      const segments = route?.segments || [];
+      segments.forEach((seg) => {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        points.forEach((pt, idx) => {
+          if (Array.isArray(pt)) {
+            const oldX = pt[0];
+            const oldY = pt[1];
+            const newXCoord = colMap.get(Math.round(oldX)) ?? oldX;
+            const newYCoord = rowMap.get(Math.round(oldY)) ?? oldY;
+
+            if (pt.length > 2) {
+              // [x, y, props] 格式，保留 props
+              points[idx] = [newXCoord, newYCoord, pt[2]];
+            } else {
+              // [x, y] 格式
+              points[idx] = [newXCoord, newYCoord];
+            }
+          } else if (pt && typeof pt === 'object') {
+            // {x, y} 格式
+            const oldX = pt.x || 0;
+            const oldY = pt.y || 0;
+            pt.x = colMap.get(Math.round(oldX)) ?? oldX;
+            pt.y = rowMap.get(Math.round(oldY)) ?? oldY;
+          }
+        });
+      });
+    });
+
+    // 4. 更新 meta.gridWidth 和 meta.gridHeight（如果存在）
+    if (meta) {
+      meta.gridWidth = newX;
+      meta.gridHeight = newY;
+      if (typeof meta.width === 'number') meta.width = newX;
+      if (typeof meta.height === 'number') meta.height = newY;
+    }
+
+    console.log(`✅ 網格已縮減2：新尺寸 ${newX} x ${newY}`);
+
+    // 5. 觸發資料更新（只更新 Test2，不影響 Test）
+    // LayoutGridTab_Test2 的 watch 會監聽 layoutGridJsonData_Test2 的變化並自動重繪
+    // 重繪時會自動更新最小尺寸（在 drawGridNodes 函數中）
+    currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test2)
+    );
+  };
+
+  /**
+   * 合併一筆路線2 後立刻縮減網格
+   * @param {number} gap - 允許的權重差
+   * @param {string} direction - 方向篩選：'V' (垂直線) 或 'H' (水平線) 或 null (不篩選)
+   */
+  const mergeOneRoute2AndReduce = (gap = 0, direction = null) => {
+    const didMerge = mergeOneRoute2(gap, direction);
+    if (didMerge) {
+      reduceGrid2(); // 使用專門的 reduceGrid2
+    }
+  };
+
+  /**
+   * 🔗 執行完成2 (Merge All Routes 2)
+   * 重複執行「合併一筆路線2」直到沒有更多可合併的項目
+   * @param {number} gap - 允許的權重差
+   * @param {string} direction - 方向篩選：'V' (垂直線) 或 'H' (水平線) 或 null (不篩選)
+   */
+  const mergeAllRoutes2AndReduce = (gap = 0, direction = null) => {
+    if (!currentLayer.value) return;
+
+    let mergedCount = 0;
+    // 依需求：每合併一筆就立刻縮減網格
+    while (mergeOneRoute2(gap, direction)) {
+      mergedCount++;
+      reduceGrid2(); // 使用專門的 reduceGrid2
+    }
+
+    if (mergedCount > 0) {
+      console.log(`🎉 執行完成2！共合併 ${mergedCount} 筆（每筆皆已縮減網格）`);
+    }
+  };
+
+  /**
+   * 🔗 執行完成 (Merge All Routes)
+   * 重複執行「合併一筆路線」直到沒有更多可合併的項目
+   */
+  const mergeAllRoutes = (gap = 0) => {
+    if (!currentLayer.value) return;
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test;
+    if (!Array.isArray(layoutData)) {
+      console.warn('layoutGridJsonData_Test 不是 Array（目前只支援 2-5 routes array 格式）');
+      return;
+    }
+
+    const isConnectNodeAt = (seg, idx) => {
+      const hasValue = (v) => v !== undefined && v !== null;
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      const nodeType =
+        node?.node_type ||
+        ptProps?.node_type ||
+        tags?.node_type ||
+        (hasValue(node?.connect_number) ? 'connect' : '');
+      const hasConnectNumber =
+        hasValue(node?.connect_number) ||
+        hasValue(tags?.connect_number) ||
+        hasValue(ptProps?.connect_number) ||
+        hasValue(ptProps?.tags?.connect_number);
+      return nodeType === 'connect' || hasConnectNumber;
+    };
+
+    /**
+     * 判斷是否為真正的車站（有 station_name 的點）
+     * 只有真正的車站才可被合併刪除
+     * 幾何轉折點（無 station_name）和 connect 節點不應被刪除
+     */
+    const isRealStation = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      // 有 station_name 才算真正的車站
+      const hasStationName = !!(
+        node?.station_name ||
+        ptProps?.station_name ||
+        tags?.station_name ||
+        ptProps?.tags?.station_name
+      );
+
+      return hasStationName;
+    };
+
+    /**
+     * 判斷某個點是否為幾何轉折點（前後線段方向不同）
+     * 如果是轉折點，刪除後需要保留座標以維持路線形狀
+     */
+    const isBendPoint = (points, idx) => {
+      if (idx <= 0 || idx >= points.length - 1) return false;
+
+      const prev = points[idx - 1];
+      const curr = points[idx];
+      const next = points[idx + 1];
+
+      const px = Array.isArray(prev) ? prev[0] : prev.x || 0;
+      const py = Array.isArray(prev) ? prev[1] : prev.y || 0;
+      const cx = Array.isArray(curr) ? curr[0] : curr.x || 0;
+      const cy = Array.isArray(curr) ? curr[1] : curr.y || 0;
+      const nx = Array.isArray(next) ? next[0] : next.x || 0;
+      const ny = Array.isArray(next) ? next[1] : next.y || 0;
+
+      // 計算前段向量和後段向量
+      const dx1 = cx - px;
+      const dy1 = cy - py;
+      const dx2 = nx - cx;
+      const dy2 = ny - cy;
+
+      // 如果向量方向不同（不共線），就是轉折點
+      // 使用叉積判斷：如果叉積不為 0，表示不共線
+      const crossProduct = dx1 * dy2 - dy1 * dx2;
+      const epsilon = 0.001; // 容許微小誤差
+
+      return Math.abs(crossProduct) > epsilon;
+    };
+
+    let totalMerged = 0;
+    let hasMore = true;
+
+    // 循環執行合併，直到沒有更多可合併的項目
+    while (hasMore) {
+      hasMore = false;
+      let mergedInThisRound = false;
+
+      for (const route of layoutData) {
+        if (mergedInThisRound) break;
+        const segments = route?.segments || [];
+
+        for (const seg of segments) {
+          if (mergedInThisRound) break;
+          const points = Array.isArray(seg.points) ? seg.points : [];
+          const weights = Array.isArray(seg.station_weights) ? seg.station_weights : [];
+          if (points.length < 3 || weights.length < 2) continue;
+
+          for (let i = 0; i < weights.length - 1; i++) {
+            const w1 = weights[i];
+            const w2 = weights[i + 1];
+            if (!w1 || !w2) continue;
+            // 使用 gap 參數：允許 weight 差 <= gap
+            const weightDiff = Math.abs((w1.weight || 0) - (w2.weight || 0));
+            if (weightDiff > gap) continue;
+            if (w1.end_idx !== w2.start_idx) continue;
+
+            const midIdx = w1.end_idx;
+            // 不刪端點，避免破壞線段
+            if (midIdx <= 0 || midIdx >= points.length - 1) continue;
+            // 不刪 connect/轉乘點
+            if (isConnectNodeAt(seg, midIdx)) continue;
+            // 不刪幾何轉折點（只刪真正的車站）
+            if (!isRealStation(seg, midIdx)) continue;
+
+            // 1) 合併兩段 weight：把 w1 end 延伸到 w2 end，並移除 w2
+            w1.end_idx = w2.end_idx;
+            weights.splice(i + 1, 1);
+
+            // 2) 檢查是否為幾何轉折點
+            const isBend = isBendPoint(points, midIdx);
+
+            if (isBend) {
+              // 如果是轉折點，保留座標但移除車站屬性
+              // 將該點轉換為純幾何點 [x, y]
+              const pt = points[midIdx];
+              const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+              const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+              points[midIdx] = [x, y]; // 只保留座標，不保留屬性
+
+              // 🎯 將 nodes 對應位置標記為幾何轉折點（不刪除，保持索引一致）
+              if (Array.isArray(seg.nodes)) {
+                // 確保 nodes 數組長度與 points 一致
+                while (seg.nodes.length < points.length) {
+                  seg.nodes.push({});
+                }
+                // 將該位置標記為幾何點，node_type: 'line' 表示非車站點
+                seg.nodes[midIdx] = { node_type: 'line' };
+              }
+
+              // ⚠️ 注意：因為 points 沒有刪除（只是改成純座標），所以 station_weights 的索引不需要調整
+            } else {
+              // 如果不是轉折點，直接刪除該點
+              seg.points.splice(midIdx, 1);
+              if (Array.isArray(seg.nodes) && seg.nodes.length > midIdx) {
+                seg.nodes.splice(midIdx, 1);
+              }
+
+              // 3) 修正所有 station_weights 的索引（刪除點後，midIdx 之後的索引都要 -1）
+              for (const w of weights) {
+                if (w.start_idx > midIdx) w.start_idx--;
+                if (w.end_idx > midIdx) w.end_idx--;
+              }
+            }
+
+            mergedInThisRound = true;
+            hasMore = true;
+            totalMerged++;
+            break;
+          }
+        }
+      }
+
+      // 如果這一輪有合併，更新 dataTableData 中對應的 row（設為 V）
+      if (mergedInThisRound && Array.isArray(currentLayer.value.dataTableData)) {
+        // 找到第一個還沒設成 V 的項目（使用 gap 參數）
+        const row = currentLayer.value.dataTableData.find(
+          (r) =>
+            r &&
+            r.合併 !== 'V' &&
+            r.node_type !== 'connect' &&
+            Math.abs((r.weight_1 || 0) - (r.weight_2 || 0)) <= gap
+        );
+        if (row) row.合併 = 'V';
+      }
+    }
+
+    if (totalMerged > 0) {
+      console.log(`🎉 執行完成！共合併 ${totalMerged} 個點`);
+
+      // 🔄 用新引用觸發 LayoutGridTab_Test 的 deep watch，讓點消失後自動重繪
+      currentLayer.value.layoutGridJsonData_Test = JSON.parse(
+        JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+      );
+
+      // 🔄 同步更新到 layoutGridJsonData_Test2
+      currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
+        JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+      );
+    } else {
+      console.log('所有項目都已處理完畢，沒有需要合併的項目');
+    }
+  };
+
+  /**
+   * 📉 縮減網格 (Reduce Grid)
+   * 刪除整個 col 或 row 沒有黑點或路線的網格，並調整座標讓網格大小縮減
+   */
+  const reduceGrid = () => {
+    if (!currentLayer.value) return;
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test;
+    if (!layoutData) {
+      console.warn('layoutGridJsonData_Test 為空');
+      return;
+    }
+
+    // 處理兩種格式：Array 或 Object（有 meta）
+    let routes;
+    let meta;
+    if (Array.isArray(layoutData)) {
+      routes = layoutData;
+      meta = null;
+    } else if (layoutData && typeof layoutData === 'object' && Array.isArray(layoutData.routes)) {
+      routes = layoutData.routes;
+      meta = layoutData.meta || null;
+    } else {
+      console.warn('layoutGridJsonData_Test 格式不支援（目前只支援 Array 或 {routes, meta} 格式）');
+      return;
+    }
+
+    // 1. 統計所有使用的座標
+    const usedCols = new Set();
+    const usedRows = new Set();
+
+    routes.forEach((route) => {
+      const segments = route?.segments || [];
+      segments.forEach((seg) => {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        points.forEach((pt) => {
+          const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+          const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+          usedCols.add(Math.round(x));
+          usedRows.add(Math.round(y));
+        });
+      });
+    });
+
+    // 2. 找出空 col/row 並建立映射表（舊座標 -> 新座標）
+    const colMap = new Map(); // 舊 x -> 新 x
+    const rowMap = new Map(); // 舊 y -> 新 y
+
+    if (usedCols.size === 0 || usedRows.size === 0) {
+      console.warn('沒有找到任何使用的座標');
+      return;
+    }
+
+    // 計算 col 映射（刪除空的 col）
+    const sortedCols = Array.from(usedCols).sort((a, b) => a - b);
+    const minX = sortedCols[0];
+    const maxX = sortedCols[sortedCols.length - 1];
+
+    let newX = 0;
+    for (let oldX = minX; oldX <= maxX; oldX++) {
+      if (usedCols.has(oldX)) {
+        colMap.set(oldX, newX);
+        newX++;
+      }
+    }
+
+    // 計算 row 映射（刪除空的 row）
+    const sortedRows = Array.from(usedRows).sort((a, b) => a - b);
+    const minY = sortedRows[0];
+    const maxY = sortedRows[sortedRows.length - 1];
+
+    let newY = 0;
+    for (let oldY = minY; oldY <= maxY; oldY++) {
+      if (usedRows.has(oldY)) {
+        rowMap.set(oldY, newY);
+        newY++;
+      }
+    }
+
+    const removedCols = maxX - minX + 1 - newX;
+    const removedRows = maxY - minY + 1 - newY;
+
+    if (removedCols === 0 && removedRows === 0) {
+      console.log('沒有空的 col/row 需要刪除');
+      return;
+    }
+
+    console.log(`📉 縮減網格：刪除 ${removedCols} 個空 col，${removedRows} 個空 row`);
+
+    // 3. 調整所有點的座標
+    routes.forEach((route) => {
+      const segments = route?.segments || [];
+      segments.forEach((seg) => {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        points.forEach((pt, idx) => {
+          if (Array.isArray(pt)) {
+            const oldX = pt[0];
+            const oldY = pt[1];
+            const newX = colMap.get(Math.round(oldX)) ?? oldX;
+            const newY = rowMap.get(Math.round(oldY)) ?? oldY;
+
+            if (pt.length > 2) {
+              // [x, y, props] 格式，保留 props
+              points[idx] = [newX, newY, pt[2]];
+            } else {
+              // [x, y] 格式
+              points[idx] = [newX, newY];
+            }
+          } else if (pt && typeof pt === 'object') {
+            // {x, y} 格式
+            const oldX = pt.x || 0;
+            const oldY = pt.y || 0;
+            pt.x = colMap.get(Math.round(oldX)) ?? oldX;
+            pt.y = rowMap.get(Math.round(oldY)) ?? oldY;
+          }
+        });
+      });
+    });
+
+    // 4. 更新 meta.gridWidth 和 meta.gridHeight（如果存在）
+    if (meta) {
+      meta.gridWidth = newX;
+      meta.gridHeight = newY;
+      if (typeof meta.width === 'number') meta.width = newX;
+      if (typeof meta.height === 'number') meta.height = newY;
+    }
+
+    console.log(`✅ 網格已縮減：新尺寸 ${newX} x ${newY}`);
+
+    // 5. 觸發資料更新
+    currentLayer.value.layoutGridJsonData_Test = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+    );
+
+    // 🔄 同步更新到 layoutGridJsonData_Test2
+    currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test)
+    );
+  };
+
+  /**
+   * 🔗 執行完成4 (Merge All Routes for Test4)
+   * 重複執行「合併一筆路線」直到沒有更多可合併的項目（針對 layoutGridJsonData_Test4）
+   */
+  // ✅ 供 mergeAllRoutes4 / reduceGrid4 共用：從 routesData 重新生成 dataTableData（taipei_6_1_test3 專用格式）
+  const generateDataTableData_Test4 = (routesData) => {
+    const gridNodes = new Map(); // key: "x,y", value: { xGrid, yGrid, maxWeight: number, weights: number[] }
+
+    const addWeightAt = (x, y, weight) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      if (typeof weight !== 'number' || !Number.isFinite(weight)) return;
+      const xGrid = Math.round(x);
+      const yGrid = Math.round(y);
+      const key = `${xGrid},${yGrid}`;
+      if (!gridNodes.has(key)) {
+        gridNodes.set(key, { xGrid, yGrid, maxWeight: weight, weights: [weight] });
+      } else {
+        const existing = gridNodes.get(key);
+        if (weight > (existing.maxWeight ?? -Infinity)) {
+          existing.maxWeight = weight;
+          existing.weights = [weight];
+        }
+      }
+    };
+
+    const rasterizeAndAddWeight = (ax, ay, bx, by, weight) => {
+      ax = Math.round(ax);
+      ay = Math.round(ay);
+      bx = Math.round(bx);
+      by = Math.round(by);
+
+      const dx = Math.abs(bx - ax);
+      const dy = Math.abs(by - ay);
+
+      if (dx === 0 && dy === 0) {
+        addWeightAt(ax, ay, weight);
+        return;
+      }
+
+      if (dy === 0) {
+        const x0 = Math.min(ax, bx);
+        const x1 = Math.max(ax, bx);
+        for (let x = x0; x <= x1; x++) addWeightAt(x, ay, weight);
+        return;
+      }
+
+      if (dx === 0) {
+        const y0 = Math.min(ay, by);
+        const y1 = Math.max(ay, by);
+        for (let y = y0; y <= y1; y++) addWeightAt(ax, y, weight);
+        return;
+      }
+
+      // 斜線（Bresenham）
+      let x = ax;
+      let y = ay;
+      const sx = ax < bx ? 1 : -1;
+      const sy = ay < by ? 1 : -1;
+      let err = dx - dy;
+      const maxSteps = dx + dy + 1;
+      for (let steps = 0; steps < maxSteps; steps++) {
+        addWeightAt(x, y, weight);
+        if (x === bx && y === by) break;
+        const e2 = 2 * err;
+        if (e2 > -dy) {
+          err -= dy;
+          x += sx;
+        }
+        if (e2 < dx) {
+          err += dx;
+          y += sy;
+        }
+      }
+    };
+
+    // 將 station_weights / edge_weights 依照端點座標分配到節點
+    for (const route of routesData || []) {
+      const segments = route?.segments || [];
+      for (const seg of segments) {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        if (points.length < 2) continue;
+
+        const stationWeights = Array.isArray(seg.station_weights) ? seg.station_weights : null;
+        const edgeWeights = Array.isArray(seg.edge_weights) ? seg.edge_weights : null;
+
+        if (stationWeights && stationWeights.length > 0) {
+          for (const wInfo of stationWeights) {
+            const sIdx = Number.isFinite(wInfo?.start_idx) ? wInfo.start_idx : null;
+            const eIdx = Number.isFinite(wInfo?.end_idx) ? wInfo.end_idx : null;
+            const w = wInfo?.weight;
+            if (
+              sIdx === null ||
+              eIdx === null ||
+              sIdx < 0 ||
+              eIdx < 0 ||
+              sIdx >= points.length ||
+              eIdx >= points.length
+            ) {
+              continue;
+            }
+
+            const step = sIdx <= eIdx ? 1 : -1;
+            for (let i = sIdx; i !== eIdx; i += step) {
+              const p1 = points[i];
+              const p2 = points[i + step];
+              const x1 = Array.isArray(p1) ? p1[0] : p1?.x;
+              const y1 = Array.isArray(p1) ? p1[1] : p1?.y;
+              const x2 = Array.isArray(p2) ? p2[0] : p2?.x;
+              const y2 = Array.isArray(p2) ? p2[1] : p2?.y;
+              rasterizeAndAddWeight(Number(x1), Number(y1), Number(x2), Number(y2), Number(w));
+            }
+          }
+        } else if (edgeWeights && edgeWeights.length > 0) {
+          const nEdges = Math.min(edgeWeights.length, points.length - 1);
+          for (let i = 0; i < nEdges; i++) {
+            const w = edgeWeights[i];
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            const x1 = Array.isArray(p1) ? p1[0] : p1?.x;
+            const y1 = Array.isArray(p1) ? p1[1] : p1?.y;
+            const x2 = Array.isArray(p2) ? p2[0] : p2?.x;
+            const y2 = Array.isArray(p2) ? p2[1] : p2?.y;
+            rasterizeAndAddWeight(Number(x1), Number(y1), Number(x2), Number(y2), Number(w));
+          }
+        }
+      }
+    }
+
+    // 找出網格的有效範圍
+    let minRow = Infinity;
+    let maxRow = -Infinity;
+    let minCol = Infinity;
+    let maxCol = -Infinity;
+
+    for (const node of gridNodes.values()) {
+      minRow = Math.min(minRow, node.yGrid);
+      maxRow = Math.max(maxRow, node.yGrid);
+      minCol = Math.min(minCol, node.xGrid);
+      maxCol = Math.max(maxCol, node.xGrid);
+    }
+
+    if (
+      minRow === Infinity ||
+      maxRow === -Infinity ||
+      minCol === Infinity ||
+      maxCol === -Infinity
+    ) {
+      return [];
+    }
+
+    // 計算每一列/行的最大值
+    const colMaxValues = {};
+    const rowMaxValues = {};
+
+    for (let col = minCol; col <= maxCol; col++) colMaxValues[col] = 0;
+    for (let row = minRow; row <= maxRow; row++) rowMaxValues[row] = 0;
+
+    for (const node of gridNodes.values()) {
+      const maxWeight = node.weights.length > 0 ? Math.max(...node.weights) : 0;
+      colMaxValues[node.xGrid] = Math.max(colMaxValues[node.xGrid] || 0, maxWeight);
+      rowMaxValues[node.yGrid] = Math.max(rowMaxValues[node.yGrid] || 0, maxWeight);
+    }
+
+    const colSingles = [];
+    const rowSingles = [];
+
+    for (let col = minCol; col <= maxCol; col++) {
+      colSingles.push({ actualCol: col, colMaxWeight: colMaxValues[col] ?? 0 });
+    }
+    for (let row = minRow; row <= maxRow; row++) {
+      rowSingles.push({ actualRow: row, rowMaxWeight: rowMaxValues[row] ?? 0 });
+    }
+
+    // 過濾出「奇數座標」的 col / row（直接用座標 parity 判斷，避免 minCol/minRow parity 導致漏抓）
+    const colSinglesOdd = colSingles.filter((single) => single.actualCol % 2 !== 0);
+    const rowSinglesOdd = rowSingles.filter((single) => single.actualRow % 2 !== 0);
+
+    const dataTableData = [];
+
+    // col：每個奇數 col 與下一個奇數 col 一組（相鄰兩個奇數座標應差 2）
+    for (let i = 0; i < colSinglesOdd.length; i++) {
+      const col1 = colSinglesOdd[i];
+      const col2 = colSinglesOdd[i + 1];
+      if (!col1 || !col2) continue;
+      if (col2.actualCol !== col1.actualCol + 2) continue;
+      dataTableData.push({
+        type: 'col',
+        // ✅ 直接存「實際座標」，mergeAllRoutes4 不再依賴 minCol 偏移
+        idx1: col1.actualCol,
+        idx2: col2.actualCol,
+        idx1_max_weight: col1.colMaxWeight ?? 0,
+        idx2_max_weight: col2.colMaxWeight ?? 0,
+        合併: 'X',
+      });
+    }
+
+    // row：每個奇數 row 與下一個奇數 row 一組（相鄰兩個奇數座標應差 2）
+    for (let i = 0; i < rowSinglesOdd.length; i++) {
+      const row1 = rowSinglesOdd[i];
+      const row2 = rowSinglesOdd[i + 1];
+      if (!row1 || !row2) continue;
+      if (row2.actualRow !== row1.actualRow + 2) continue;
+      dataTableData.push({
+        type: 'row',
+        idx1: row1.actualRow,
+        idx2: row2.actualRow,
+        idx1_max_weight: row1.rowMaxWeight ?? 0,
+        idx2_max_weight: row2.rowMaxWeight ?? 0,
+        合併: 'X',
+      });
+    }
+
+    // 排序：先 col 再 row；同 type 內用 sum 由小到大
+    dataTableData.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'col' ? -1 : 1;
+      const aSum = (a.idx1_max_weight ?? 0) + (a.idx2_max_weight ?? 0);
+      const bSum = (b.idx1_max_weight ?? 0) + (b.idx2_max_weight ?? 0);
+      return aSum - bSum;
+    });
+
+    return dataTableData.map((item, index) => ({
+      '#': index + 1,
+      type: item.type,
+      idx1: item.idx1,
+      idx2: item.idx2,
+      idx1_max_weight: item.idx1_max_weight,
+      idx2_max_weight: item.idx2_max_weight,
+      合併: item.合併 ?? 'X',
+    }));
+  };
+
+  /**
+   * 🎲 隨機產生權重4 (Randomize Weights for Test4)
+   * 根據指定的權重值和機率分佈重新產生所有權重（針對 layoutGridJsonData_Test4）
+   * 同時更新 layoutGridJsonData_Test4 和 dataTableData
+   */
+  const randomizeWeights4 = () => {
+    if (!currentLayer.value) {
+      console.warn('當前圖層不存在');
+      return;
+    }
+    if (!isTaipei6_1Test3Or4LayerId(currentLayer.value.layerId)) {
+      console.warn('隨機產生權重4 僅適用 6-1 權重簡化3／對應 test4 圖層');
+      return;
+    }
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test4;
+    if (!Array.isArray(layoutData)) {
+      console.warn('layoutGridJsonData_Test4 不是 Array');
+      return;
+    }
+
+    // 權重值和機率分佈（與 randomizeWeights 相同）
+    const WEIGHT_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const WEIGHT_PROBS = [256, 128, 64, 32, 16, 8, 4, 2, 1];
+
+    // 計算總機率
+    const totalProb = WEIGHT_PROBS.reduce((sum, prob) => sum + prob, 0);
+
+    // 產生隨機權重的函數
+    const generateRandomWeight = () => {
+      const random = Math.random() * totalProb;
+      let cumulative = 0;
+      for (let i = 0; i < WEIGHT_VALUES.length; i++) {
+        cumulative += WEIGHT_PROBS[i];
+        if (random <= cumulative) {
+          return WEIGHT_VALUES[i];
+        }
+      }
+      return WEIGHT_VALUES[0]; // 預設返回最小值
+    };
+
+    // 遍歷所有路線，重新產生 station_weights
+    layoutData.forEach((route) => {
+      if (!route || !Array.isArray(route.segments)) return;
+
+      route.segments.forEach((seg) => {
+        if (!seg || !Array.isArray(seg.station_weights)) return;
+
+        // 重新產生每個 station_weight 的權重值
+        seg.station_weights.forEach((weightInfo) => {
+          if (weightInfo && typeof weightInfo.weight === 'number') {
+            weightInfo.weight = generateRandomWeight();
+          }
+        });
+      });
+    });
+
+    // 🔄 重新生成 dataTableData（使用 generateDataTableData_Test4）
+    currentLayer.value.dataTableData = generateDataTableData_Test4(layoutData);
+
+    // 🔄 用新引用觸發 LayoutGridTab_Test4 的 deep watch，讓權重更新後自動重繪
+    currentLayer.value.layoutGridJsonData_Test4 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test4)
+    );
+
+    syncSpaceNetworkFromTest3Layout();
+    console.log('已重新產生所有權重值並更新 dataTableData 和 layoutGridJsonData_Test4');
+  };
+
+  /**
+   * taipei_g（g 權重簡化）：相鄰車站段重抽 station_weights（1～9，與 sampleWeight1to9Biased 一致），並同步 dataTableData。
+   */
+  const randomizeTaipeiFWeights = async () => {
+    if (!currentLayer.value || !isTaipeiTestGLayerTab(currentLayer.value.layerId)) {
+      console.warn('隨機產生權重（g 層）僅適用 taipei_g／taipei_g2（taipei_h 使用流量 CSV）');
+      return;
+    }
+    const routes = currentLayer.value.spaceNetworkGridJsonData;
+    if (!Array.isArray(routes) || routes.length === 0) {
+      console.warn('taipei_g／taipei_h：spaceNetworkGridJsonData 無資料');
+      return;
+    }
+    const options = {
+      connectData: currentLayer.value.spaceNetworkGridJsonData_ConnectData,
+      stationData: currentLayer.value.spaceNetworkGridJsonData_StationData,
+      sectionData: currentLayer.value.spaceNetworkGridJsonData_SectionData,
+    };
+    const { dataTableRows } = applyRandomWeightsBetweenAdjacentStations(
+      routes,
+      Math.random,
+      options
+    );
+    currentLayer.value.dataTableData = dataTableRows;
+    currentLayer.value.spaceNetworkGridJsonData = JSON.parse(JSON.stringify(routes));
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  /**
+   * 版面網格測試_3（taipei_a6／b6／c6）：相鄰車站段重抽 station_weights（整數 1～10，機率與 1／k 成正比），並同步 dataTableData（含路段序／w1／w2 供 layout-network-grid 顯示）。
+   */
+  const randomizeLayoutGridTest3WeightsInverse10 = async (layerRef) => {
+    const lyr = dataStore.findLayerById(layerRef?.layerId);
+    if (!lyr || !isLayoutGridTest3LayerTab(lyr.layerId)) {
+      console.warn('隨機 weight（1～10 反比級數）僅適用版面網格測試_3 圖層（a6／b6／c6）');
+      return;
+    }
+    const routes = lyr.spaceNetworkGridJsonData;
+    if (!Array.isArray(routes) || routes.length === 0) {
+      console.warn(`${lyr.layerId}：spaceNetworkGridJsonData 無資料`);
+      return;
+    }
+    const options = {
+      connectData: lyr.spaceNetworkGridJsonData_ConnectData,
+      stationData: lyr.spaceNetworkGridJsonData_StationData,
+      sectionData: lyr.spaceNetworkGridJsonData_SectionData,
+      sampleWeight: sampleWeight1to10InverseSeries,
+    };
+    const { dataTableRows } = applyRandomWeightsBetweenAdjacentStations(
+      routes,
+      Math.random,
+      options
+    );
+    lyr.dataTableData = dataTableRows;
+    lyr.spaceNetworkGridJsonData = JSON.parse(JSON.stringify(routes));
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  /**
+   * taipei_g：黑點處僅接兩段、且兩段權重絕對差≤maxWeightDiff 時合併（合併後權重取兩段 max）；
+   * 每次執行後皆刪除空欄／空列並壓縮格索引，重算 StationData／ConnectData／SectionData／表格，並重繪空間網路圖。
+   * @param {number} maxWeightDiff 0：僅同權重；其餘為兩段權重絕對差允許之上限（如 1～3）
+   */
+  const mergeTaipeiFBlackJunctionSegments = async (maxWeightDiff) => {
+    if (!currentLayer.value || !isTaipeiTestGOrHWeightLayerTab(currentLayer.value.layerId)) {
+      console.warn('黑點路段合併僅適用 taipei_g／taipei_g2／taipei_h／taipei_h2');
+      return;
+    }
+    const raw = currentLayer.value.spaceNetworkGridJsonData;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      console.warn('taipei_g／taipei_h：spaceNetworkGridJsonData 無資料');
+      return;
+    }
+    const { mergeCount, removedColCount, removedRowCount, removedCols, removedRows } =
+      applyTaipeiFMergePruneRebuildToLayer(currentLayer.value, { maxWeightDiff });
+    dataStore.setTaipeiFResizeLastAutoMergeInfo({
+      maxWeightDiff,
+      mergeAxisConstraint: null,
+      mergeCount,
+      removedColCount,
+      removedRowCount,
+      removedCols,
+      removedRows,
+      source: 'manual',
+      at: Date.now(),
+    });
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+    console.log(
+      `taipei_g：黑點路段合併完成（權重差≤${maxWeightDiff}，合併後取較大權重），合併 ${mergeCount} 次；刪除空欄 ${removedColCount}、空列 ${removedRowCount}；空欄索引 [${(removedCols || []).join(', ')}]；空列索引 [${(removedRows || []).join(', ')}]`
+    );
+  };
+
+  const mergeAllRoutes4 = (gap = 0) => {
+    if (!currentLayer.value || !isTaipei6_1Test3Or4LayerId(currentLayer.value.layerId)) return;
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test4;
+    if (!Array.isArray(layoutData)) {
+      console.warn('layoutGridJsonData_Test4 不是 Array（目前只支援 2-5 routes array 格式）');
+      return;
+    }
+
+    // ✅ 每次合併後都重新生成 dataTableData，直到整個畫面沒有可合併項目才停止
+
+    // 計算最小座標值（用於將 idx 轉換為實際座標）
+    let minCol = Infinity;
+    let minRow = Infinity;
+    for (const route of layoutData) {
+      const segments = route?.segments || [];
+      for (const seg of segments) {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        for (const pt of points) {
+          const x = Array.isArray(pt) ? pt[0] : pt?.x;
+          const y = Array.isArray(pt) ? pt[1] : pt?.y;
+          if (Number.isFinite(x)) minCol = Math.min(minCol, Math.round(x));
+          if (Number.isFinite(y)) minRow = Math.min(minRow, Math.round(y));
+        }
+      }
+    }
+    if (minCol === Infinity) minCol = 0;
+    if (minRow === Infinity) minRow = 0;
+
+    const isConnectNodeAt = (seg, idx) => {
+      const hasValue = (v) => v !== undefined && v !== null;
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      const nodeType =
+        node?.node_type ||
+        ptProps?.node_type ||
+        tags?.node_type ||
+        (hasValue(node?.connect_number) ? 'connect' : '');
+      const hasConnectNumber =
+        hasValue(node?.connect_number) ||
+        hasValue(tags?.connect_number) ||
+        hasValue(ptProps?.connect_number) ||
+        hasValue(ptProps?.tags?.connect_number);
+      return nodeType === 'connect' || hasConnectNumber;
+    };
+
+    /**
+     * 判斷某個點是否為真正的黑點（station）且可以被合併
+     * 只有黑點才可以合併，紅點（connect）、端點不能合併
+     * ✅ 判斷標準：在 station_weights 中出現 或 有 station_name/station_id 或 node_type='station'
+     * ✅ 轉折點也可以合併（但合併時會保留座標，轉換成 line 類型）
+     */
+    const isRealStation = (seg, idx) => {
+      const node = Array.isArray(seg.nodes) ? seg.nodes[idx] : null;
+      const pt = Array.isArray(seg.points) ? seg.points[idx] : null;
+      const ptProps = Array.isArray(pt) && pt.length > 2 ? pt[2] : {};
+      const tags = ptProps?.tags || node?.tags || {};
+
+      // 先檢查是否為 connect 點（紅點），如果是則返回 false
+      if (isConnectNodeAt(seg, idx)) return false;
+
+      // 檢查是否在 station_weights 中出現（權重的端點一定是站點，即使它是轉折點）
+      const weights = Array.isArray(seg.station_weights) ? seg.station_weights : [];
+      const inWeights = weights.some(
+        (w) =>
+          (Number.isFinite(w?.start_idx) && w.start_idx === idx) ||
+          (Number.isFinite(w?.end_idx) && w.end_idx === idx)
+      );
+      if (inWeights) return true;
+
+      // 檢查是否有 station_name 或 station_id（真正的車站）
+      const hasStationName = !!(
+        node?.station_name ||
+        ptProps?.station_name ||
+        tags?.station_name ||
+        ptProps?.tags?.station_name
+      );
+      const hasStationId = !!(
+        node?.station_id ||
+        ptProps?.station_id ||
+        tags?.station_id ||
+        ptProps?.tags?.station_id
+      );
+
+      // 或者 node_type 為 'station'（但不是 'connect' 或 'line'）
+      const nodeType = node?.node_type || ptProps?.node_type || tags?.node_type || '';
+      const isStationType = nodeType === 'station';
+
+      return hasStationName || hasStationId || isStationType;
+    };
+
+    /**
+     * 判斷某個點是否為幾何轉折點（前後線段方向不同）
+     * 如果是轉折點，刪除後需要保留座標以維持路線形狀
+     */
+    const isBendPoint = (points, idx) => {
+      if (idx <= 0 || idx >= points.length - 1) return false;
+
+      const prev = points[idx - 1];
+      const curr = points[idx];
+      const next = points[idx + 1];
+
+      const px = Array.isArray(prev) ? prev[0] : prev.x || 0;
+      const py = Array.isArray(prev) ? prev[1] : prev.y || 0;
+      const cx = Array.isArray(curr) ? curr[0] : curr.x || 0;
+      const cy = Array.isArray(curr) ? curr[1] : curr.y || 0;
+      const nx = Array.isArray(next) ? next[0] : next.x || 0;
+      const ny = Array.isArray(next) ? next[1] : next.y || 0;
+
+      // 計算前段向量和後段向量
+      const dx1 = cx - px;
+      const dy1 = cy - py;
+      const dx2 = nx - cx;
+      const dy2 = ny - cy;
+
+      // 如果向量方向不同（不共線），就是轉折點
+      // 使用叉積判斷：如果叉積不為 0，表示不共線
+      const crossProduct = dx1 * dy2 - dy1 * dx2;
+      const epsilon = 0.001; // 容許微小誤差
+
+      return Math.abs(crossProduct) > epsilon;
+    };
+
+    let totalMerged = 0;
+    let safety = 0;
+
+    console.log(`🚀 開始合併路線 (gap<=${gap})...`);
+
+    while (safety < 10000) {
+      safety++;
+
+      // 重新生成 dataTableData（用最新 routes）
+      const dataTableData = generateDataTableData_Test4(layoutData);
+      currentLayer.value.dataTableData = dataTableData;
+
+      if (safety % 100 === 0) {
+        console.log(
+          `📊 第 ${safety} 輪，已合併 ${totalMerged} 個點，可選項目：${dataTableData.length}`
+        );
+      }
+
+      let mergedThisRound = false;
+
+      for (const item of dataTableData) {
+        if (!item || item.合併 === 'V') continue;
+
+        // 檢查權重是否滿足合併條件
+        const w1 = Number(item.idx1_max_weight ?? 0);
+        const w2 = Number(item.idx2_max_weight ?? 0);
+        const weightDiff = Math.abs(w1 - w2);
+        const eps = 1e-9;
+        if (weightDiff > gap + eps) continue;
+
+        // 計算實際的網格座標
+        const odd1Coord = Number(item.idx1);
+        const odd2Coord = Number(item.idx2);
+        const evenCoord = (odd1Coord + odd2Coord) / 2;
+
+        // 驗證：odd1Coord/odd2Coord 應為奇數、evenCoord 應為偶數
+        if (
+          odd1Coord % 2 === 0 ||
+          odd2Coord % 2 === 0 ||
+          evenCoord % 2 !== 0 ||
+          odd2Coord !== odd1Coord + 2
+        ) {
+          continue;
+        }
+
+        let mergedInThisItem = false;
+        let deletedPointsCount = 0;
+        let changedWeightsCount = 0;
+        const mergedWeight = Math.max(item.idx1_max_weight ?? 0, item.idx2_max_weight ?? 0);
+
+        // 遍歷所有路線，處理在偶數排上的點和合併奇數排的路線
+        for (const route of layoutData) {
+          const segments = route?.segments || [];
+          for (const seg of segments) {
+            const points = Array.isArray(seg.points) ? seg.points : [];
+            const weights = Array.isArray(seg.station_weights) ? seg.station_weights : [];
+            if (points.length === 0) continue;
+
+            // 1. 刪除偶數排上的點（從後往前遍歷，避免索引變化影響）
+            for (let idx = points.length - 1; idx >= 0; idx--) {
+              const pt = points[idx];
+              const x = Array.isArray(pt) ? pt[0] : pt?.x || 0;
+              const y = Array.isArray(pt) ? pt[1] : pt?.y || 0;
+              const xGrid = Math.round(x);
+              const yGrid = Math.round(y);
+
+              // 判斷點是否在要刪除的偶數排上
+              let shouldDelete = false;
+              if (item.type === 'col') shouldDelete = xGrid === evenCoord;
+              else shouldDelete = yGrid === evenCoord;
+
+              if (!shouldDelete) continue;
+
+              // 不刪端點，避免破壞線段
+              if (idx <= 0 || idx >= points.length - 1) {
+                if (safety <= 5) {
+                  console.log(`⏭️ 跳過端點 idx=${idx}, 座標 (${xGrid}, ${yGrid})`);
+                }
+                continue;
+              }
+              // 不刪 connect/轉乘點（紅點）
+              if (isConnectNodeAt(seg, idx)) {
+                if (safety <= 5) {
+                  console.log(`⏭️ 跳過紅點 idx=${idx}, 座標 (${xGrid}, ${yGrid})`);
+                }
+                continue;
+              }
+              // 🎯 只合併黑點（station），不合併紅點（connect）和端點
+              if (!isRealStation(seg, idx)) {
+                if (safety <= 5) {
+                  console.log(`⏭️ 跳過非站點 idx=${idx}, 座標 (${xGrid}, ${yGrid})`);
+                }
+                continue;
+              }
+
+              // 檢查是否為幾何轉折點
+              const isBend = isBendPoint(points, idx);
+
+              if (isBend) {
+                // 轉折點：保留座標作為幾何點，移除站點屬性，並合併相關的 station_weights
+                const pt = points[idx];
+                const x = Array.isArray(pt) ? pt[0] : pt.x || 0;
+                const y = Array.isArray(pt) ? pt[1] : pt.y || 0;
+                points[idx] = [x, y]; // 只保留座標，不保留屬性
+
+                if (Array.isArray(seg.nodes)) {
+                  while (seg.nodes.length < points.length) seg.nodes.push({});
+                  seg.nodes[idx] = { node_type: 'line' };
+                }
+
+                // 合併 station_weights：找到以 idx 為端點的 weights 並合併
+                const wIn = weights.find((w) => w.end_idx === idx);
+                const wOut = weights.find((w) => w.start_idx === idx);
+
+                if (wIn && wOut) {
+                  const combinedWeight = Math.max(
+                    Number(wIn.weight) || 0,
+                    Number(wOut.weight) || 0
+                  );
+                  // 更新第一個 weight，刪除第二個
+                  wIn.end_idx = wOut.end_idx;
+                  wIn.weight = combinedWeight;
+                  const outIdx = weights.indexOf(wOut);
+                  if (outIdx >= 0) weights.splice(outIdx, 1);
+
+                  // 標記已合併，避免重複處理
+                  changedWeightsCount++;
+                }
+              } else {
+                // 非轉折點：直接刪除點
+                seg.points.splice(idx, 1);
+                if (Array.isArray(seg.nodes) && seg.nodes.length > idx) seg.nodes.splice(idx, 1);
+
+                // 更新 station_weights 的索引
+                for (const w of weights) {
+                  if (w.start_idx > idx) w.start_idx--;
+                  if (w.end_idx > idx) w.end_idx--;
+                }
+              }
+
+              mergedInThisItem = true;
+              totalMerged++;
+              deletedPointsCount++;
+            }
+
+            // 2. 更新經過 odd1/odd2 的 station_weights 的 weight
+            for (const w of weights) {
+              if (
+                w.start_idx < 0 ||
+                w.end_idx < 0 ||
+                w.start_idx >= points.length ||
+                w.end_idx >= points.length
+              )
+                continue;
+
+              let passesOdd1 = false;
+              let passesOdd2 = false;
+
+              const step = w.start_idx <= w.end_idx ? 1 : -1;
+              for (let i = w.start_idx; i !== w.end_idx; i += step) {
+                const pt = points[i];
+                const x = Array.isArray(pt) ? pt[0] : pt?.x || 0;
+                const y = Array.isArray(pt) ? pt[1] : pt?.y || 0;
+                const xGrid = Math.round(x);
+                const yGrid = Math.round(y);
+
+                if (item.type === 'col') {
+                  if (xGrid === odd1Coord) passesOdd1 = true;
+                  if (xGrid === odd2Coord) passesOdd2 = true;
+                } else {
+                  if (yGrid === odd1Coord) passesOdd1 = true;
+                  if (yGrid === odd2Coord) passesOdd2 = true;
+                }
+              }
+
+              if (passesOdd1 || passesOdd2) {
+                const prev = Number(w.weight);
+                if (!Number.isFinite(prev) || Math.abs(prev - Number(mergedWeight)) > eps) {
+                  w.weight = mergedWeight;
+                  mergedInThisItem = true;
+                  changedWeightsCount++;
+                }
+              }
+            }
+          }
+        }
+
+        // ✅ 只有真的有改變（刪點或改 weight）才算合併成功
+        if (mergedInThisItem && (deletedPointsCount > 0 || changedWeightsCount > 0)) {
+          item.合併 = 'V';
+          mergedThisRound = true;
+          // 重要：完成一筆後立刻跳出，下一輪用最新資料重新算 dataTableData
+          break;
+        }
+      }
+
+      if (!mergedThisRound) break;
+    }
+
+    if (safety >= 10000) {
+      console.warn('⚠️ mergeAllRoutes4 達到安全上限，停止避免無限迴圈');
+    }
+
+    if (totalMerged > 0) {
+      console.log(`🎉 執行完成4！共處理 ${totalMerged} 個點（直到沒有可合併項目）`);
+      currentLayer.value.layoutGridJsonData_Test4 = JSON.parse(JSON.stringify(layoutData));
+      currentLayer.value.dataTableData = generateDataTableData_Test4(layoutData);
+      syncSpaceNetworkFromTest3Layout();
+    } else {
+      console.log('沒有找到符合條件的項目可以合併');
+    }
+  };
+
+  /**
+   * 🔀 合併路線4-H (Merge Routes 4 - Horizontal Only)
+   * 只合併位在水平線上的黑點
+   */
+  const mergeAllRoutes4H = (gap = 0) => {
+    if (!currentLayer.value || !isTaipei6_1Test3Or4LayerId(currentLayer.value.layerId)) return;
+
+    let layoutData = currentLayer.value.layoutGridJsonData_Test4;
+    if (!Array.isArray(layoutData)) {
+      console.warn('layoutGridJsonData_Test4 不是 Array（目前只支援 2-5 routes array 格式）');
+      return;
+    }
+
+    const result = mergeRoutesHorizontal(layoutData, gap);
+    if (result.modified) {
+      currentLayer.value.layoutGridJsonData_Test4 = JSON.parse(JSON.stringify(result.layoutData));
+      currentLayer.value.dataTableData = generateDataTableDataUtil(result.layoutData);
+      syncSpaceNetworkFromTest3Layout();
+    }
+  };
+
+  /**
+   * 🔀 合併路線4-V (Merge Routes 4 - Vertical Only)
+   * 只合併位在垂直線上的黑點
+   */
+  const mergeAllRoutes4V = (gap = 0) => {
+    if (!currentLayer.value || !isTaipei6_1Test3Or4LayerId(currentLayer.value.layerId)) return;
+
+    let layoutData = currentLayer.value.layoutGridJsonData_Test4;
+    if (!Array.isArray(layoutData)) {
+      console.warn('layoutGridJsonData_Test4 不是 Array（目前只支援 2-5 routes array 格式）');
+      return;
+    }
+
+    const result = mergeRoutesVertical(layoutData, gap);
+    if (result.modified) {
+      currentLayer.value.layoutGridJsonData_Test4 = JSON.parse(JSON.stringify(result.layoutData));
+      currentLayer.value.dataTableData = generateDataTableDataUtil(result.layoutData);
+      syncSpaceNetworkFromTest3Layout();
+    }
+  };
+
+  /**
+   * 🗜️ 縮減網格4 (Reduce Grid 4)
+   * 刪除所有空的偶數網格（淺紅色），並合併相鄰的奇數網格
+   */
+  const reduceGrid4 = () => {
+    if (!currentLayer.value || !isTaipei6_1Test3Or4LayerId(currentLayer.value.layerId)) return;
+
+    const layoutData = currentLayer.value.layoutGridJsonData_Test4;
+    if (!layoutData) {
+      console.warn('layoutGridJsonData_Test4 為空');
+      return;
+    }
+
+    const result = reduceGridUtil(layoutData);
+    if (result.modified) {
+      currentLayer.value.layoutGridJsonData_Test4 = JSON.parse(JSON.stringify(result.layoutData));
+      if (isTaipei6_1Test3Or4LayerId(currentLayer.value.layerId)) {
+        const routes = Array.isArray(result.layoutData)
+          ? result.layoutData
+          : result.layoutData.routes || [];
+        currentLayer.value.dataTableData = generateDataTableDataUtil(routes);
+      }
+      syncSpaceNetworkFromTest3Layout();
+    }
+  };
+
+  // ==================== 🗑️ Test2: 固定 row/col 為 1pt（不刪除資料） ====================
+
+  /**
+   * 確保 layoutGridJsonData_Test3 具備 meta（若目前是 Array，轉成 {routes, meta}）
+   * @returns {Object|null} Object with routes and meta properties, or null
+   */
+  const ensureTest3LayoutAndMeta = () => {
+    if (!currentLayer.value) return null;
+    const layoutData = currentLayer.value.layoutGridJsonData_Test3;
+    if (!layoutData) return null;
+
+    if (Array.isArray(layoutData)) {
+      const wrapped = { routes: layoutData, meta: {} };
+      currentLayer.value.layoutGridJsonData_Test3 = wrapped;
+      return wrapped;
+    }
+
+    if (layoutData && typeof layoutData === 'object' && Array.isArray(layoutData.routes)) {
+      layoutData.meta =
+        layoutData.meta && typeof layoutData.meta === 'object' ? layoutData.meta : {};
+      return { routes: layoutData.routes, meta: layoutData.meta };
+    }
+
+    console.warn('layoutGridJsonData_Test3 格式不支援');
+    return null;
+  };
+
+  /**
+   * 從 routes/segments/points 推算目前資料的最小座標（用來把 idx 轉成實際座標）
+   */
+  const getTest3MinXY = (routes) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    (routes || []).forEach((route) => {
+      const segments = route?.segments || [];
+      segments.forEach((seg) => {
+        const points = Array.isArray(seg.points) ? seg.points : [];
+        points.forEach((pt) => {
+          const x = Array.isArray(pt) ? pt[0] : pt?.x;
+          const y = Array.isArray(pt) ? pt[1] : pt?.y;
+          if (Number.isFinite(Number(x))) minX = Math.min(minX, Math.round(Number(x)));
+          if (Number.isFinite(Number(y))) minY = Math.min(minY, Math.round(Number(y)));
+        });
+      });
+    });
+    return {
+      minX: Number.isFinite(minX) ? minX : 0,
+      minY: Number.isFinite(minY) ? minY : 0,
+    };
+  };
+
+  const addUniqueSorted = (arr, value) => {
+    const v = Math.round(value);
+    const base = Array.isArray(arr) ? arr.map((x) => Math.round(x)) : [];
+    if (!base.includes(v)) base.push(v);
+    base.sort((a, b) => a - b);
+    return base;
+  };
+
+  /**
+   * 🗑️ 刪除row：不刪除資料，只把該 row 的高度固定成 1pt（寫入 meta.fixedRows）
+   * 依 dataTableData 的順序：type=row、removable=V、且 刪除 != 'V'
+   * 注意：只能改 dataTableData 的「刪除」欄位
+   */
+  const deleteOneRow = () => {
+    if (!currentLayer.value || currentLayer.value.layerId !== 'taipei_6_1_test2') return false;
+    const tableData = currentLayer.value.dataTableData;
+    if (!Array.isArray(tableData) || tableData.length === 0) return false;
+
+    const payload = ensureTest3LayoutAndMeta();
+    if (!payload) return false;
+
+    const targetRow = tableData.find(
+      (r) => r && r.type === 'row' && r.removable === 'V' && r.刪除 !== 'V'
+    );
+    if (!targetRow) return false;
+
+    const idx = targetRow.idx;
+    if (typeof idx !== 'number' || !Number.isFinite(idx)) return false;
+
+    const { minY } = getTest3MinXY(payload.routes);
+    const actualRow = minY + idx;
+
+    payload.meta.fixedRows = addUniqueSorted(payload.meta.fixedRows, actualRow);
+    targetRow.刪除 = 'V';
+
+    currentLayer.value.layoutGridJsonData_Test3 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test3)
+    );
+    syncSpaceNetworkFromTest2Layout();
+    return true;
+  };
+
+  /**
+   * 🗑️ 刪除col：不刪除資料，只把該 col 的寬度固定成 1pt（寫入 meta.fixedCols）
+   * 依 dataTableData 的順序：type=col、removable=V、且 刪除 != 'V'
+   * 注意：只能改 dataTableData 的「刪除」欄位
+   */
+  const deleteOneCol = () => {
+    if (!currentLayer.value || currentLayer.value.layerId !== 'taipei_6_1_test2') return false;
+    const tableData = currentLayer.value.dataTableData;
+    if (!Array.isArray(tableData) || tableData.length === 0) return false;
+
+    const payload = ensureTest3LayoutAndMeta();
+    if (!payload) return false;
+
+    const targetCol = tableData.find(
+      (r) => r && r.type === 'col' && r.removable === 'V' && r.刪除 !== 'V'
+    );
+    if (!targetCol) return false;
+
+    const idx = targetCol.idx;
+    if (typeof idx !== 'number' || !Number.isFinite(idx)) return false;
+
+    const { minX } = getTest3MinXY(payload.routes);
+    const actualCol = minX + idx;
+
+    payload.meta.fixedCols = addUniqueSorted(payload.meta.fixedCols, actualCol);
+    targetCol.刪除 = 'V';
+
+    currentLayer.value.layoutGridJsonData_Test3 = JSON.parse(
+      JSON.stringify(currentLayer.value.layoutGridJsonData_Test3)
+    );
+    syncSpaceNetworkFromTest2Layout();
+    return true;
+  };
+
+  const deleteAllRows = () => {
+    while (deleteOneRow()) {
+      // keep deleting
+    }
+  };
+
+  const deleteAllCols = () => {
+    while (deleteOneCol()) {
+      // keep deleting
+    }
+  };
+
+  /**
+   * 與 SpaceNetworkGridTab 一致之地圖路段匯出（buildMapDrawnRoutesExport）。
+   * @param {string} layerId
+   * @param {string} filename
+   */
+  const downloadMapDrawnExportJson = (layerId, filename) => {
+    const layer = dataStore.findLayerById(layerId);
+    if (!layer?.spaceNetworkGridJsonData?.length) return;
+
+    const data = buildMapDrawnRoutesExport(layer);
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  /** 手繪網絡線圖層：下載 WGS84（EPSG:4326）GeoJSON，與 Leaflet 底圖一致 */
+  const downloadNetworkDrawSketchGeoJson = (sketchLayerId) => {
+    const lid =
+      typeof sketchLayerId === 'string' && isRegisteredNetworkDrawSketchLayerId(sketchLayerId)
+        ? sketchLayerId
+        : currentLayer.value?.layerId;
+    if (!isRegisteredNetworkDrawSketchLayerId(lid)) return;
+    if (!dataStore.getNetworkDrawSketchUseGeoForLayer(lid)) return;
+
+    let fc = null;
+    const lines = dataStore.getNetworkDrawSketchPolylinesForLayer(lid);
+    if (Array.isArray(lines) && lines.some((pl) => pl && pl.length >= 2)) {
+      fc = sketchPolylinesWgs84ToGeoJsonFeatureCollection(lines, {
+        markersWgs84: dataStore.getNetworkDrawSketchMarkersForLayer(lid),
+      });
+    }
+    if (!fc?.features?.length) {
+      fc = dataStore.findLayerById(lid)?.networkDrawSketchExportWgs84GeoJson;
+    }
+    if (
+      !fc ||
+      fc.type !== 'FeatureCollection' ||
+      !Array.isArray(fc.features) ||
+      fc.features.length === 0
+    )
+      return;
+
+    const json = JSON.stringify(fc, null, 2);
+    const blob = new Blob([json], { type: 'application/geo+json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download =
+      lid === 'network_draw_sketch_2'
+        ? 'network_draw_sketch_2_routes_wgs84.geojson'
+        : 'network_draw_sketch_routes_wgs84.geojson';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  /** 測試_4 taipei_sn4_a：下載 WGS84 GeoJSON（與 downloadNetworkDrawSketchGeoJson 分檔複製） */
+  const downloadNetworkDrawSketchSn4GeoJson = (sketchLayerId) => {
+    const lid =
+      typeof sketchLayerId === 'string' && isRegisteredNetworkDrawSketchSn4LayerId(sketchLayerId)
+        ? sketchLayerId
+        : currentLayer.value?.layerId;
+    if (!isRegisteredNetworkDrawSketchSn4LayerId(lid)) return;
+    if (!dataStore.getNetworkDrawSketchSn4UseGeoForLayer(lid)) return;
+
+    const layer = dataStore.findLayerById(lid);
+    let fc = layer?.geojsonData;
+    if (!fc?.features?.length) {
+      fc = layer?.networkDrawSketchExportWgs84GeoJson;
+    }
+    if (
+      !fc ||
+      fc.type !== 'FeatureCollection' ||
+      !Array.isArray(fc.features) ||
+      fc.features.length === 0
+    )
+      return;
+
+    const json = JSON.stringify(fc, null, 2);
+    const blob = new Blob([json], { type: 'application/geo+json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'taipei_sn4_a_sketch_routes_wgs84.geojson';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  /** taipei_e／taipei_e2：僅匯出地圖路段格式（陣列；每筆 routeName、segment、routeCoordinates） */
+  const downloadFinalJson = () => {
+    const id = currentLayer.value?.layerId;
+    if (!isTaipeiTestELayerTab(id)) return;
+    const filename = id === 'taipei_e2' ? 'e_final_taipei_test2.json' : 'e_final_taipei.json';
+    downloadMapDrawnExportJson(id, filename);
+  };
+
+  /** taipei_f／f2：地圖路段匯出，結構與 e_final（routeName／segment／routeCoordinates）一致 */
+  const taipeiFNetworkExportFilename = (layerId) =>
+    layerId === 'taipei_f2' ? 'f_network_taipei_test2.json' : 'f_network_taipei.json';
+
+  const downloadTaipeiFNetworkJson = () => {
+    const id = currentLayer.value?.layerId;
+    if (!isTaipeiTestFLayerTab(id)) return;
+    downloadMapDrawnExportJson(id, taipeiFNetworkExportFilename(id));
+  };
+
+  /** taipei_j3／j3_dp／j3_dp_2／j3_dp_nd／j3_dp_nd_2：路段匯出（與 e／f 相同語意）＋ dataTableData／layerInfo／dashboard */
+  const taipeiJ3TrafficExportFilename = (layerId) => {
+    if (layerId === 'taipei_j3') return 'j3_routes_traffic_taipei_test3.json';
+    if (layerId === 'taipei_sn4_j') return 'j3_routes_traffic_taipei_test3_sn4.json';
+    if (layerId === 'taipei_j3_dp') return 'j3_routes_traffic_taipei_test3_dp.json';
+    if (layerId === 'taipei_j3_dp_2') return 'j3_routes_traffic_taipei_test3_dp_2.json';
+    if (layerId === 'taipei_j3_dp_nd') return 'j3_routes_traffic_taipei_test3_dp_nd.json';
+    if (layerId === 'taipei_j3_dp_nd_2') return 'j3_routes_traffic_taipei_test3_dp_nd_2.json';
+    return 'j3_routes_traffic_taipei_test3.json';
+  };
+
+  const downloadTaipeiJ3Json = () => {
+    const id = currentLayer.value?.layerId;
+    if (!isTaipeiTest3J3TrafficExportLayerTab(id)) return;
+    const layer = dataStore.findLayerById(id);
+    if (!layer?.spaceNetworkGridJsonData?.length) return;
+
+    const payload = {
+      layerId: id,
+      exportedAt: new Date().toISOString(),
+      mapDrawnRoutes: buildMapDrawnRoutesExport(layer),
+      dataTableData: layer.dataTableData ?? null,
+      layerInfoData: layer.layerInfoData ?? null,
+      dashboardData: layer.dashboardData ?? null,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = taipeiJ3TrafficExportFilename(id);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  /** taipei_l3：依 Data 分頁候選之 |w1−w2| 最小者合併一處（權重取兩段 max；跨段則串折線） */
+  const onTaipeiL3BlackDotReductionStep = () => {
+    stopTaipeiL3ReductionAuto();
+    const layer = currentLayer.value;
+    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    const r = applyTaipeiL3BlackDotReductionOneStep(layer);
+    if (!r.changed && r.reason) {
+      console.warn('[縮減黑點]', r.reason);
+    }
+  };
+
+  const taipeiL3ReductionAutoRunning = ref(false);
+  let taipeiL3ReductionAutoTimer = null;
+  const TAIPEI_L3_REDUCTION_AUTO_MS = 200;
+  const TAIPEI_L3_REDUCTION_ALL_MAX_STEPS = 10000;
+  const stopTaipeiL3ReductionAuto = () => {
+    taipeiL3ReductionAutoRunning.value = false;
+    if (taipeiL3ReductionAutoTimer != null) {
+      clearTimeout(taipeiL3ReductionAutoTimer);
+      taipeiL3ReductionAutoTimer = null;
+    }
+  };
+
+  /** 每 0.2 秒合併一處；再按一次停止 */
+  const toggleTaipeiL3ReductionAuto = () => {
+    if (taipeiL3ReductionAutoRunning.value) {
+      stopTaipeiL3ReductionAuto();
+      return;
+    }
+    const layer = currentLayer.value;
+    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    if (
+      !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
+      layer.spaceNetworkGridJsonDataL3Tab.length === 0
+    ) {
+      return;
+    }
+    taipeiL3ReductionAutoRunning.value = true;
+    const tick = () => {
+      if (!taipeiL3ReductionAutoRunning.value) return;
+      const lyr = currentLayer.value;
+      if (
+        !lyr ||
+        (lyr.layerId !== 'taipei_l3' && lyr.layerId !== 'taipei_sn4_l') ||
+        !Array.isArray(lyr.spaceNetworkGridJsonDataL3Tab) ||
+        lyr.spaceNetworkGridJsonDataL3Tab.length === 0
+      ) {
+        stopTaipeiL3ReductionAuto();
+        return;
+      }
+      const r = applyTaipeiL3BlackDotReductionOneStep(lyr);
+      if (!r.changed) {
+        stopTaipeiL3ReductionAuto();
+        return;
+      }
+      taipeiL3ReductionAutoTimer = setTimeout(tick, TAIPEI_L3_REDUCTION_AUTO_MS);
+    };
+    tick();
+  };
+
+  /** 連續合併直到無候選（防呆上限步數） */
+  const runTaipeiL3ReductionAll = async () => {
+    stopTaipeiL3ReductionAuto();
+    const layer = currentLayer.value;
+    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    if (
+      !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
+      layer.spaceNetworkGridJsonDataL3Tab.length === 0
+    ) {
+      return;
+    }
+    for (let i = 0; i < TAIPEI_L3_REDUCTION_ALL_MAX_STEPS; i++) {
+      const lyr = currentLayer.value;
+      if (!lyr || (lyr.layerId !== 'taipei_l3' && lyr.layerId !== 'taipei_sn4_l')) break;
+      const r = applyTaipeiL3BlackDotReductionOneStep(lyr);
+      if (!r.changed) break;
+      if (i % 25 === 24) await nextTick();
+    }
+  };
+
+  /** 連續合併直到餘下候選之最小 weight 差 ≥ n（輸入 n，預設 500） */
+  const runTaipeiL3ReductionUntilWeightDiffN = async () => {
+    stopTaipeiL3ReductionAuto();
+    const layer = currentLayer.value;
+    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    if (
+      !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
+      layer.spaceNetworkGridJsonDataL3Tab.length === 0
+    ) {
+      return;
+    }
+    const raw = String(dataStore.taipeiL3ReductionWeightDiffThreshold ?? '').trim();
+    const parsed = Number(raw);
+    const threshold = Number.isFinite(parsed) && parsed >= 0 ? parsed : 500;
+    const { steps, stopped } = await applyTaipeiL3BlackDotReductionWhileMinDiffLessThan(
+      layer,
+      threshold
+    );
+    if (stopped === 'step_failed') {
+      console.warn('[縮減黑點] 執行至 n 中止', stopped, '已合併', steps, '步');
+    }
+    if (stopped === 'max_steps') {
+      console.warn('[縮減黑點] 達單次上限步數（', steps, '）');
+    }
+    await nextTick();
+  };
+</script>
+
+<template>
+  <!-- 🎮 操作控制分頁組件 -->
+  <div class="d-flex flex-column my-bgcolor-gray-200 h-100">
+    <!-- 📑 圖層分頁導航 -->
+    <div v-if="visibleLayers.length > 0" class="">
+      <ul class="nav nav-tabs nav-fill">
+        <li
+          v-for="layer in validVisibleLayers"
+          :key="layer.layerId"
+          class="nav-item d-flex flex-column align-items-stretch w-100"
+        >
+          <div
+            class="d-flex align-items-center justify-content-center gap-1 w-100 flex-wrap flex-md-nowrap px-1"
+          >
+            <!-- 文字分頁（操作區選中的圖層） -->
+            <div
+              class="btn nav-link flex-grow-1 min-w-0 rounded-0 border-0 position-relative d-flex align-items-center justify-content-center my-bgcolor-gray-200"
+              :class="{
+                active: activeLayerTab === layer.layerId,
+              }"
+              @click="setActiveLayerTab(layer.layerId)"
+            >
+              <span class="my-title-sm-black text-center text-break">
+                <span v-if="getLayerFullTitle(layer).groupName" class="my-title-xs-gray"
+                  >{{ getLayerFullTitle(layer).groupName }} -
+                </span>
+                <span>{{ getLayerFullTitle(layer).layerName }}</span>
+              </span>
+            </div>
+            <!-- 與上半部圓鈕同版型：有 map / hand-draw 之上半分頁時顯示捷徑 -->
+            <button
+              v-for="s in layerUpperTabShortcuts(layer)"
+              :key="layer.layerId + '-up-' + s.tab"
+              type="button"
+              class="btn rounded-circle border-0 d-flex align-items-center justify-content-center my-btn-transparent my-font-size-xs flex-shrink-0"
+              :title="s.title"
+              style="width: 30px; min-width: 30px; height: 30px"
+              @click.stop="openHomeUpperTab(s.tab)"
+            >
+              <i :class="getIcon(s.iconKey).icon"></i>
+            </button>
+          </div>
+          <div class="w-100" :class="`my-bgcolor-${layer.colorName}`" style="min-height: 4px"></div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- 📋 圖層操作內容區域 -->
+    <div v-if="visibleLayers.length > 0" class="flex-grow-1 overflow-auto p-3 my-bgcolor-white">
+      <div
+        v-for="layer in validVisibleLayers"
+        :key="layer.layerId"
+        v-show="activeLayerTab === layer.layerId"
+      >
+        <!-- 手繪網絡線圖層：地圖模式可下載與底圖相同之 WGS84 GeoJSON -->
+        <div
+          v-if="
+            isRegisteredNetworkDrawSketchLayerId(layer.layerId) &&
+            networkDrawSketchWgs84GeoJsonDownloadableForLayerId(layer.layerId)
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">匯出</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="downloadNetworkDrawSketchGeoJson(layer.layerId)"
+          >
+            下載 GeoJSON（WGS84 經緯度）
+          </button>
+        </div>
+
+        <!-- 測試_4 taipei_sn4_a：手繪匯出 GeoJSON -->
+        <div
+          v-if="
+            isRegisteredNetworkDrawSketchSn4LayerId(layer.layerId) &&
+            networkDrawSketchSn4Wgs84GeoJsonDownloadableForLayerId(layer.layerId)
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">匯出（手繪）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="downloadNetworkDrawSketchSn4GeoJson(layer.layerId)"
+          >
+            下載 GeoJSON（WGS84 經緯度）
+          </button>
+        </div>
+
+        <!-- taipei_osm_geojson_sn4：指定 osmFileName／從 data 載入或本機選檔 -->
+        <div
+          v-if="layer.layerId === 'taipei_osm_geojson_sn4'"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">OSM 來源</div>
+          <label class="my-font-size-xs text-muted d-block mb-1"
+            >相對於網站 data 目錄的路徑（例：taipei/taipei.osm）</label
+          >
+          <input
+            type="text"
+            class="form-control form-control-sm mb-2"
+            :value="layer.osmFileName || ''"
+            placeholder="taipei/taipei.osm"
+            @change="onTaipeiOsmSn4OsmPathCommit(layer, $event.target.value)"
+          />
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            :disabled="
+              !layer.visible ||
+              layer.isLoading ||
+              !(layer.osmFileName && String(layer.osmFileName).trim())
+            "
+            @click="onTaipeiOsmSn4ReloadFromPublicData(layer)"
+          >
+            依路徑從 /data/ 重新載入
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+            :disabled="layer.isLoading"
+            @click="onTaipeiOsmSn4PickLocalFileClick"
+          >
+            選擇本機 .osm 並讀入
+          </button>
+          <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.45">
+            本機選檔會將檔名寫入 osmFileName 並直接解析；「依路徑載入」需先開啟本圖層開關，且檔案須存在於
+            public/data 對應路徑。
+          </div>
+        </div>
+
+        <!-- 🎯 網格預覽區域（僅在網格示意圖測試圖層顯示） -->
+        <div v-if="isCurrentLayerGridSchematic" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">網格預覽</div>
+          <div class="d-flex justify-content-center">
+            <div
+              class="border border-secondary rounded"
+              style="background-color: #212121; padding: 8px"
+            >
+              <svg
+                :width="previewGridSize + 40"
+                :height="previewGridSize + 40"
+                class="border border-dark"
+              >
+                <!-- 定義偏移量，為標籤預留空間 -->
+                <defs>
+                  <g id="grid-container" transform="translate(20, 20)">
+                    <!-- 繪製網格線 -->
+                    <g v-for="i in getOriginalGridDimensions().gridX + 1" :key="'col-' + i">
+                      <line
+                        :x1="(i - 1) * (previewGridSize / getOriginalGridDimensions().gridX)"
+                        :y1="0"
+                        :x2="(i - 1) * (previewGridSize / getOriginalGridDimensions().gridX)"
+                        :y2="previewGridSize"
+                        stroke="#666"
+                        stroke-width="0.5"
+                      />
+                    </g>
+                    <g v-for="i in getOriginalGridDimensions().gridY + 1" :key="'row-' + i">
+                      <line
+                        :x1="0"
+                        :y1="(i - 1) * (previewGridSize / getOriginalGridDimensions().gridY)"
+                        :x2="previewGridSize"
+                        :y2="(i - 1) * (previewGridSize / getOriginalGridDimensions().gridY)"
+                        stroke="#666"
+                        stroke-width="0.5"
+                      />
+                    </g>
+
+                    <!-- 繪製節點數值文字 -->
+                    <text
+                      v-for="node in getPreviewNodes()"
+                      :key="'text-' + node.x + '-' + node.y"
+                      :x="getNodeX(node.x)"
+                      :y="getNodeY(node.y)"
+                      text-anchor="middle"
+                      dominant-baseline="middle"
+                      font-size="8"
+                      font-weight="bold"
+                      fill="#FFFFFF"
+                    >
+                      {{ node.value }}
+                    </text>
+                  </g>
+                </defs>
+
+                <!-- 使用定義的網格容器 -->
+                <use href="#grid-container" />
+
+                <!-- 繪製列最大值標籤 -->
+                <text
+                  v-for="(maxVal, index) in getColumnMaxValues()"
+                  :key="'col-max-' + index"
+                  :x="20 + (index + 0.5) * (previewGridSize / getOriginalGridDimensions().gridX)"
+                  y="15"
+                  text-anchor="middle"
+                  dominant-baseline="bottom"
+                  font-size="8"
+                  font-weight="bold"
+                  fill="#4CAF50"
+                >
+                  {{ maxVal }}
+                </text>
+
+                <!-- 繪製行最大值標籤 -->
+                <text
+                  v-for="(maxVal, index) in getRowMaxValues()"
+                  :key="'row-max-' + index"
+                  x="15"
+                  :y="20 + (index + 0.5) * (previewGridSize / getOriginalGridDimensions().gridY)"
+                  text-anchor="end"
+                  dominant-baseline="middle"
+                  font-size="8"
+                  font-weight="bold"
+                  fill="#4CAF50"
+                >
+                  {{ maxVal }}
+                </text>
+              </svg>
+            </div>
+          </div>
+          <div class="text-center mt-2">
+            <small class="text-muted">
+              {{ getOriginalGridDimensions().gridX }} ×
+              {{ getOriginalGridDimensions().gridY }} 原始網格
+            </small>
+          </div>
+        </div>
+
+        <!-- 執行中提示 -->
+        <div v-if="isExecuting" class="pb-2 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">計算中...</div>
+          <div class="d-flex justify-content-center">
+            <div class="spinner-border spinner-border-sm" role="status">
+              <span class="visually-hidden">載入中...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 執行按鈕區域 -->
+        <div v-if="canExecuteLayer && currentLayer" class="pb-3 mb-3 border-bottom">
+          <button
+            v-if="currentLayer"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="onControlExecuteNextClick"
+            :disabled="controlExecuteNextDisabled"
+          >
+            執行下一步
+          </button>
+          <div
+            v-if="isNetworkDrawSketchLayer && networkDrawSketchStationCount > 0"
+            class="mt-2 text-center small text-success"
+            style="line-height: 1.35"
+          >
+            手繪加站點：已插入 {{ networkDrawSketchStationCount }} 處（紫色圓點）
+          </div>
+          <div
+            v-if="isNetworkDrawSketchSn4Layer && networkDrawSketchSn4StationCount > 0"
+            class="mt-2 text-center small text-success"
+            style="line-height: 1.35"
+          >
+            手繪加站點：已插入 {{ networkDrawSketchSn4StationCount }} 處（紫色圓點）
+          </div>
+          <!-- 顯示 (7→8) 迴圈執行次數（僅 taipei_a 圖層） -->
+          <div
+            v-if="isTaipeiTestStraightening && connectFlipNShapeLoopCount > 0"
+            class="mt-2 text-center"
+            style="font-size: 11px; color: #666"
+          >
+            (7→8) 迴圈執行次數：{{ connectFlipNShapeLoopCount }} 次
+          </div>
+        </div>
+
+        <!-- taipei_l3／taipei_sn4_l：縮減黑點（與 Data 分頁 dataTableData 候選一致，逐步合併） -->
+        <div
+          v-if="layer.layerId === 'taipei_l3' || layer.layerId === 'taipei_sn4_l'"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">縮減黑點（l3）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+            :disabled="
+              taipeiL3ReductionAutoRunning ||
+              !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
+              layer.spaceNetworkGridJsonDataL3Tab.length === 0
+            "
+            @click="onTaipeiL3BlackDotReductionStep"
+          >
+            下一步
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mt-2"
+            :class="taipeiL3ReductionAutoRunning ? 'my-btn-orange' : 'my-btn-blue'"
+            :disabled="
+              !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
+              layer.spaceNetworkGridJsonDataL3Tab.length === 0
+            "
+            @click="toggleTaipeiL3ReductionAuto"
+          >
+            {{ taipeiL3ReductionAutoRunning ? '停止自動執行' : '自動執行（0.2 秒／步）' }}
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mt-2 my-btn-blue"
+            :disabled="
+              taipeiL3ReductionAutoRunning ||
+              !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
+              layer.spaceNetworkGridJsonDataL3Tab.length === 0
+            "
+            @click="runTaipeiL3ReductionAll"
+          >
+            一鍵執行到結束
+          </button>
+          <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+            <label
+              for="taipei-l3-weight-diff-n"
+              class="my-font-size-xs text-muted text-nowrap mb-0"
+              style="line-height: 1.35"
+              >n（餘項最小 weight 差 ≥ n 則停）</label
+            >
+            <input
+              id="taipei-l3-weight-diff-n"
+              type="number"
+              class="form-control form-control-sm"
+              style="width: 92px; min-width: 72px"
+              v-model="dataStore.taipeiL3ReductionWeightDiffThreshold"
+              min="0"
+              step="1"
+              :disabled="taipeiL3ReductionAutoRunning"
+            />
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mt-2 my-btn-blue"
+            :disabled="
+              taipeiL3ReductionAutoRunning ||
+              !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
+              layer.spaceNetworkGridJsonDataL3Tab.length === 0
+            "
+            @click="runTaipeiL3ReductionUntilWeightDiffN"
+          >
+            一鍵執行到 weight差為 n
+          </button>
+          <div class="text-muted mt-1" style="font-size: 11px; line-height: 1.45">
+            每按一次合併一處：候選與 Data 分頁相同，優先 |w1−w2|
+            最小；新權重為兩段之最大値。同路線兩段則折線串成一條。「weight差為
+            n」僅合併目前最小差仍小於 n 者，預設 n＝500。圖層區塊「執行下一步」亦用此
+            n：先連續縮減至條件成立，再複製至「m 黑點縮減後」圖層。
+          </div>
+        </div>
+
+        <!-- 空間網絡網格測試_3／測試_4：各圖層分頁獨立 — 正方形網格（開關樣式同圖層／taipei_g） -->
+        <div v-if="isTaipeiTest3BcdeLayerTab(layer.layerId)" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">網格比例（版面／路網）</div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black text-wrap pe-2" style="max-width: 62%">
+              正方形（依寬高取 min）
+            </div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                :id="'switch-sqgrid-test3-' + layer.layerId"
+                :checked="layer.squareGridCellsTaipeiTest3 === true"
+                @change="setSquareGridCellsTaipeiTest3(layer, $event.target.checked)"
+              />
+              <label :for="'switch-sqgrid-test3-' + layer.layerId"></label>
+            </div>
+          </div>
+          <div class="my-title-xs-gray" style="font-size: 11px">關閉＝預設（網格充滿繪區）</div>
+          <template v-if="isLayoutGridTest3LayerTab(layer.layerId)">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mt-2 my-btn-blue"
+              :disabled="
+                !Array.isArray(layer.spaceNetworkGridJsonData) ||
+                layer.spaceNetworkGridJsonData.length === 0
+              "
+              @click="randomizeLayoutGridTest3WeightsInverse10(layer)"
+            >
+              隨機產生 weight（1～10，反比級數）
+            </button>
+            <div class="text-muted mt-1" style="font-size: 11px; line-height: 1.45">
+              沿路線每段「相鄰車站」間一筆；各數字 k 的機率與 1／k 成正比（1 最常出現、10 最少）。
+            </div>
+          </template>
+        </div>
+
+        <!-- taipei_d3：正規化網格長寬、四分樹或 Grid Unit、最近兩點（c3 座標） -->
+        <div
+          v-if="taipeiD3CoordNormalizeReport && currentLayer"
+          class="pb-3 mb-3 border-bottom"
+          style="font-size: 11px; line-height: 1.55"
+        >
+          <div class="my-title-xs-gray pb-2">座標正規化結果</div>
+          <div class="text-muted mb-1">
+            正規化格索引包圍盒（寬×高）：
+            <strong class="text-dark"
+              >{{ taipeiD3CoordNormalizeReport.gridSizeCells.width }} ×
+              {{ taipeiD3CoordNormalizeReport.gridSizeCells.height }}</strong
+            >
+            格
+          </div>
+          <div class="text-muted mb-1">
+            邊界換算佔格（參考）：
+            {{ taipeiD3CoordNormalizeReport.gridSizeCells.byBoundsWidth }} ×
+            {{ taipeiD3CoordNormalizeReport.gridSizeCells.byBoundsHeight }}
+          </div>
+          <div v-if="taipeiD3CoordNormalizeReport.gridUnit != null" class="text-muted mb-1">
+            Grid Unit（作為 1 格之最近兩點距離）：
+            <strong class="text-dark">{{ taipeiD3CoordNormalizeReport.gridUnit }}</strong>
+          </div>
+          <div v-else-if="taipeiD3CoordNormalizeReport.quadtree" class="text-muted mb-1">
+            四分樹正規化：葉
+            <strong class="text-dark">{{ taipeiD3CoordNormalizeReport.quadtree.leafCount }}</strong>
+            、最深
+            <strong class="text-dark">{{ taipeiD3CoordNormalizeReport.quadtree.maxDepth }}</strong>
+            ；相異紅點座標
+            <strong class="text-dark">{{
+              taipeiD3CoordNormalizeReport.quadtree.uniqueRedPointCount
+            }}</strong>
+            （原始紅點頂
+            {{ taipeiD3CoordNormalizeReport.quadtree.rawConnectCoordCount }}）；邊界帶寬×高
+            <strong class="text-dark"
+              >{{ taipeiD3CoordNormalizeReport.quadtree.boundaryStripsX }} ×
+              {{ taipeiD3CoordNormalizeReport.quadtree.boundaryStripsY }}</strong
+            >
+            ；最小葉寬×高（c3 度）
+            <strong class="text-dark"
+              >{{ taipeiD3CoordNormalizeReport.quadtree.minLeafWidth }} ×
+              {{ taipeiD3CoordNormalizeReport.quadtree.minLeafHeight }}</strong
+            >
+          </div>
+          <template v-if="taipeiD3CoordNormalizeReport.nearestPairSource">
+            <div class="text-muted mb-0">
+              最近兩點（c3 路網座標）、距離
+              {{ taipeiD3CoordNormalizeReport.nearestPairSource.distance }}：<br />
+              <span class="text-dark text-break"
+                >A
+                <span v-if="taipeiD3CoordNormalizeReport.nearestPairSource.stationNameA">
+                  {{ taipeiD3CoordNormalizeReport.nearestPairSource.stationNameA }}
+                </span>
+                （{{ taipeiD3CoordNormalizeReport.nearestPairSource.pointA?.join(', ') }}）</span
+              ><br />
+              <span class="text-dark text-break"
+                >B
+                <span v-if="taipeiD3CoordNormalizeReport.nearestPairSource.stationNameB">
+                  {{ taipeiD3CoordNormalizeReport.nearestPairSource.stationNameB }}
+                </span>
+                （{{ taipeiD3CoordNormalizeReport.nearestPairSource.pointB?.join(', ') }}）</span
+              >
+            </div>
+          </template>
+        </div>
+
+        <!-- 各圖層：路段車站節點（不含純轉折頂點） -->
+        <div
+          v-if="layerSegmentStationNodesReport"
+          class="pb-3 mb-3 border-bottom"
+          style="font-size: 11px; line-height: 1.6"
+        >
+          <div class="my-title-xs-gray pb-2">
+            路段車站節點 — {{ layerSegmentStationNodesReport.layerName }}（{{
+              layerSegmentStationNodesReport.segments.length
+            }}
+            段／扁平 {{ layerSegmentStationNodesReport.flatSegmentCount }} 段）
+          </div>
+          <div v-if="layerSegmentStationNodesReport.notLoaded" class="text-muted small mb-0">
+            圖層尚未載入，尚無路段車站節點可列。
+          </div>
+          <div
+            v-else-if="layerSegmentStationNodesReport.noSpaceNetwork"
+            class="text-muted small mb-0"
+          >
+            本圖層尚未有 <code class="small">spaceNetworkGridJsonData</code>，無路段可列。
+          </div>
+          <template v-else>
+            <div class="text-muted small mb-2" style="line-height: 1.45">
+              依 <code class="small">spaceNetworkGridJsonData</code> 展平後順序；各段車站點與
+              <code class="small">flatSegmentsToGeojsonStyleExportRows</code>／
+              <code class="small">processedJsonData.segment</code> 一致（起迄含
+              <code class="small">properties_start</code>／<code class="small">properties_end</code
+              >）。頂點少於 2 之段改掃 <code class="small">nodes</code>；僅列至少一個車站點之路段。
+            </div>
+            <div
+              v-if="
+                currentLayer?.layerId === 'taipei_h3' || currentLayer?.layerId === 'taipei_sn4_h'
+              "
+              class="text-muted small mb-2"
+              style="line-height: 1.45"
+            >
+              taipei_h3：路段編號與 taipei_a3 匯出列序號未必相同（g3 於交叉點切段）；各段下方可對照
+              a3。
+            </div>
+            <div
+              v-if="layerSegmentStationNodesReport.segments.length === 0"
+              class="text-muted small mb-0"
+            >
+              本圖層共
+              {{ layerSegmentStationNodesReport.flatSegmentCount }}
+              條扁平折線，皆無可列出之車站節點。
+            </div>
+            <div
+              v-for="seg in layerSegmentStationNodesReport.segments"
+              :key="seg.segIdx"
+              class="mb-3"
+            >
+              <div class="fw-semibold text-dark mb-1" style="font-size: 11px">
+                {{ seg.routeName }} · 路段 #{{ seg.segIdx }}（{{ seg.stationNodes.length }} 車站點）
+              </div>
+              <template
+                v-if="
+                  currentLayer?.layerId === 'taipei_h3' || currentLayer?.layerId === 'taipei_sn4_h'
+                "
+              >
+                <div
+                  v-if="seg.a3Correspondence"
+                  class="text-muted small mb-1"
+                  style="line-height: 1.45"
+                >
+                  對應 taipei_a3 匯出：{{ seg.a3Correspondence.summary
+                  }}<span v-if="seg.a3Correspondence.midCount > 0">
+                    · 中段站 {{ seg.a3Correspondence.midCount }} 個</span
+                  >
+                  <span v-if="seg.a3Correspondence.midLabels?.length" class="d-block mt-1">
+                    a3 中段：{{ seg.a3Correspondence.midLabels.join('、') }}
+                  </span>
+                </div>
+                <div v-else class="text-muted small mb-1" style="line-height: 1.45">
+                  無 taipei_a3 匯出列與此段對應（切段或起迄與 a3 列不一致時會發生）。
+                </div>
+              </template>
+              <div
+                v-for="n in seg.stationNodes"
+                :key="`${seg.segIdx}-${n.idx}`"
+                class="d-flex gap-2"
+                style="font-size: 10px; font-family: monospace"
+              >
+                <span class="text-muted">[{{ n.idx }}]</span>
+                <span class="text-dark">({{ n.x }}, {{ n.y }})</span>
+                <span v-if="n.stationName" class="text-dark">
+                  {{ n.stationName
+                  }}<span v-if="n.stationId" class="text-muted">（{{ n.stationId }}）</span>
+                </span>
+                <span :class="n.nodeType === 'connect' ? 'text-danger' : 'text-secondary'">{{
+                  n.nodeType
+                }}</span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- taipei_e3：connect 相鄰連線，離散角：水平／垂直＝0°，斜向＝45° -->
+        <div
+          v-if="
+            taipeiE3RedBluePairsAngleReport &&
+            (currentLayer?.layerId === 'taipei_e3' || currentLayer?.layerId === 'taipei_sn4_e')
+          "
+          class="pb-3 mb-3 border-bottom"
+          style="font-size: 11px; line-height: 1.5"
+        >
+          <div class="my-title-xs-gray pb-2">
+            紅／藍 connect 相鄰連線（水平／垂直＝0°，斜向＝45°）
+          </div>
+          <div class="text-muted mb-2" style="font-size: 10px">
+            僅統計<strong>路段折線上相鄰兩頂點</strong>且<strong>兩端皆為 connect</strong
+            >之邊（無向邊只列一次）。紅＝路網 degree≥2，藍＝degree≤1。<strong
+              >水平與垂直皆標為 0°</strong
+            >；<strong>左上–右下、右上–左下等斜向</strong>（|Δx|、|Δy| 皆 &gt;0）<strong
+              >皆標為 45°</strong
+            >。路網僅此兩類時，角度必為 0° 或 45°。起點／終點依格鍵排序（與幾何走向無關）。
+          </div>
+          <div v-if="taipeiE3RedBluePairsAngleReport.points.length < 2" class="text-muted mb-0">
+            需至少兩個 connect 格點才可能出現 connect–connect 連線。
+          </div>
+          <template v-else>
+            <div class="text-muted mb-1">
+              connect 點數：<strong class="text-dark">{{
+                taipeiE3RedBluePairsAngleReport.points.length
+              }}</strong>
+              ；<strong>相鄰 connect–connect 連線</strong>：<strong class="text-dark">{{
+                taipeiE3RedBluePairsAngleReport.rows.length
+              }}</strong>
+            </div>
+            <div v-if="taipeiE3RedBluePairsAngleReport.rows.length === 0" class="text-muted mb-0">
+              尚無 connect–connect 相鄰邊。
+            </div>
+            <div v-else class="table-responsive">
+              <table class="table table-sm table-bordered mb-0" style="font-size: 11px">
+                <thead class="table-light">
+                  <tr>
+                    <th scope="col" class="text-nowrap">#</th>
+                    <th scope="col" class="text-nowrap">角度°</th>
+                    <th scope="col" class="text-nowrap">起點</th>
+                    <th scope="col" class="text-nowrap">終點</th>
+                    <th scope="col" class="text-nowrap">Δx,Δy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in taipeiE3RedBluePairsAngleReport.rows" :key="idx">
+                    <td>{{ idx + 1 }}</td>
+                    <td class="text-nowrap text-dark">{{ row.angleDeg }}</td>
+                    <td class="text-nowrap">
+                      <div class="text-dark fw-semibold">
+                        {{ row.from.stationName || '（無站名）' }}
+                      </div>
+                      <div class="text-muted" style="font-size: 10px">
+                        <span
+                          :class="row.from.rb === '紅' ? 'text-danger' : ''"
+                          :style="row.from.rb === '藍' ? 'color:#1565c0' : ''"
+                          >{{ row.from.rb }}</span
+                        >
+                        <span v-if="row.from.connectNumber">
+                          · cn {{ row.from.connectNumber }}</span
+                        >
+                        · ({{ row.from.x }}, {{ row.from.y }})
+                      </div>
+                    </td>
+                    <td class="text-nowrap">
+                      <div class="text-dark fw-semibold">
+                        {{ row.to.stationName || '（無站名）' }}
+                      </div>
+                      <div class="text-muted" style="font-size: 10px">
+                        <span
+                          :class="row.to.rb === '紅' ? 'text-danger' : ''"
+                          :style="row.to.rb === '藍' ? 'color:#1565c0' : ''"
+                          >{{ row.to.rb }}</span
+                        >
+                        <span v-if="row.to.connectNumber"> · cn {{ row.to.connectNumber }}</span>
+                        · ({{ row.to.x }}, {{ row.to.y }})
+                      </div>
+                    </td>
+                    <td class="text-nowrap text-muted">{{ row.dx }}, {{ row.dy }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+        </div>
+
+        <!-- 網格正規化／結果：車站紅點＋黑點最小水平／垂直間距（與畫面上車站配置一致） -->
+        <div
+          v-if="isGridNormStationMetricsLayer && currentLayer && gridStationMinAxisReport"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div
+            v-if="isTaipeiTestCLayerTab(currentLayer?.layerId)"
+            class="mb-3 p-2 rounded border"
+            style="font-size: 11px; line-height: 1.5; background: #f8f9fa"
+          >
+            <div
+              v-if="currentLayer?.overlayShrinkApplyPending"
+              class="mb-2 p-2 rounded d-flex flex-wrap gap-2 align-items-center"
+              style="background: #f3e8ff; border: 1px solid #d4b8f0"
+            >
+              <template v-if="overlayShrinkPreviewPlanLength > 0">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-primary rounded-pill"
+                  @click="advanceOverlayShrinkHighlight"
+                >
+                  下一步
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary rounded-pill"
+                  @click="runOverlayShrinkAutoHighlight"
+                >
+                  {{ isOverlayShrinkAutoRunning ? '停止' : '自動執行（0.1 秒／步）' }}
+                </button>
+              </template>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary rounded-pill"
+                @click="applyTaipeiCOverlayShrink"
+              >
+                套用疊加縮減
+              </button>
+            </div>
+            <div v-if="overlayQuadSubdivideInfo" class="text-dark mb-2">
+              <strong>b→c 疊加網格（版面四等分）</strong>：目前採用
+              <strong
+                >{{ overlayQuadSubdivideInfo.gridN }}×{{ overlayQuadSubdivideInfo.gridN }}</strong
+              >
+              格（層級 {{ overlayQuadSubdivideInfo.level }}，單格最大紅+黑≤{{
+                overlayQuadSubdivideInfo.maxRedBlackPerCellEnd
+              }}）。刪空列／行前（已平移包圍盒原點）單格寬
+              <strong>{{ Number(overlayQuadSubdivideInfo.cellW).toFixed(6) }}</strong
+              >、高 <strong>{{ Number(overlayQuadSubdivideInfo.cellH).toFixed(6) }}</strong
+              >。
+              <span class="text-muted d-block mt-1" style="font-size: 10px">
+                歸格方式：以<strong>格中心</strong>為準（連續座標換算 nx＝x/cw 後，對應 nx∈[ix−0.5,
+                ix+0.5] 之整數格 ix，即四捨五入後 clamp），非 floor(x/cw) 的左下角矩形。塌縮後
+                <code>minSpacingOverlayCell</code> 固定為 1×1（刪減後索引）。
+              </span>
+            </div>
+            <template v-else>
+              <div v-if="currentLayer.minSpacingOverlayCell" class="text-dark">
+                每一格寬度 <strong>cellW</strong>＝{{
+                  Number(currentLayer.minSpacingOverlayCell.cellW).toFixed(4)
+                }}、每一格高度 <strong>cellH</strong>＝{{
+                  Number(currentLayer.minSpacingOverlayCell.cellH).toFixed(4)
+                }}
+              </div>
+              <div v-else class="text-muted">尚無 minSpacingOverlayCell。</div>
+              <template v-if="gridStationMinAxisReport && gridStationMinAxisReport.pointCount >= 2">
+                <div v-if="gridStationMinAxisReport.widthPair" class="mt-2 text-muted">
+                  <span class="text-dark">參考：任兩站最小 |Δx|</span> 由
+                  <strong class="text-dark">{{ gridStationMinAxisReport.widthPair.a.name }}</strong>
+                  {{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.widthPair.a.x,
+                      gridStationMinAxisReport.widthPair.a.y
+                    )
+                  }}
+                  與
+                  <strong class="text-dark">{{ gridStationMinAxisReport.widthPair.b.name }}</strong>
+                  {{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.widthPair.b.x,
+                      gridStationMinAxisReport.widthPair.b.y
+                    )
+                  }}
+                  （|Δx|＝{{ fmtMinAxisDelta(gridStationMinAxisReport.minWidth) }}）。
+                </div>
+                <div v-if="gridStationMinAxisReport.heightPair" class="mt-1 text-muted">
+                  <span class="text-dark">參考：任兩站最小 |Δy|</span> 由
+                  <strong class="text-dark">{{
+                    gridStationMinAxisReport.heightPair.a.name
+                  }}</strong>
+                  {{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.heightPair.a.x,
+                      gridStationMinAxisReport.heightPair.a.y
+                    )
+                  }}
+                  與
+                  <strong class="text-dark">{{
+                    gridStationMinAxisReport.heightPair.b.name
+                  }}</strong>
+                  {{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.heightPair.b.x,
+                      gridStationMinAxisReport.heightPair.b.y
+                    )
+                  }}
+                  （|Δy|＝{{ fmtMinAxisDelta(gridStationMinAxisReport.minHeight) }}）。
+                </div>
+              </template>
+            </template>
+          </div>
+
+          <template v-if="!isTaipeiTestDLayerTab(currentLayer?.layerId)">
+            <div class="my-title-xs-gray pb-2">
+              黑點車站一覽 ({{ gridNormBlackStationRows.length }})
+            </div>
+            <div
+              v-if="gridNormBlackStationRows.length === 0"
+              class="text-muted mb-3"
+              style="font-size: 11px"
+            >
+              尚無黑點（需路線與已儲存之 ConnectData／SectionData／StationData）。
+            </div>
+            <template v-else>
+              <!-- taipei_e：站名 / 站點往中心聚集的縮減前（疊加格）/ 縮減前（疊加格）/ 往圖心方向；地圖為縮減後 -->
+              <template v-if="isTaipeiTestELayerTab(currentLayer?.layerId)">
+                <div class="mb-1 text-muted" style="font-size: 10px">
+                  「站點往中心聚集的縮減前」= c→d 滑動後、d→e 縮減前的疊加格 (ix, iy)；「縮減前」=
+                  d→e 縮減後（地圖同）。
+                </div>
+                <div class="table-responsive mb-3">
+                  <table class="table table-sm table-bordered mb-0" style="font-size: 11px">
+                    <thead class="table-light">
+                      <tr>
+                        <th scope="col" class="text-nowrap">站名</th>
+                        <th scope="col" class="text-nowrap">站點往中心聚集的縮減前（疊加格）</th>
+                        <th scope="col" class="text-nowrap">縮減前（疊加格）</th>
+                        <th scope="col" class="text-nowrap">往圖心方向（沿路水平／垂直）</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="(row, idx) in gridNormBlackStationRows"
+                        :key="idx"
+                        :class="{ 'table-active': isTaipeiCBlackRowTableActive(row) }"
+                      >
+                        <td>{{ row.name }}</td>
+                        <td class="text-dark text-nowrap">
+                          {{ fmtBlackStationCoordBeforeRemoval(row) }}
+                        </td>
+                        <td class="text-dark text-nowrap">
+                          {{ fmtBlackStationCoordAfterRemoval(row) }}
+                        </td>
+                        <td class="text-dark text-nowrap" style="max-width: 12rem">
+                          {{ row.towardCenterLabel }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
+              <!-- taipei_c：站名 / 原來座標 / 縮減前 / 刪減後 / 往圖心方向 -->
+              <template v-else>
+                <div class="mb-1 text-muted" style="font-size: 10px">
+                  「原來座標」取自
+                  <strong>{{ gridNormCompanionBLayerId }}</strong>
+                  圖層（與本表相同之路段＋弧長邏輯），為尚未做四等分／疊加網格前之示意
+                  (x,y)；無法對照時顯示 —。
+                </div>
+                <div class="table-responsive mb-3">
+                  <table class="table table-sm table-bordered mb-0" style="font-size: 11px">
+                    <thead class="table-light">
+                      <tr>
+                        <th scope="col" class="text-nowrap">站名</th>
+                        <th scope="col" class="text-nowrap">原來座標（疊加網格前）</th>
+                        <th scope="col" class="text-nowrap">縮減前（疊加格）</th>
+                        <th scope="col" class="text-nowrap">刪減後（列表／JSON）</th>
+                        <th scope="col" class="text-nowrap">往圖心方向（沿路水平／垂直）</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="(row, idx) in gridNormBlackStationRows"
+                        :key="idx"
+                        :class="{ 'table-active': isTaipeiCBlackRowTableActive(row) }"
+                      >
+                        <td>{{ row.name }}</td>
+                        <td class="text-dark text-nowrap">
+                          {{ fmtBlackStationCoordPreOverlay(row) }}
+                        </td>
+                        <td class="text-dark text-nowrap">
+                          {{ fmtBlackStationCoordBeforeRemoval(row) }}
+                        </td>
+                        <td class="text-dark text-nowrap">
+                          {{ fmtBlackStationCoordAfterRemoval(row) }}
+                        </td>
+                        <td class="text-dark text-nowrap" style="max-width: 12rem">
+                          {{ row.towardCenterLabel }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
+            </template>
+          </template>
+
+          <div class="my-title-xs-gray pb-2">網格車站最小間距（參考統計）</div>
+          <div v-if="overlayQuadSubdivideInfo" class="text-muted mb-2" style="font-size: 10px">
+            b→c 疊加格由<strong>版面四等分</strong>決定；下列 |Δx|／|Δy| 僅供參考，<strong
+              >不是</strong
+            >
+            cellW／cellH 來源。黑點若弧長落在同一數值格，列表會沿路段微移以避免與他站共點顯示。
+          </div>
+          <div v-else class="text-muted mb-1" style="font-size: 10px">
+            「縮減前」為刪空欄列前之疊加格 (ix, iy)；「刪減後」與目前
+            <code>spaceNetworkGridJsonData</code>／列表一致。依
+            <code>gridTooltipMaps</code> 互換；無對照表時兩欄相同。
+          </div>
+          <div
+            v-if="gridStationMinAxisReport.pointCount < 2"
+            class="text-muted"
+            style="font-size: 11px"
+          >
+            需有路線資料與已儲存之 ConnectData／SectionData，且至少兩個車站點才可計算。
+          </div>
+          <div v-else class="text-start" style="font-size: 11px; line-height: 1.45">
+            <template v-if="overlayQuadSubdivideInfo">
+              <div class="mb-1 text-muted">
+                參考 |Δx| min：
+                <span v-if="gridStationMinAxisReport.minWidth != null" class="text-dark">{{
+                  fmtMinAxisDelta(gridStationMinAxisReport.minWidth)
+                }}</span>
+                <span v-else>—</span>
+                ；|Δy| min：
+                <span v-if="gridStationMinAxisReport.minHeight != null" class="text-dark">{{
+                  fmtMinAxisDelta(gridStationMinAxisReport.minHeight)
+                }}</span>
+                <span v-else>—</span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="mb-1">
+                <strong>網格寬</strong>（任兩站最小 |Δx|）：
+                <span v-if="gridStationMinAxisReport.minWidth != null" class="text-dark">
+                  {{ fmtMinAxisDelta(gridStationMinAxisReport.minWidth) }}
+                </span>
+                <span v-else class="text-muted">—（所有站點 x 相同或僅一站）</span>
+              </div>
+              <div v-if="gridStationMinAxisReport.widthPair" class="text-muted mb-2 ps-1">
+                <div>
+                  {{ gridStationMinAxisReport.widthPair.a.name }}
+                  <span class="text-dark">{{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.widthPair.a.x,
+                      gridStationMinAxisReport.widthPair.a.y
+                    )
+                  }}</span>
+                  <span
+                    v-if="gridStationMinAxisReport.widthPair.a.kind === 'connect'"
+                    class="text-danger"
+                    >紅</span
+                  >
+                  <span v-else>黑</span>
+                </div>
+                <div>
+                  {{ gridStationMinAxisReport.widthPair.b.name }}
+                  <span class="text-dark">{{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.widthPair.b.x,
+                      gridStationMinAxisReport.widthPair.b.y
+                    )
+                  }}</span>
+                  <span
+                    v-if="gridStationMinAxisReport.widthPair.b.kind === 'connect'"
+                    class="text-danger"
+                    >紅</span
+                  >
+                  <span v-else>黑</span>
+                </div>
+              </div>
+              <div class="mb-1">
+                <strong>網格高</strong>（任兩站最小 |Δy|）：
+                <span v-if="gridStationMinAxisReport.minHeight != null" class="text-dark">
+                  {{ fmtMinAxisDelta(gridStationMinAxisReport.minHeight) }}
+                </span>
+                <span v-else class="text-muted">—（所有站點 y 相同或僅一站）</span>
+              </div>
+              <div v-if="gridStationMinAxisReport.heightPair" class="text-muted ps-1">
+                <div>
+                  {{ gridStationMinAxisReport.heightPair.a.name }}
+                  <span class="text-dark">{{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.heightPair.a.x,
+                      gridStationMinAxisReport.heightPair.a.y
+                    )
+                  }}</span>
+                  <span
+                    v-if="gridStationMinAxisReport.heightPair.a.kind === 'connect'"
+                    class="text-danger"
+                    >紅</span
+                  >
+                  <span v-else>黑</span>
+                </div>
+                <div>
+                  {{ gridStationMinAxisReport.heightPair.b.name }}
+                  <span class="text-dark">{{
+                    fmtGridNormCoord(
+                      gridStationMinAxisReport.heightPair.b.x,
+                      gridStationMinAxisReport.heightPair.b.y
+                    )
+                  }}</span>
+                  <span
+                    v-if="gridStationMinAxisReport.heightPair.b.kind === 'connect'"
+                    class="text-danger"
+                    >紅</span
+                  >
+                  <span v-else>黑</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 網格正規化結果（2_10）：縮減時移除的空疊加網格列／行 -->
+        <div
+          v-if="
+            isTaipeiTestELayerTab(currentLayer?.layerId) &&
+            currentLayer?.spaceNetworkGridJsonData?.length
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">縮減的疊加網格（空列／空行）</div>
+          <div class="text-muted mb-1" style="font-size: 10px">
+            橫列（row）只看點與橫線；直行（col）只看點與直線。僅被直線經過的列、僅被橫線經過的行可刪除，縮減時已移除。
+          </div>
+          <div class="text-start" style="font-size: 11px; line-height: 1.45">
+            <div class="mb-1">
+              <strong>空列</strong>（row，iy；僅被直線經過）：
+              <span v-if="(currentLayer.emptyOverlayRows?.length ?? 0) > 0" class="text-dark">
+                {{ (currentLayer.emptyOverlayRows || []).join(', ') }}
+              </span>
+              <span v-else class="text-muted">無</span>
+            </div>
+            <div>
+              <strong>空行</strong>（col，ix；僅被橫線經過）：
+              <span v-if="(currentLayer.emptyOverlayCols?.length ?? 0) > 0" class="text-dark">
+                {{ (currentLayer.emptyOverlayCols || []).join(', ') }}
+              </span>
+              <span v-else class="text-muted">無</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- taipei_e 下載最後結果 JSON -->
+        <div
+          v-if="
+            isTaipeiTestELayerTab(currentLayer?.layerId) &&
+            currentLayer?.spaceNetworkGridJsonData?.length
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <button
+            class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="downloadFinalJson"
+          >
+            下載最後結果 JSON（僅路段匯出格式）
+          </button>
+        </div>
+
+        <!-- taipei_j3／j3_dp／j3_dp_2／j3_dp_nd 下載 JSON（路段匯出＋表格／流量摘要） -->
+        <div
+          v-if="
+            isTaipeiTest3J3TrafficExportLayerTab(currentLayer?.layerId) &&
+            currentLayer?.spaceNetworkGridJsonData?.length
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">匯出</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="downloadTaipeiJ3Json"
+          >
+            下載 JSON（路段匯出＋ dataTableData／流量摘要）
+          </button>
+        </div>
+
+        <!-- taipei_f：依欄 x 逐步高亮相連路段（跨路線相接視為同一筆） -->
+        <div
+          v-if="
+            isTaipeiTestFLayerTab(currentLayer?.layerId) &&
+            currentLayer?.spaceNetworkGridJsonData?.length
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">一鍵流程</div>
+          <div class="text-muted mb-2" style="font-size: 10px">
+            依序執行：① 紅點間路段黑點位移（僅清單路段，至無人可動）②
+            站點向示意圖中心（僅非清單黑點，至無人可動）③ 欄／列一鍵批次（先欄後列）④
+            空欄／空列縮減。
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            :class="{ 'opacity-50': taipeiFOneClickPipelineRunning }"
+            :disabled="taipeiFOneClickPipelineRunning"
+            @click="runTaipeiFOneClickPipeline"
+          >
+            {{
+              taipeiFOneClickPipelineRunning
+                ? '執行中…'
+                : '一鍵執行（清單向心 → 向心 → 欄列批次 → 縮減）'
+            }}
+          </button>
+          <div class="text-muted mb-2" style="font-size: 10px">
+            連續 6 輪：每輪皆為 ①②③④，共 6×(1-2-3-4)。
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-3"
+            :class="{ 'opacity-50': taipeiFOneClickPipelineRunning }"
+            :disabled="taipeiFOneClickPipelineRunning"
+            @click="runTaipeiFOneClickPipelineSixRounds"
+          >
+            {{
+              taipeiFOneClickPipelineRunning
+                ? '執行中…'
+                : '一鍵執行 ×6 輪（清單向心 → 向心 → 欄列批次 → 縮減）'
+            }}
+          </button>
+
+          <div class="my-title-xs-gray pb-2">空欄／空列縮減</div>
+          <div class="text-muted mb-2" style="font-size: 10px">
+            整欄或整列若皆無黑點、紅點或路線轉折頂點，則刪除該欄／列，並將全路網與
+            Section／Connect／Station 座標一併重映射為連續索引。
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-3"
+            @click="pruneTaipeiFEmptyGridRowsColsFromControl"
+          >
+            刪除空欄／空列並重映射座標
+          </button>
+
+          <div class="my-title-xs-gray pb-2">紅點間路段（SectionData）</div>
+          <div class="my-title-xs-gray text-center mb-2" style="font-size: 10px">
+            不列出起迄兩紅點皆與多條路段相連者（兩端皆為轉乘／分歧節點）。
+          </div>
+          <ul
+            v-if="taipeiFSectionRouteList.length"
+            class="list-unstyled mb-3 ps-1 my-content-sm-black"
+            style="font-size: 11px"
+          >
+            <li v-for="row in taipeiFSectionRouteList" :key="'sec-' + row.index" class="mb-1">
+              <span class="text-muted">{{ row.index + 1 }}.</span>
+              {{ row.routeName ? row.routeName + ' · ' : '' }}{{ row.startText }} →
+              {{ row.endText }}
+            </li>
+          </ul>
+          <div v-else class="text-muted mb-3" style="font-size: 11px">尚無 SectionData 路段</div>
+
+          <div class="my-title-xs-gray pb-2 mt-1">紅點間路段黑點位移（僅清單路段）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="stepTaipeiFSectionCenteringOnce"
+          >
+            下一步（清單路段·一顆黑點）
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            :class="taipeiFSectionCenteringAutoIntervalId != null ? 'my-btn-orange' : 'my-btn-blue'"
+            @click="toggleTaipeiFSectionCenteringAuto"
+          >
+            {{
+              taipeiFSectionCenteringAutoIntervalId != null
+                ? '停止自動（清單路段）'
+                : '自動執行（清單路段·每 0.1 秒）'
+            }}
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="runTaipeiFListedSectionStationsTowardSchematicCenterComplete"
+          >
+            一鍵完成（清單路段·至無人可動）
+          </button>
+          <div
+            v-if="taipeiFSectionCenteringSummary"
+            class="my-content-sm-black text-center text-muted mb-2"
+            style="font-size: 11px"
+          >
+            {{ taipeiFSectionCenteringSummary }}
+          </div>
+          <div class="my-title-xs-gray text-center mb-3" style="font-size: 10px">
+            只處理列在上方清單的紅點間路段黑點；沿路網朝「與其他路線相連」之紅端點移動（通常僅一端）。路線折線轉折點位置不會改變。
+            「一鍵完成（清單路段）」重複輪直到清單內黑點整輪無人可動；其他黑點格仍參與佔用判定。
+          </div>
+          <div class="my-title-xs-gray pb-2">站點向示意圖中心（藍虛線，僅非清單黑點）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="stepTaipeiFCenteringOnce"
+          >
+            下一步（向心·一顆黑點）
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            :class="taipeiFCenteringAutoIntervalId != null ? 'my-btn-orange' : 'my-btn-blue'"
+            @click="toggleTaipeiFCenteringAutoAdvance"
+          >
+            {{
+              taipeiFCenteringAutoIntervalId != null
+                ? '停止自動（向心·每顆黑點）'
+                : '自動執行向心（每 0.1 秒一顆黑點）'
+            }}
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="runTaipeiFLineStationsTowardSchematicCenter"
+          >
+            一鍵完成（向心·至無人可動）
+          </button>
+          <div
+            v-if="taipeiFCenteringAutoSummary"
+            class="my-content-sm-black text-center text-muted mb-2"
+            style="font-size: 11px"
+          >
+            {{ taipeiFCenteringAutoSummary }}
+          </div>
+          <div class="my-title-xs-gray text-center mb-3" style="font-size: 10px">
+            僅處理「非」紅點間路段（SectionData）清單內之黑點；清單內路段請用上方「清單路段」按鈕。
+            目標為藍虛線框（路線折線邊界）之幾何中心，不依 SectionData 轉乘 hub
+            紅點；在示意圖座標上朝該中心移動。
+            映射後座標不可越出藍虛線框；折線頂點隨站點更新。水平／垂直段上皆可沿該邊滑動；轉折處可換軸繼續靠向中心。
+            「一鍵完成」：多輪至整輪無上述黑點可再位移（或重複版面／輪數上限）。
+            「下一步」／自動：排序僅含非清單黑點；會停止欄／列與向心自動計時。
+          </div>
+          <div class="my-title-xs-gray pb-2">欄／列 一鍵批次</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-3"
+            @click="runTaipeiFColThenRowAll"
+          >
+            一鍵執行（先欄後列）
+          </button>
+          <div class="my-title-xs-gray pb-2">欄（x）逐步檢視</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="advanceTaipeiFColHighlight"
+          >
+            下一筆 Col
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            :class="taipeiFColAutoIntervalId != null ? 'my-btn-orange' : 'my-btn-blue'"
+            @click="toggleTaipeiFAutoAdvance('col')"
+          >
+            {{ taipeiFColAutoIntervalId != null ? '停止自動（欄）' : '自動執行（每 0.1 秒）' }}
+          </button>
+          <div
+            v-if="taipeiFColHighlightSummary"
+            class="my-content-sm-black text-center text-muted"
+            style="font-size: 11px"
+          >
+            {{ taipeiFColHighlightSummary }}
+          </div>
+          <div
+            v-if="taipeiFColTopologyError"
+            class="text-danger text-center mt-2 px-1"
+            style="font-size: 11px; font-weight: 600"
+          >
+            重大錯誤：{{ taipeiFColTopologyError }}
+          </div>
+          <div v-else-if="!taipeiFColHighlightSummary" class="my-title-xs-gray text-center">
+            由 x=0 起；僅垂直線相連／高亮（不含水平線）
+          </div>
+          <div class="my-title-xs-gray pb-2 pt-3">列（y）逐步檢視</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="advanceTaipeiFRowHighlight"
+          >
+            下一筆 Row
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            :class="taipeiFRowAutoIntervalId != null ? 'my-btn-orange' : 'my-btn-green'"
+            @click="toggleTaipeiFAutoAdvance('row')"
+          >
+            {{ taipeiFRowAutoIntervalId != null ? '停止自動（列）' : '自動執行（每 0.1 秒）' }}
+          </button>
+          <div
+            v-if="taipeiFRowHighlightSummary"
+            class="my-content-sm-black text-center text-muted"
+            style="font-size: 11px"
+          >
+            {{ taipeiFRowHighlightSummary }}
+          </div>
+          <div
+            v-if="taipeiFRowTopologyError"
+            class="text-danger text-center mt-2 px-1"
+            style="font-size: 11px; font-weight: 600"
+          >
+            重大錯誤：{{ taipeiFRowTopologyError }}
+          </div>
+          <div v-else-if="!taipeiFRowHighlightSummary" class="my-title-xs-gray text-center">
+            由 y=0 起；僅水平線相連／高亮（不含垂直線）
+          </div>
+
+          <div class="my-title-xs-gray pb-2 pt-3">匯出目前路網</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="downloadTaipeiFNetworkJson"
+          >
+            下載 {{ taipeiFNetworkExportFilename(currentLayer?.layerId) }}（僅路段匯出格式）
+          </button>
+        </div>
+
+        <!-- taipei_g：隨機產生路段 station_weights -->
+        <div
+          v-if="
+            isTaipeiTestGLayerTab(currentLayer?.layerId) &&
+            currentLayer?.spaceNetworkGridJsonData?.length
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <button
+            class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="randomizeTaipeiFWeights"
+          >
+            隨機產生權重
+          </button>
+        </div>
+
+        <!-- LayoutGridTab_Test2 當前尺寸顯示（即時顯示） -->
+        <div
+          v-if="layoutGridTabTest2Dimensions.x > 0 || layoutGridTabTest2Dimensions.y > 0"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test2 當前尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              X: {{ layoutGridTabTest2Dimensions.x }} pt × Y:
+              {{ layoutGridTabTest2Dimensions.y }} pt
+            </div>
+            <small class="text-muted">寬度 × 高度</small>
+          </div>
+        </div>
+
+        <!-- LayoutGridTab_Test2 網格最小尺寸顯示（即時顯示） -->
+        <div
+          v-if="
+            layoutGridTabTest2MinCellDimensions.minWidth > 0 ||
+            layoutGridTabTest2MinCellDimensions.minHeight > 0
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test2 網格最小尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              最小寬度: {{ layoutGridTabTest2MinCellDimensions.minWidth }} pt × 最小高度:
+              {{ layoutGridTabTest2MinCellDimensions.minHeight }} pt
+            </div>
+            <small class="text-muted">最小寬度 × 最小高度</small>
+          </div>
+        </div>
+
+        <!-- LayoutGridTab_Test3 當前尺寸（僅 6-1 簡化2 圖層面板顯示，避免與其他圖層混淆） -->
+        <div
+          v-if="
+            isTaipei6_1Test2 &&
+            (layoutGridTabTest3Dimensions.x > 0 || layoutGridTabTest3Dimensions.y > 0)
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test3 當前尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              X: {{ layoutGridTabTest3Dimensions.x }} pt × Y:
+              {{ layoutGridTabTest3Dimensions.y }} pt
+            </div>
+            <small class="text-muted">寬度 × 高度</small>
+          </div>
+        </div>
+
+        <!-- LayoutGridTab_Test3 網格最小尺寸（僅 6-1 簡化2） -->
+        <div
+          v-if="
+            isTaipei6_1Test2 &&
+            (layoutGridTabTest3MinCellDimensions.minWidth > 0 ||
+              layoutGridTabTest3MinCellDimensions.minHeight > 0)
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test3 網格最小尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              最小寬度: {{ layoutGridTabTest3MinCellDimensions.minWidth }} pt × 最小高度:
+              {{ layoutGridTabTest3MinCellDimensions.minHeight }} pt
+            </div>
+            <small class="text-muted">最小寬度 × 最小高度</small>
+          </div>
+        </div>
+
+        <!-- LayoutGridTab_Test4 當前尺寸（僅 6-1 簡化3／test4） -->
+        <div
+          v-if="
+            isTaipei6_1Test3 &&
+            (layoutGridTabTest4Dimensions.x > 0 || layoutGridTabTest4Dimensions.y > 0)
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test4 當前尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              X: {{ layoutGridTabTest4Dimensions.x }} pt × Y:
+              {{ layoutGridTabTest4Dimensions.y }} pt
+            </div>
+            <small class="text-muted">寬度 × 高度</small>
+          </div>
+        </div>
+
+        <!-- LayoutGridTab_Test4 網格最小尺寸（僅 6-1 簡化3／test4） -->
+        <div
+          v-if="
+            isTaipei6_1Test3 &&
+            (layoutGridTabTest4MinCellDimensions.minWidth > 0 ||
+              layoutGridTabTest4MinCellDimensions.minHeight > 0)
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test4 網格最小尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              最小寬度: {{ layoutGridTabTest4MinCellDimensions.minWidth }} pt × 最小高度:
+              {{ layoutGridTabTest4MinCellDimensions.minHeight }} pt
+            </div>
+            <small class="text-muted">最小寬度 × 最小高度</small>
+          </div>
+        </div>
+
+        <!-- 當前執行的合併操作顯示（taipei_6_1_test3／test4） -->
+        <div
+          v-if="currentLayer && isTaipei6_1Test3 && dataStore.currentMergeOperation4"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">正在執行</div>
+          <div
+            class="d-flex align-items-center justify-content-center p-2 rounded"
+            style="background-color: #e3f2fd; border: 1px solid #90caf9"
+          >
+            <div
+              class="spinner-border spinner-border-sm text-primary me-2"
+              role="status"
+              style="width: 1rem; height: 1rem"
+            >
+              <span class="visually-hidden">執行中...</span>
+            </div>
+            <div>
+              <strong class="text-primary">{{ dataStore.currentMergeOperation4 }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 當前網格長寬顯示（僅在 taipei_6_1_test 圖層顯示） -->
+        <div
+          v-if="isTaipei6_1Test && currentLayer && currentLayer.layoutGridJsonData_Test2"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">當前網格尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              {{ currentGridDimensions.width }} × {{ currentGridDimensions.height }}
+            </div>
+            <small class="text-muted">長 × 寬</small>
+          </div>
+        </div>
+
+        <!-- 當前網格長寬顯示（僅在 taipei_6_1_test2 圖層顯示） -->
+        <div
+          v-if="isTaipei6_1Test2 && currentLayer && currentLayer.layoutGridJsonData_Test3"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">layoutGridJsonData_Test3 當前網格尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              {{ currentGridDimensions3.width }} × {{ currentGridDimensions3.height }}
+            </div>
+            <small class="text-muted">長 × 寬</small>
+          </div>
+        </div>
+
+        <!-- 當前網格長寬顯示（僅在 taipei_6_1_test3 或 taipei_6_1_test4 圖層顯示） -->
+        <div
+          v-if="isTaipei6_1Test3 && currentLayer && currentLayer.layoutGridJsonData_Test4"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">layoutGridJsonData_Test4 當前網格尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              {{ currentGridDimensions4.width }} × {{ currentGridDimensions4.height }}
+            </div>
+            <small class="text-muted">長 × 寬</small>
+          </div>
+        </div>
+
+        <!-- 當前網格尺寸（taipei_g；高 × 寬，計算方式同 layoutGridJsonData_Test4） -->
+        <div
+          v-if="isTaipeiF && currentLayer && currentLayer.layoutGridJsonData"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">當前網格尺寸</div>
+          <div class="text-center">
+            <div class="my-title-sm-black">
+              {{ currentGridDimensionsTaipeiF.height }} × {{ currentGridDimensionsTaipeiF.width }}
+            </div>
+            <small class="text-muted">高 × 寬</small>
+          </div>
+        </div>
+
+        <!-- 滑鼠網格座標：Test4 分頁 或 taipei_g 空間網路分頁（共用 dataStore 座標） -->
+        <div
+          v-if="
+            (isTaipei6_1Test3 && currentLayer && currentLayer.layoutGridJsonData_Test4) ||
+            (isTaipeiF && currentLayer && currentLayer.layoutGridJsonData)
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">滑鼠網格座標</div>
+          <div class="text-center">
+            <div
+              v-if="
+                layoutGridTabTest4MouseGridCoordinate.x !== null &&
+                layoutGridTabTest4MouseGridCoordinate.y !== null
+              "
+              class="my-title-sm-black"
+            >
+              ({{ layoutGridTabTest4MouseGridCoordinate.x }},
+              {{ layoutGridTabTest4MouseGridCoordinate.y }})
+            </div>
+            <div v-else class="my-title-xs-gray">請將滑鼠移至網格上</div>
+          </div>
+          <div class="text-center mt-2 pt-2 border-top border-secondary border-opacity-25">
+            <div class="my-title-xs-gray pb-1">目前最小網格</div>
+            <template v-if="isTaipeiF">
+              <div
+                v-if="
+                  spaceNetworkGridMinCellDimensions.minWidth > 0 ||
+                  spaceNetworkGridMinCellDimensions.minHeight > 0
+                "
+                class="my-content-sm-black"
+              >
+                <div>高（垂直）：{{ spaceNetworkGridMinCellDimensions.minHeight }} pt</div>
+                <div>寬（水平）：{{ spaceNetworkGridMinCellDimensions.minWidth }} pt</div>
+              </div>
+              <div v-else class="my-title-xs-gray">—</div>
+            </template>
+            <template v-else>
+              <div
+                v-if="
+                  layoutGridTabTest4MinCellDimensions.minWidth > 0 ||
+                  layoutGridTabTest4MinCellDimensions.minHeight > 0
+                "
+                class="my-content-sm-black"
+              >
+                <div>寬度：{{ layoutGridTabTest4MinCellDimensions.minWidth }} pt</div>
+                <div>高度：{{ layoutGridTabTest4MinCellDimensions.minHeight }} pt</div>
+              </div>
+              <div v-else class="my-title-xs-gray">—</div>
+            </template>
+          </div>
+        </div>
+
+        <!-- taipei_g：顯示網格／顯示權重（與 LayoutGridTab_Test4 共用 dataStore 開關） -->
+        <div
+          v-if="isTaipeiF && currentLayer?.spaceNetworkGridJsonData?.length"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">空間網路圖顯示</div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示網格</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-taipei-f-showGrid"
+                :checked="dataStore.showGrid"
+                @change="dataStore.setShowGrid($event.target.checked)"
+              />
+              <label for="switch-taipei-f-showGrid"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示權重</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-taipei-f-showWeightLabels"
+                :checked="dataStore.showWeightLabels"
+                @change="dataStore.setShowWeightLabels($event.target.checked)"
+              />
+              <label for="switch-taipei-f-showWeightLabels"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="pe-2">
+              <div class="my-content-sm-black">顯示粗細（依權重）</div>
+              <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.25">
+                d3.scaleLinear：權重 min～max → 1px～10pt
+              </div>
+            </div>
+            <div class="layer-toggle flex-shrink-0" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-taipei-f-showRouteThickness"
+                :checked="dataStore.showRouteThickness"
+                @change="dataStore.setShowRouteThickness($event.target.checked)"
+              />
+              <label for="switch-taipei-f-showRouteThickness"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示站名</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-taipei-f-showStationNames"
+                :checked="dataStore.showStationNames"
+                @change="dataStore.setShowStationNames($event.target.checked)"
+              />
+              <label for="switch-taipei-f-showStationNames"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black text-wrap pe-2" style="max-width: 62%">權重放大</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-taipei-f-grid-scaling"
+                :checked="taipeiFGridScalingChecked"
+                @change="onTaipeiFGridScalingChange($event.target.checked)"
+              />
+              <label for="switch-taipei-f-grid-scaling"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black text-wrap pe-2" style="max-width: 62%">滑鼠縮放</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-taipei-f-mouse-zoom"
+                :checked="dataStore.taipeiFSpaceNetworkMouseZoom === true"
+                @change="dataStore.setTaipeiFSpaceNetworkMouseZoom($event.target.checked)"
+              />
+              <label for="switch-taipei-f-mouse-zoom"></label>
+            </div>
+          </div>
+          <div class="mt-2 pt-2 border-top border-secondary border-opacity-25">
+            <div class="my-title-xs-gray pb-2">縮減網格（resize 自動合併門檻）</div>
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black text-wrap pe-2" style="max-width: 58%">
+                寬度小於（pt）
+              </div>
+              <input
+                id="input-taipei-f-min-width-pt"
+                type="number"
+                min="0.5"
+                step="0.5"
+                :value="dataStore.taipeiFResizeMinWidthPtThreshold"
+                @input="dataStore.setTaipeiFResizeMinWidthPtThreshold($event.target.value)"
+                class="form-control form-control-sm"
+                style="width: 80px; flex-shrink: 0"
+              />
+            </div>
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black text-wrap pe-2" style="max-width: 58%">
+                高度小於（pt）
+              </div>
+              <input
+                id="input-taipei-f-min-height-pt"
+                type="number"
+                min="0.5"
+                step="0.5"
+                :value="dataStore.taipeiFResizeMinHeightPtThreshold"
+                @input="dataStore.setTaipeiFResizeMinHeightPtThreshold($event.target.value)"
+                class="form-control form-control-sm"
+                style="width: 80px; flex-shrink: 0"
+              />
+            </div>
+            <div
+              v-if="
+                dataStore.enableWeightScaling &&
+                (spaceNetworkGridMinCellDimensions.minWidth > 0 ||
+                  spaceNetworkGridMinCellDimensions.minHeight > 0)
+              "
+              class="my-content-sm-black mt-1"
+              style="font-size: 11px; line-height: 1.4"
+            >
+              目前最小格：寬 {{ spaceNetworkGridMinCellDimensions.minWidth }} pt、高
+              {{ spaceNetworkGridMinCellDimensions.minHeight }} pt
+            </div>
+            <div
+              v-if="taipeiFResizeLastAutoMergeInfo"
+              class="my-content-sm-black border rounded px-2 py-2 mt-2"
+              style="font-size: 11px; line-height: 1.45"
+            >
+              <div class="fw-semibold mb-1">
+                {{
+                  taipeiFResizeLastAutoMergeInfo.source === 'manual'
+                    ? '上次手動合併黑點路段（已執行）'
+                    : '上次 resize 自動合併（已執行）'
+                }}
+              </div>
+              <div v-if="taipeiFResizeLastAutoMergeInfo.source === 'manual'">
+                本次為手動「合併黑點路段 (權重差≤{{
+                  taipeiFResizeLastAutoMergeInfo.maxWeightDiff
+                }})」完整執行結果（不限制單一方向）。
+              </div>
+              <div v-else>
+                等同手動「合併黑點路段 (權重差≤{{
+                  taipeiFResizeLastAutoMergeInfo.maxWeightDiff
+                }})」之 N；該次僅
+                <template v-if="taipeiFResizeLastAutoMergeInfo.mergeAxisConstraint === 'horizontal'"
+                  >水平向</template
+                >
+                <template
+                  v-else-if="taipeiFResizeLastAutoMergeInfo.mergeAxisConstraint === 'vertical'"
+                  >垂直向</template
+                >
+                <template v-else>—</template>
+                嘗試合併（與手動按鈕不同：resize 會依門檻輪流只跑單一方向與階段 0～4）。
+              </div>
+              <div class="mt-1">
+                實際合併黑點：{{ taipeiFResizeLastAutoMergeInfo.mergeCount }} 次；刪空欄
+                {{ taipeiFResizeLastAutoMergeInfo.removedColCount }}、刪空列
+                {{ taipeiFResizeLastAutoMergeInfo.removedRowCount }}。
+              </div>
+              <div class="text-muted mt-1" style="font-size: 10px">
+                可刪欄（原索引）：
+                {{
+                  taipeiFResizeLastAutoMergeInfo.removedCols &&
+                  taipeiFResizeLastAutoMergeInfo.removedCols.length
+                    ? taipeiFResizeLastAutoMergeInfo.removedCols.join(', ')
+                    : '無'
+                }}
+              </div>
+              <div class="text-muted mt-1" style="font-size: 10px">
+                可刪列（原索引）：
+                {{
+                  taipeiFResizeLastAutoMergeInfo.removedRows &&
+                  taipeiFResizeLastAutoMergeInfo.removedRows.length
+                    ? taipeiFResizeLastAutoMergeInfo.removedRows.join(', ')
+                    : '無'
+                }}
+              </div>
+              <div
+                v-if="taipeiFResizeLastAutoMergeInfo.mergeCount === 0"
+                class="text-muted mt-1"
+                style="font-size: 10px"
+              >
+                合併次數為 0
+                表示路網上沒有符合「該權重差與該方向」可合併的黑點（仍會執行刪空欄列與座標重映射）。
+              </div>
+              <div class="text-muted mt-1" style="font-size: 10px">
+                {{ formatTaipeiFResizeAutoMergeTime(taipeiFResizeLastAutoMergeInfo.at) }}
+              </div>
+            </div>
+            <div class="my-title-xs-gray mt-2 mb-0" style="font-size: 11px; line-height: 1.35">
+              resize
+              時最小格寬／高分別低於上列門檻則依序觸發水平／垂直黑點自動合併；每次合併後皆刪除空欄／空列並重映射座標（與下方「合併黑點路段」相同流程）。開啟「權重放大」時另顯示目前最小格
+            </div>
+          </div>
+        </div>
+
+        <!-- 合併路線和縮減網格按鈕（taipei_6_1_test3／test4） -->
+        <div
+          v-if="currentLayer && isTaipei6_1Test3 && currentLayer.layoutGridJsonData_Test4"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <!-- 隨機產生權重 -->
+          <button
+            class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-3"
+            @click="randomizeWeights4"
+          >
+            隨機產生權重
+          </button>
+
+          <!-- LayoutGridTab_Test4：顯示/比例開關（樣式同 LeftView 圖層開關） -->
+          <div class="mb-3">
+            <div class="my-title-xs-gray pb-2">LayoutGridTab_Test4 顯示設定</div>
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black">顯示網格</div>
+              <div class="layer-toggle" @click.stop>
+                <input
+                  type="checkbox"
+                  id="switch-test4-showGrid"
+                  :checked="dataStore.showGrid"
+                  @change="dataStore.setShowGrid($event.target.checked)"
+                />
+                <label for="switch-test4-showGrid"></label>
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black">顯示權重</div>
+              <div class="layer-toggle" @click.stop>
+                <input
+                  type="checkbox"
+                  id="switch-test4-showWeightLabels"
+                  :checked="dataStore.showWeightLabels"
+                  @change="dataStore.setShowWeightLabels($event.target.checked)"
+                />
+                <label for="switch-test4-showWeightLabels"></label>
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="pe-2">
+                <div class="my-content-sm-black">顯示粗細</div>
+                <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.25">
+                  d3.scaleLinear：權重 min～max → 1px～10pt
+                </div>
+              </div>
+              <div class="layer-toggle flex-shrink-0" @click.stop>
+                <input
+                  type="checkbox"
+                  id="switch-test4-showRouteThickness"
+                  :checked="dataStore.showRouteThickness"
+                  @change="dataStore.setShowRouteThickness($event.target.checked)"
+                />
+                <label for="switch-test4-showRouteThickness"></label>
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black">權重放大</div>
+              <div class="layer-toggle" @click.stop>
+                <input
+                  type="checkbox"
+                  id="switch-test4-enableWeightScaling"
+                  :checked="dataStore.enableWeightScaling"
+                  @change="dataStore.setEnableWeightScaling($event.target.checked)"
+                />
+                <label for="switch-test4-enableWeightScaling"></label>
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black">顯示站名</div>
+              <div class="layer-toggle" @click.stop>
+                <input
+                  type="checkbox"
+                  id="switch-test3-showStationNames"
+                  :checked="dataStore.showStationNames"
+                  @change="dataStore.setShowStationNames($event.target.checked)"
+                />
+                <label for="switch-test3-showStationNames"></label>
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black">自動合併閾值 (pt)</div>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                :value="dataStore.autoMergeThreshold"
+                @input="dataStore.setAutoMergeThreshold($event.target.value)"
+                class="form-control form-control-sm"
+                style="width: 80px; display: inline-block"
+              />
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="my-content-sm-black">權重放大倍數</div>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                :value="dataStore.weightScalingMultiplier"
+                @input="dataStore.setWeightScalingMultiplier($event.target.value)"
+                class="form-control form-control-sm"
+                style="width: 80px; display: inline-block"
+              />
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="my-content-sm-black">縮放指數</div>
+              <input
+                type="number"
+                min="0.1"
+                max="10"
+                step="0.1"
+                :value="dataStore.weightScalingExponent"
+                @input="dataStore.setWeightScalingExponent($event.target.value)"
+                class="form-control form-control-sm"
+                style="width: 80px; display: inline-block"
+              />
+            </div>
+          </div>
+
+          <!-- gap <= 0 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4(0)"
+            >
+              合併路線 (gap &lt;= 0)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeAllRoutes4H(0)"
+            >
+              合併路線-H (gap &lt;= 0)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4V(0)"
+            >
+              合併路線-V (gap &lt;= 0)
+            </button>
+          </div>
+          <!-- gap <= 1 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4(1)"
+            >
+              合併路線 (gap &lt;= 1)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeAllRoutes4H(1)"
+            >
+              合併路線-H (gap &lt;= 1)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4V(1)"
+            >
+              合併路線-V (gap &lt;= 1)
+            </button>
+          </div>
+          <!-- gap <= 2 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4(2)"
+            >
+              合併路線 (gap &lt;= 2)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeAllRoutes4H(2)"
+            >
+              合併路線-H (gap &lt;= 2)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4V(2)"
+            >
+              合併路線-V (gap &lt;= 2)
+            </button>
+          </div>
+          <!-- gap <= 3 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4(3)"
+            >
+              合併路線 (gap &lt;= 3)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeAllRoutes4H(3)"
+            >
+              合併路線-H (gap &lt;= 3)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes4V(3)"
+            >
+              合併路線-V (gap &lt;= 3)
+            </button>
+          </div>
+          <!-- 縮減網格 -->
+          <button
+            class="btn rounded-pill border-0 my-btn-red my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="reduceGrid4"
+          >
+            縮減網格
+          </button>
+        </div>
+
+        <!-- 刪除 row/col（固定為 1pt，不刪除資料；僅 taipei_6_1_test2 顯示） -->
+        <div
+          v-if="isTaipei6_1Test2 && currentLayer && currentLayer.dataTableData"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="deleteOneRow"
+            >
+              刪除row
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              @click="deleteAllRows"
+            >
+              執行完成-row
+            </button>
+          </div>
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="deleteOneCol"
+            >
+              刪除col
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              @click="deleteAllCols"
+            >
+              執行完成-col
+            </button>
+          </div>
+        </div>
+
+        <!-- 隨機產生權重按鈕區域（僅在 taipei_6_1_test 圖層顯示） -->
+        <div
+          v-if="isTaipei6_1Test && currentLayer && currentLayer.layoutGridJsonData_Test"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <button
+            class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="randomizeWeights"
+          >
+            隨機產生權重
+          </button>
+        </div>
+
+        <!-- 合併一筆路線2（放在隨機產生權重下方） -->
+        <div
+          v-if="isTaipei6_1Test && currentLayer && currentLayer.dataTableData"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeOneRoute2AndReduce(4, 'V')"
+            >
+              合併一筆路線2-V (gap &lt;= 4)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeAllRoutes2AndReduce(4, 'V')"
+            >
+              執行完成2-V (gap &lt;= 4)
+            </button>
+          </div>
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-orange my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeOneRoute2AndReduce(4, 'H')"
+            >
+              合併一筆路線2-H (gap &lt;= 4)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              @click="mergeAllRoutes2AndReduce(4, 'H')"
+            >
+              執行完成2-H (gap &lt;= 4)
+            </button>
+          </div>
+        </div>
+
+        <!-- 合併一筆路線按鈕區域（僅在 taipei_6_1_test 圖層顯示） -->
+        <div
+          v-if="isTaipei6_1Test && currentLayer && currentLayer.dataTableData"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <!-- gap <= 0 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeOneRoute(0)"
+            >
+              合併一筆路線 (gap ＜= 0)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              @click="mergeAllRoutes(0)"
+            >
+              執行完成 (gap ＜= 0)
+            </button>
+          </div>
+          <!-- gap <= 1 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeOneRoute(1)"
+            >
+              合併一筆路線 (gap ＜= 1)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              @click="mergeAllRoutes(1)"
+            >
+              執行完成 (gap ＜= 1)
+            </button>
+          </div>
+          <!-- gap <= 2 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeOneRoute(2)"
+            >
+              合併一筆路線 (gap ＜= 2)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              @click="mergeAllRoutes(2)"
+            >
+              執行完成 (gap ＜= 2)
+            </button>
+          </div>
+          <!-- gap <= 3 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeOneRoute(3)"
+            >
+              合併一筆路線 (gap ＜= 3)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              @click="mergeAllRoutes(3)"
+            >
+              執行完成 (gap ＜= 3)
+            </button>
+          </div>
+          <!-- gap <= 4 -->
+          <div class="mb-2">
+            <button
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-1"
+              @click="mergeOneRoute(4)"
+            >
+              合併一筆路線 (gap ＜= 4)
+            </button>
+            <button
+              class="btn rounded-pill border-0 my-btn-green my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+              @click="mergeAllRoutes(4)"
+            >
+              執行完成 (gap ＜= 4)
+            </button>
+          </div>
+          <!-- 縮減網格 -->
+          <button
+            class="btn rounded-pill border-0 my-btn-red my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="reduceGrid"
+          >
+            縮減網格
+          </button>
+        </div>
+
+        <!-- taipei_a：儲存車站資訊（存到 SectionData/ConnectData/StationData，存好後紅點黑點刪除，改由車站配置控制） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">儲存車站資訊</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+              style="background: #e3f2fd; color: #1565c0"
+              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
+              @click="saveStationInfo"
+            >
+              儲存車站資訊
+            </button>
+            <span
+              v-if="currentLayer?.spaceNetworkGridJsonData_SectionData?.length"
+              class="text-muted"
+              style="font-size: 11px"
+            >
+              已儲存（紅點黑點已刪除，可開啟「車站配置」顯示）
+            </span>
+          </div>
+        </div>
+
+        <!-- 路線直線化（邏輯複製自 2-1 交叉點路線直線化 execute_2_1_to_2_2） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">路線直線化</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
+              @click="runStraightenCurrentLayer"
+            >
+              執行路線直線化
+            </button>
+          </div>
+        </div>
+
+        <!-- taipei_a：Z 形水平垂直化下一步（每按一次執行一筆，依同路線順序） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">直線 Z 形水平垂直化</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              @click="executeHVZStep"
+            >
+              下一步
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              @click="executeHVZAll"
+            >
+              一鍵完成
+            </button>
+            <span v-if="hvZSegmentTotal > 0" class="align-self-center" style="font-size: 11px">
+              第 {{ (dataStore.hvZNextIndex % hvZSegmentTotal) + 1 }} / {{ hvZSegmentTotal }} 筆
+            </span>
+          </div>
+        </div>
+
+        <!-- taipei_a：Flip L 型（每步 flip 一個 L） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">Flip L 型</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              @click="executeFlipStep"
+            >
+              下一步
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              @click="executeFlipAll"
+            >
+              一鍵完成
+            </button>
+            <span v-if="hvFlipLTotal > 0" class="align-self-center" style="font-size: 11px">
+              第 {{ (dataStore.hvFlipNextIndex % hvFlipLTotal) + 1 }} / {{ hvFlipLTotal }} 個 L
+            </span>
+          </div>
+        </div>
+
+        <!-- taipei_a：末端簡化 -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">末端簡化</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+              style="background: #e8f5e9; color: #2e7d32"
+              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
+              @click="executeEndpointSimplify"
+            >
+              末端簡化
+            </button>
+          </div>
+        </div>
+
+        <!-- taipei_a：路線串接（同 route_name 串接成一條路線） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">路線串接</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+              style="background: #ffc107; color: #000"
+              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
+              @click="executeConnectFlipPreprocess"
+            >
+              路線串接
+            </button>
+          </div>
+        </div>
+
+        <!-- taipei_a：串接Flip L型（僅同 route_name 內串接，再做 flip） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">串接Flip L型</div>
+          <div class="d-flex flex-column gap-2">
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+                @click="executeConnectThenFlipStep"
+              >
+                下一步
+              </button>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+                @click="executeConnectThenFlipAll"
+              >
+                一鍵完成
+              </button>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+                :class="connectFlipAutoRunning ? 'btn-danger text-white' : 'my-btn-blue'"
+                @click="startConnectFlipAuto"
+              >
+                {{ connectFlipAutoRunning ? '停止' : '自動執行' }}
+              </button>
+              <span v-if="hvFlipLTotal > 0" class="align-self-center" style="font-size: 11px">
+                第 {{ (dataStore.hvFlipNextIndex % hvFlipLTotal) + 1 }} / {{ hvFlipLTotal }} 個 L
+              </span>
+            </div>
+            <div class="d-flex gap-2 align-items-center" style="font-size: 11px">
+              <label class="text-nowrap">間隔 ms：</label>
+              <input
+                v-model.number="connectFlipAutoDelay"
+                type="number"
+                min="100"
+                max="5000"
+                step="100"
+                style="width: 70px; font-size: 11px"
+                class="form-control form-control-sm py-0"
+              />
+            </div>
+            <div
+              v-if="
+                connectFlipAnalysis && !connectFlipAnalysis.canFlip && connectFlipAnalysis.reason
+              "
+              class="small text-danger"
+              style="font-size: 11px; line-height: 1.3"
+            >
+              不能 flip：{{ connectFlipAnalysis.reason }}
+            </div>
+          </div>
+        </div>
+
+        <!-- taipei_a：ㄈ 縮減為 L 型 -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">ㄈ 縮減為 L 型</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              :disabled="nShapeTotal === 0"
+              @click="executeNShapeStep"
+            >
+              下一步
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              :disabled="nShapeTotal === 0"
+              @click="executeNShapeAll"
+            >
+              一鍵完成
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+              :class="nShapeAutoRunning ? 'btn-danger text-white' : 'my-btn-blue'"
+              :disabled="nShapeTotal === 0 && !nShapeAutoRunning"
+              @click="startNShapeAuto"
+            >
+              {{ nShapeAutoRunning ? '停止' : '自動執行' }}
+            </button>
+            <span v-if="nShapeTotal > 0" class="align-self-center" style="font-size: 11px">
+              第 {{ (dataStore.nShapeNextIndex % nShapeTotal) + 1 }} / {{ nShapeTotal }} 個 ㄈ
+            </span>
+            <span v-else class="align-self-center text-muted" style="font-size: 11px"
+              >無 ㄈ 型</span
+            >
+          </div>
+          <div class="d-flex gap-2 align-items-center mt-1" style="font-size: 11px">
+            <label class="text-nowrap">間隔 ms：</label>
+            <input
+              v-model.number="nShapeAutoDelay"
+              type="number"
+              min="100"
+              max="5000"
+              step="100"
+              style="width: 70px; font-size: 11px"
+              class="form-control form-control-sm py-0"
+            />
+          </div>
+          <div
+            v-if="nShapeAnalysis && !nShapeAnalysis.canReduce && nShapeAnalysis.reason"
+            class="small text-danger mt-1"
+            style="font-size: 11px; line-height: 1.3"
+          >
+            不能縮減：{{ nShapeAnalysis.reason }}
+          </div>
+        </div>
+
+        <!-- 重新計算交叉點（taipei_a，在診斷高亮上面） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">重新計算交叉點</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+              style="background: #e3f2fd; color: #1565c0"
+              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
+              @click="executeReconfigureStations"
+            >
+              重新計算交叉點，把路線斷開
+            </button>
+          </div>
+        </div>
+
+        <!-- 診斷高亮：重疊路段 -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">診斷高亮</div>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
+              @click="detectOverlappingSegments"
+            >
+              重疊路段
+            </button>
+            <button
+              v-if="(dataStore.overlappingSegmentRanges?.length || 0) > 0"
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+              style="background: #dee2e6; color: #495057"
+              @click="dataStore.clearOverlappingSegmentHighlight()"
+            >
+              清除高亮
+            </button>
+            <span
+              v-if="(dataStore.overlappingSegmentRanges?.length || 0) > 0"
+              class="align-self-center"
+              style="font-size: 11px; color: #c00"
+            >
+              重疊 {{ dataStore.overlappingSegmentRanges.length }} 處
+            </span>
+          </div>
+        </div>
+
+        <!-- 車站配置（taipei_a，操作 tab 最下面） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">車站配置</div>
+          <button
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            :class="currentLayer.showStationPlacement ? 'my-btn-green' : 'my-btn-blue'"
+            @click="currentLayer.showStationPlacement = !currentLayer.showStationPlacement"
+          >
+            {{
+              currentLayer.showStationPlacement
+                ? '✓ 已配置車站（點擊隱藏）'
+                : '配置車站（紅點＋黑點）'
+            }}
+          </button>
+        </div>
+
+        <!-- 儲存（taipei_a） -->
+        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">儲存</div>
+          <button
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue"
+            :disabled="!currentLayer.spaceNetworkGridJsonData?.length"
+            @click="saveCompactLayoutToResult"
+          >
+            儲存至 data/result
+          </button>
+          <div class="text-muted mt-1" style="font-size: 11px">
+            開發環境（npm run serve）會自動寫入 public/data/result/；build 後改為下載
+          </div>
+        </div>
+
+        <!-- 空間網路主分頁／K3／L3 分頁共用：路線上權重數字（預設顯示）；taipei_f／g 用上方專區「顯示權重」 -->
+        <div v-if="hasSpaceNetworkStandaloneRouteWeightToggle" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">空間網路圖（主分頁／K3／K4）</div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示路線權重數字</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-space-network-route-weights"
+                :checked="dataStore.spaceNetworkGridShowRouteWeights"
+                @change="dataStore.setSpaceNetworkGridShowRouteWeights($event.target.checked)"
+              />
+              <label for="switch-space-network-route-weights"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示滑鼠網格座標</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-space-network-mouse-grid-coord"
+                :checked="dataStore.spaceNetworkGridShowMouseGridCoordinate"
+                @change="
+                  dataStore.setSpaceNetworkGridShowMouseGridCoordinate($event.target.checked)
+                "
+              />
+              <label for="switch-space-network-mouse-grid-coord"></label>
+            </div>
+          </div>
+          <div
+            v-if="dataStore.spaceNetworkGridShowMouseGridCoordinate"
+            class="text-center mb-3 py-2 px-2 rounded border border-secondary border-opacity-25"
+            style="font-size: 12px; line-height: 1.35; background: rgba(0, 0, 0, 0.03)"
+          >
+            <div class="text-muted" style="font-size: 10px">滑鼠所在網格（資料座標 x, y）</div>
+            <div
+              v-if="
+                layoutGridTabTest4MouseGridCoordinate.x !== null &&
+                layoutGridTabTest4MouseGridCoordinate.y !== null
+              "
+              class="my-title-sm-black mb-0"
+            >
+              ({{ layoutGridTabTest4MouseGridCoordinate.x }},
+              {{ layoutGridTabTest4MouseGridCoordinate.y }})
+            </div>
+            <div v-else class="my-title-xs-gray mb-0">
+              請將滑鼠移至 space-network-grid 或 K3／K4 圖上
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="pe-2">
+              <div class="my-content-sm-black">依滑鼠放大 snap 欄／列（內繪寬高）</div>
+              <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.25">
+                僅 taipei_k4（a4～c5）。滑鼠所在 snap
+                <strong>欄</strong>／<strong>列</strong>內繪寬／高
+                ×<strong>n</strong>；左右或上下每遠一帶 −1，最小 1×。與「依 max
+                比例分配」可併用；欄與列距離各自計算（帶索引＝與 JSON snap 一致）。
+              </div>
+            </div>
+            <div class="layer-toggle flex-shrink-0" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-space-network-k4-mouse-band-focus-magnify"
+                :checked="dataStore.spaceNetworkK4MouseBandFocusMagnifyEnabled"
+                @change="
+                  dataStore.setSpaceNetworkK4MouseBandFocusMagnifyEnabled($event.target.checked)
+                "
+              />
+              <label for="switch-space-network-k4-mouse-band-focus-magnify"></label>
+            </div>
+          </div>
+          <div class="mb-3 ps-1">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <label class="my-content-sm-black mb-0" for="input-k4-mouse-band-focus-magnify-n">
+                放大峰值 n（預設 5）
+              </label>
+              <input
+                id="input-k4-mouse-band-focus-magnify-n"
+                type="number"
+                class="form-control form-control-sm"
+                style="width: 5.5rem"
+                min="1"
+                max="50"
+                step="1"
+                :value="dataStore.spaceNetworkK4MouseBandFocusMagnifyN"
+                @change="applySpaceNetworkK4MouseBandFocusMagnifyN($event.target.value)"
+              />
+            </div>
+            <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.35">
+              僅在上一項開啟且滑鼠在圖內時重算內繪 remap；移出圖或關閉後恢復。
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="pe-2">
+              <div class="my-content-sm-black">顯示粗細（依權重）</div>
+              <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.25">
+                d3.scaleLinear：權重 min～max → 1px～10pt；主分頁／K3／K4
+              </div>
+            </div>
+            <div class="layer-toggle flex-shrink-0" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-space-network-route-thickness"
+                :checked="dataStore.showRouteThickness"
+                @change="dataStore.setShowRouteThickness($event.target.checked)"
+              />
+              <label for="switch-space-network-route-thickness"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="pe-2">
+              <div class="my-content-sm-black">
+                把每一個網格的寬度/高度用 row／col 最大值依比例分配
+              </div>
+              <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.25">
+                僅
+                <code class="small">layout-network-grid</code
+                >（taipei_k4）；在「顯示粗細（依權重）」下方；與粗細獨立。關＝均分 snap
+                帶；開＝依欄／列 max 比例分配內繪寬高，格線／路線／紅藍點用同一座標 remap 對齊。
+              </div>
+            </div>
+            <div class="layer-toggle flex-shrink-0" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-space-network-k4-weight-proportional-inner-grid"
+                :checked="dataStore.spaceNetworkK4WeightProportionalInnerGrid"
+                @change="
+                  dataStore.setSpaceNetworkK4WeightProportionalInnerGrid($event.target.checked)
+                "
+              />
+              <label for="switch-space-network-k4-weight-proportional-inner-grid"></label>
+            </div>
+          </div>
+          <div class="mb-3 ps-1">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <label class="my-content-sm-black mb-0" for="input-k4-weight-proportional-scale-n">
+                分配倍率 n（預設 1）
+              </label>
+              <input
+                id="input-k4-weight-proportional-scale-n"
+                type="number"
+                class="form-control form-control-sm"
+                style="width: 5.5rem"
+                min="0.25"
+                max="6"
+                step="0.05"
+                :value="dataStore.spaceNetworkK4WeightProportionalScaleN"
+                @change="applySpaceNetworkK4ProportionalScaleN($event.target.value)"
+              />
+            </div>
+            <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.35">
+              格寬／格高依各 snap 帶的 max 之
+              <strong>n</strong>
+              次方分配（有效權重 ∝ max<sup>n</sup>；n=1 與「僅依 max」相同）。僅在上一項開啟時生效。
+              「max×常數」若為全圖同一倍數，正規化後比例不變，故以指數
+              <strong>n</strong>
+              調整強弱。
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示紅點／藍點站名</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-space-network-connect-station-names"
+                :checked="dataStore.showStationNames"
+                @change="dataStore.setShowStationNames($event.target.checked)"
+              />
+              <label for="switch-space-network-connect-station-names"></label>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示黑點站名</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-space-network-black-station-names"
+                :checked="dataStore.showBlackDotStationNames"
+                @change="dataStore.setShowBlackDotStationNames($event.target.checked)"
+              />
+              <label for="switch-space-network-black-station-names"></label>
+            </div>
+          </div>
+          <!-- taipei_b4／b5：僅 a 產出與 b→c 複製；snap／近距／重疊診斷／手動合併等請在 taipei_c4／c5 -->
+          <template
+            v-if="
+              currentLayer?.layerId !== 'taipei_b4' &&
+              currentLayer?.layerId !== 'taipei_b5' &&
+              currentLayer?.layerId !== 'taipei_b6'
+            "
+          >
+            <div class="text-muted" style="font-size: 11px; line-height: 1.4">
+              權重數字同步 <code class="small">space-network-grid</code> 與
+              <code class="small">space-network-grid-k3</code>／
+              <code class="small">space-network-grid-k4</code> 折線上
+              <code class="small">station_weights</code>；
+              <code class="small">space-network-grid-l3</code>／
+              <code class="small">space-network-grid-m3</code>
+              為與「網格示意圖測試」同色之動態預覽網格（欄列依版面、單格寬高≤50pt）、不顯示權重數字。示意格層時仍須專區「顯示權重」為開。預設為顯示。
+              紅／藍站名開關為 <code class="small">connect</code>（交叉紅／末端藍）上之文字標籤；與
+              taipei_f
+              專區「顯示站名」同一全域設定。黑點（沿線站）站名為下一項獨立開關。預設皆關閉。
+            </div>
+            <div class="d-flex align-items-center justify-content-between mt-2 mb-1">
+              <div class="my-content-sm-black">
+                JSON 座標 snap（px，k4 用）
+                <span class="text-muted fw-normal" style="font-size: 11px">；預設為 10</span>
+              </div>
+              <input
+                type="number"
+                min="1"
+                max="200"
+                step="1"
+                :value="dataStore.k3JsonOverlapDistancePx"
+                @input="dataStore.setK3JsonOverlapDistancePx($event.target.value)"
+                class="form-control form-control-sm"
+                style="width: 88px; display: inline-block"
+              />
+            </div>
+            <div class="d-flex align-items-center justify-content-between mt-1 mb-1">
+              <div class="my-content-sm-black">
+                站點最小距離（px）
+                <span class="text-muted fw-normal" style="font-size: 11px">；預設為 10</span>
+              </div>
+              <input
+                type="number"
+                min="1"
+                max="200"
+                step="1"
+                :value="dataStore.k3JsonMinStationDistancePx"
+                @input="dataStore.setK3JsonMinStationDistancePx($event.target.value)"
+                class="form-control form-control-sm"
+                style="width: 88px; display: inline-block"
+              />
+            </div>
+            <div
+              v-if="currentLayer?.layerId === 'taipei_c5'"
+              class="mt-2 p-3 border rounded"
+              style="font-size: 11px; line-height: 1.5; background: #f1f8f4"
+            >
+              <div class="my-content-sm-black mb-2">taipei_c5 手動處理（與 b4 零權重合併語意）</div>
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="my-content-sm-black">
+                  合併門檻（|Δweight| ≤ N）
+                  <span class="text-muted fw-normal" style="font-size: 10px">；預設 10</span>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="dataStore.taipeiK3MergeMaxWeightDiff"
+                  @input="dataStore.setTaipeiK3MergeMaxWeightDiff($event.target.value)"
+                  class="form-control form-control-sm"
+                  style="width: 92px; display: inline-block"
+                />
+              </div>
+              <ol
+                class="text-muted mb-2 ps-3"
+                style="font-size: 10px; line-height: 1.6; margin-bottom: 0.75rem !important"
+              >
+                <li class="mb-1">
+                  以<strong>目前 taipei_c5</strong> K3Tab 為輸入（請先執行 b5「執行下一步」自
+                  taipei_b5 複製路網）。
+                </li>
+                <li class="mb-1">
+                  執行與 <strong>taipei_b4</strong> 相同之黑點合併：相鄰兩段
+                  <strong>|Δweight| ≤ {{ dataStore.taipeiK3MergeMaxWeightDiff }}</strong> 即合併。
+                </li>
+                <li class="mb-1">
+                  執行
+                  <code class="small">mergeConnectSpansPlaceBlackStationsAndSplit</code>
+                  。
+                </li>
+                <li class="mb-1">
+                  套用 <strong>taipei_a5</strong> 之 mapDrawn／CSV（流量會以<strong
+                    >原始 CSV 單位</strong
+                  >覆寫各切段權重，與 a5→b5 相同）。
+                </li>
+                <li class="mb-0">
+                  對<strong>覆寫後</strong>之權重再做與 <strong>a5→b5</strong> 相同之
+                  <strong>floor(÷100)</strong>（正權重至少為 1），並將整份路網寫回
+                  <strong>taipei_c5</strong>。此步<strong>不是</strong>對「已除過 100 的舊 c5
+                  數值」再除一次，而是對<strong>CSV 剛寫入的大數</strong>做與主流程一致的縮放。
+                </li>
+              </ol>
+              <div class="text-muted mb-3" style="font-size: 10px; line-height: 1.55">
+                <strong>a5→b5</strong> 不會自動執行此流程；請在檢視近距診斷後按需操作。
+              </div>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+                :disabled="
+                  isTaipeiB5ManualZeroMergeBusy ||
+                  !((currentLayer?.spaceNetworkGridJsonDataK3Tab || []).length > 0)
+                "
+                @click="runTaipeiB5ManualZeroWeightMerge"
+              >
+                {{ isTaipeiB5ManualZeroMergeBusy ? '執行中…' : '開始執行' }}
+              </button>
+            </div>
+            <div
+              v-if="currentLayer?.layerId === 'taipei_c6'"
+              class="mt-2 p-3 border rounded"
+              style="font-size: 11px; line-height: 1.5; background: #f1f8f4"
+            >
+              <div class="my-content-sm-black mb-2">
+                taipei_c6 手動處理（與 c5 零權重合併語意；測試_3 獨立複製）
+              </div>
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="my-content-sm-black">
+                  合併門檻（|Δweight| ≤ N）
+                  <span class="text-muted fw-normal" style="font-size: 10px">；預設 10</span>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="dataStore.taipeiK3MergeMaxWeightDiff"
+                  @input="dataStore.setTaipeiK3MergeMaxWeightDiff($event.target.value)"
+                  class="form-control form-control-sm"
+                  style="width: 92px; display: inline-block"
+                />
+              </div>
+              <ol
+                class="text-muted mb-2 ps-3"
+                style="font-size: 10px; line-height: 1.6; margin-bottom: 0.75rem !important"
+              >
+                <li class="mb-1">
+                  以<strong>目前 taipei_c6</strong> K3Tab 為輸入（請先執行 b6「執行下一步」自
+                  taipei_b6 複製路網）。
+                </li>
+                <li class="mb-1">
+                  執行與 <strong>taipei_c5</strong> 相同之黑點合併：相鄰兩段
+                  <strong>|Δweight| ≤ {{ dataStore.taipeiK3MergeMaxWeightDiff }}</strong> 即合併。
+                </li>
+                <li class="mb-1">
+                  執行
+                  <code class="small">mergeConnectSpansPlaceBlackStationsAndSplit</code>
+                  。
+                </li>
+                <li class="mb-1">
+                  套用 <strong>taipei_a6</strong> 之 mapDrawn／CSV（流量會以<strong
+                    >原始 CSV 單位</strong
+                  >覆寫各切段權重，與 a6→b6 相同）。
+                </li>
+                <li class="mb-0">
+                  對<strong>覆寫後</strong>之權重再做與 <strong>a6→b6</strong> 相同之
+                  <strong>floor(÷100)</strong>（正權重至少為 1），並將整份路網寫回
+                  <strong>taipei_c6</strong>。
+                </li>
+              </ol>
+              <div class="text-muted mb-3" style="font-size: 10px; line-height: 1.55">
+                <strong>a6→b6</strong> 不會自動執行此流程；請在檢視近距診斷後按需操作。
+              </div>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+                :disabled="
+                  isTaipeiB6ManualZeroMergeBusy ||
+                  !((currentLayer?.spaceNetworkGridJsonDataK3Tab || []).length > 0)
+                "
+                @click="runTaipeiB6ManualZeroWeightMerge"
+              >
+                {{ isTaipeiB6ManualZeroMergeBusy ? '執行中…' : '開始執行' }}
+              </button>
+            </div>
+            <div
+              v-if="currentLayer?.layerId === 'taipei_c4'"
+              class="mt-2 p-3 border rounded"
+              style="font-size: 11px; line-height: 1.5; background: #f1f8f4"
+            >
+              <div class="my-content-sm-black mb-2">taipei_c4 手動處理（與 b4 零權重合併語意）</div>
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="my-content-sm-black">
+                  合併門檻（|Δweight| ≤ N）
+                  <span class="text-muted fw-normal" style="font-size: 10px">；預設 10</span>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="dataStore.taipeiK3MergeMaxWeightDiff"
+                  @input="dataStore.setTaipeiK3MergeMaxWeightDiff($event.target.value)"
+                  class="form-control form-control-sm"
+                  style="width: 92px; display: inline-block"
+                />
+              </div>
+              <ol
+                class="text-muted mb-2 ps-3"
+                style="font-size: 10px; line-height: 1.6; margin-bottom: 0.75rem !important"
+              >
+                <li class="mb-1">
+                  以<strong>目前 taipei_c4</strong> K3Tab 為輸入（請先執行 b4「執行下一步」自
+                  taipei_b4 複製路網）。
+                </li>
+                <li class="mb-1">
+                  執行與 <strong>taipei_b4</strong> 相同之黑點合併：相鄰兩段
+                  <strong>|Δweight| ≤ {{ dataStore.taipeiK3MergeMaxWeightDiff }}</strong> 即合併。
+                </li>
+                <li class="mb-1">
+                  執行
+                  <code class="small">mergeConnectSpansPlaceBlackStationsAndSplit</code>
+                  。
+                </li>
+                <li class="mb-1">
+                  套用 <strong>taipei_a4</strong> 之 mapDrawn／CSV（流量會以<strong
+                    >原始 CSV 單位</strong
+                  >覆寫各切段權重，與 a4→b4 相同）。
+                </li>
+                <li class="mb-0">
+                  對<strong>覆寫後</strong>之權重再做與 <strong>a4→b4</strong> 相同之
+                  <strong>floor(÷100)</strong>（正權重至少為 1），並將整份路網寫回
+                  <strong>taipei_c4</strong>。此步<strong>不是</strong>對「已除過 100 的舊 c4
+                  數值」再除一次，而是對<strong>CSV 剛寫入的大數</strong>做與主流程一致的縮放。
+                </li>
+              </ol>
+              <div class="text-muted mb-3" style="font-size: 10px; line-height: 1.55">
+                <strong>a4→b4</strong> 不會自動執行此流程；請在檢視近距診斷後按需操作。
+              </div>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+                :disabled="
+                  isTaipeiB4ManualZeroMergeBusy ||
+                  !((currentLayer?.spaceNetworkGridJsonDataK3Tab || []).length > 0)
+                "
+                @click="runTaipeiB4ManualZeroWeightMerge"
+              >
+                {{ isTaipeiB4ManualZeroMergeBusy ? '執行中…' : '開始執行' }}
+              </button>
+            </div>
+            <div
+              v-if="k3JsonConsecutiveNearPairsReport"
+              class="mt-2 p-2 border rounded"
+              style="font-size: 11px; line-height: 1.4; background: #f8fbff"
+            >
+              <div class="my-content-sm-black mb-1">
+                任兩個黑點／紅點／藍點最小距離
+                <strong>≤{{ k3JsonConsecutiveNearPairsReport.threshold }}px</strong> 的兩點站名：
+                <span
+                  :style="{
+                    color: k3JsonConsecutiveNearPairsReport.total > 0 ? '#c00' : '#2e7d32',
+                    fontWeight: 'bold',
+                  }"
+                >
+                  {{ k3JsonConsecutiveNearPairsReport.total }} 對
+                </span>
+                <span class="text-muted fw-normal">
+                  ；connect 間路段
+                  <strong style="color: #333">{{
+                    k3JsonConsecutiveNearPairsReport.connectLegSegmentCount
+                  }}</strong>
+                  個
+                </span>
+                <span
+                  v-if="(k3JsonConsecutiveNearPairsReport.unresolvedNearPairGroupCount || 0) > 0"
+                  class="text-muted fw-normal"
+                >
+                  （無法對應 connect 間路段之近距組：<strong>{{
+                    k3JsonConsecutiveNearPairsReport.unresolvedNearPairGroupCount
+                  }}</strong>
+                  組）
+                </span>
+              </div>
+              <div v-if="k3JsonConsecutiveNearPairsReport.total === 0" class="text-muted">
+                目前未偵測到小於等於 {{ k3JsonConsecutiveNearPairsReport.threshold }}px
+                的黑/紅/藍點對。
+              </div>
+              <div v-else-if="k3JsonConsecutiveNearPairsReportGroupedByLeg" class="text-muted">
+                <div
+                  v-for="(group, gi) in k3JsonConsecutiveNearPairsReportGroupedByLeg.groups"
+                  :key="`near-pair-leg-${gi}`"
+                  :style="{
+                    paddingLeft: '8px',
+                    lineHeight: 1.45,
+                    marginBottom:
+                      gi < k3JsonConsecutiveNearPairsReportGroupedByLeg.groups.length - 1
+                        ? '16px'
+                        : '0',
+                    paddingBottom:
+                      gi < k3JsonConsecutiveNearPairsReportGroupedByLeg.groups.length - 1
+                        ? '14px'
+                        : '0',
+                    borderBottom:
+                      gi < k3JsonConsecutiveNearPairsReportGroupedByLeg.groups.length - 1
+                        ? '1px solid rgba(0, 60, 140, 0.14)'
+                        : 'none',
+                  }"
+                >
+                  <div><strong>路線：</strong>{{ group.routeLabel }}</div>
+                  <div class="mt-1" style="color: #444">
+                    <strong>connect 間路段：</strong>
+                    <template
+                      v-if="
+                        group.legConnectKind === 'single' &&
+                        group.legConnectFrom &&
+                        group.legConnectTo
+                      "
+                    >
+                      <strong>{{ group.legConnectFrom.hue }}</strong
+                      >{{ group.legConnectFrom.name }}（{{ group.legConnectFrom.x }},
+                      {{ group.legConnectFrom.y }}）↔ <strong>{{ group.legConnectTo.hue }}</strong
+                      >{{ group.legConnectTo.name }}（{{ group.legConnectTo.x }},
+                      {{ group.legConnectTo.y }}）
+                    </template>
+                    <span v-else>（無法對應到 connect 間區間）</span>
+                  </div>
+                  <div
+                    v-for="(row, ri) in group.rows"
+                    :key="`near-pair-${gi}-${ri}`"
+                    class="mt-2"
+                    style="padding-left: 10px; border-left: 2px solid rgba(0, 80, 160, 0.2)"
+                  >
+                    <div>
+                      <strong>兩點：</strong><strong>{{ row.fromHue }}</strong
+                      >{{ row.fromName }}（{{ row.fromX }}, {{ row.fromY }}）↔
+                      <strong>{{ row.toHue }}</strong
+                      >{{ row.toName }}（{{ row.toX }}, {{ row.toY }}）
+                    </div>
+                    <div>
+                      <strong>{{ row.axisLabel }}</strong>
+                      ・
+                      <span style="color: #b00020">距離 {{ row.dist }} px</span>
+                    </div>
+                  </div>
+                </div>
+                <span v-if="k3JsonConsecutiveNearPairsReport.truncated">…（僅顯示前 80 對）</span>
+              </div>
+            </div>
+            <div
+              v-if="k3JsonPointOverlapReport"
+              class="mt-2 p-2 border rounded"
+              style="font-size: 11px; line-height: 1.4; background: #fffdf5"
+            >
+              <div class="my-content-sm-black mb-1">
+                JSON（K3 分頁）紅/藍/黑點重疊點（僅同路線〈同色〉：<strong
+                  >同一 layout-network-grid 座標</strong
+                >上多個黑點站名／多個 connect 站名／connect+黑）：
+                <span
+                  :style="{
+                    color: k3JsonPointOverlapReport.total > 0 ? '#c00' : '#2e7d32',
+                    fontWeight: 'bold',
+                  }"
+                >
+                  {{ k3JsonPointOverlapReport.total }} 處
+                </span>
+                <span
+                  v-if="
+                    currentLayer?.layerId === 'taipei_k3' ||
+                    currentLayer?.layerId === 'taipei_sn4_k' ||
+                    currentLayer?.layerId === 'taipei_a4' ||
+                    currentLayer?.layerId === 'taipei_b4' ||
+                    currentLayer?.layerId === 'taipei_c4' ||
+                    currentLayer?.layerId === 'taipei_a5' ||
+                    currentLayer?.layerId === 'taipei_b5' ||
+                    currentLayer?.layerId === 'taipei_c5' ||
+                    currentLayer?.layerId === 'taipei_a6' ||
+                    currentLayer?.layerId === 'taipei_b6' ||
+                    currentLayer?.layerId === 'taipei_c6'
+                  "
+                  class="text-muted"
+                >
+                  （taipei_c4／c5／c6：內繪區 px 與主圖 layout-network-grid-k3 路徑 tooltip 一致，含
+                  k4 弧長重算後黑點與 snap；視窗尺寸依目前量測）
+                </span>
+              </div>
+              <div v-if="k3JsonPointOverlapReport.total === 0" class="text-muted">
+                目前未偵測到同座標重疊（同一 layout-network-grid 座標上多個不同黑點站名／多個不同
+                connect 站名／connect+黑）。
+              </div>
+              <div v-else class="text-muted">
+                <div
+                  v-for="(row, i) in k3JsonPointOverlapReport.rows"
+                  :key="`ov-group-${i}`"
+                  class="mb-1"
+                >
+                  <div style="color: #333">
+                    <strong>路線：</strong>{{ row.routeLabel }} ・
+                    <strong>Group {{ i + 1 }}</strong>
+                  </div>
+                  <div
+                    v-for="(m, mi) in row.members"
+                    :key="`ov-member-${i}-${mi}`"
+                    class="text-muted"
+                    style="padding-left: 8px"
+                  >
+                    ({{ m.x }}, {{ m.y }}) [{{ m.hasConnect ? 'connect' : ''
+                    }}{{ m.hasConnect && m.hasBlack ? '+' : '' }}{{ m.hasBlack ? 'black' : '' }}]：
+                    <div
+                      v-for="(nm, ni) in m.connectNames"
+                      :key="`ov-member-${i}-${mi}-connect-${ni}`"
+                      style="padding-left: 10px"
+                    >
+                      connect={{ nm }}
+                    </div>
+                    <div
+                      v-for="(nm, ni) in m.blackNames"
+                      :key="`ov-member-${i}-${mi}-black-${ni}`"
+                      style="padding-left: 10px"
+                    >
+                      black={{ nm }}
+                    </div>
+                    <span v-if="m.connectNames.length === 0 && m.blackNames.length === 0">
+                      （無可辨識站名）
+                    </span>
+                  </div>
+                </div>
+                <span v-if="k3JsonPointOverlapReport.truncated">…（僅顯示前 30 處）</span>
+              </div>
+            </div>
+            <div
+              v-if="k3JsonRouteOverlapReport"
+              class="mt-2 p-2 border rounded"
+              style="font-size: 11px; line-height: 1.4; background: #f7fbff"
+            >
+              <div class="my-content-sm-black mb-1">
+                JSON（K3 分頁）重疊路線（layout-network-grid：水平／垂直共線且區間重疊）：
+                <span
+                  :style="{
+                    color: k3JsonRouteOverlapReport.total > 0 ? '#c00' : '#2e7d32',
+                    fontWeight: 'bold',
+                  }"
+                >
+                  {{ k3JsonRouteOverlapReport.total }} 段
+                </span>
+              </div>
+              <div v-if="k3JsonRouteOverlapReport.total === 0" class="text-muted">
+                目前未偵測到不同路線在 layout-network-grid
+                上水平／垂直共線且線段重疊（僅端點相接不算）。
+              </div>
+              <div v-else class="text-muted">
+                <div
+                  v-for="(row, i) in k3JsonRouteOverlapReport.rows"
+                  :key="`ov-route-${i}`"
+                  class="mb-1"
+                  style="padding-left: 8px"
+                >
+                  {{ row.routeA }} ↔ {{ row.routeB }}： ({{ row.start[0] }}, {{ row.start[1] }}) px
+                  → ({{ row.end[0] }}, {{ row.end[1] }}) px
+                </div>
+                <span v-if="k3JsonRouteOverlapReport.truncated">…（僅顯示前 60 段）</span>
+              </div>
+            </div>
+            <div
+              v-if="k3JsonConnectBlackCoordsReport"
+              class="mt-2 p-2 border rounded"
+              style="
+                font-size: 11px;
+                line-height: 1.4;
+                background: #f4fff7;
+                max-height: 320px;
+                overflow-y: auto;
+              "
+            >
+              <div class="my-content-sm-black mb-1">
+                JSON（K3 分頁）紅／藍／黑點座標與 display 狀態（taipei_c4／c5：內繪區 px，與主圖
+                tooltip；以路線分組顯示）：
+                <span class="text-muted"
+                  >共 {{ k3JsonConnectBlackCoordsReport.total }} 筆（已去重）</span
+                >
+              </div>
+              <div
+                v-for="(rt, ri) in k3JsonConnectBlackCoordsReport.routes"
+                :key="`k3-coords-route-${ri}`"
+                class="mb-2"
+              >
+                <div style="color: #333"><strong>路線：</strong>{{ rt.routeLabel }}</div>
+                <div
+                  v-for="(it, ii) in rt.items"
+                  :key="`k3-coords-${ri}-${ii}`"
+                  class="text-muted"
+                  style="padding-left: 8px"
+                >
+                  {{ it.kindLabel }} · ({{ it.x }}, {{ it.y }}) · display={{ it.display
+                  }}<span v-if="it.name"> · {{ it.name }}</span>
+                </div>
+              </div>
+              <div v-if="k3JsonConnectBlackCoordsReport.truncated" class="text-muted mt-1">
+                …（僅列前 {{ k3JsonConnectBlackCoordsReport.maxRows }} 筆，其餘未掃完）
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- taipei_l3／sn4_l／m3／sn4_m：json-data-l3／網格分頁動態示意之欄列與最小格寬／高（pt） -->
+        <div
+          v-if="
+            currentLayer?.layerId === 'taipei_l3' ||
+            currentLayer?.layerId === 'taipei_sn4_l' ||
+            currentLayer?.layerId === 'taipei_m3' ||
+            currentLayer?.layerId === 'taipei_sn4_m'
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">
+            <code class="small">space-network-grid-json-data-l3</code>／
+            <code class="small">space-network-grid-json-data-m3</code> 網格（單格寬高≤50pt）
+          </div>
+          <div
+            v-if="
+              spaceNetworkGridL3MinCellDimensions.minWidth > 0 ||
+              spaceNetworkGridL3MinCellDimensions.minHeight > 0 ||
+              spaceNetworkGridL3MinCellDimensions.innerDrawWidth > 0 ||
+              spaceNetworkGridL3MinCellDimensions.innerDrawHeight > 0 ||
+              spaceNetworkGridL3MinCellDimensions.gridCols > 0 ||
+              spaceNetworkGridL3MinCellDimensions.gridRows > 0
+            "
+            class="my-content-sm-black"
+            style="font-size: 12px; line-height: 1.5"
+          >
+            <div
+              v-if="
+                spaceNetworkGridL3MinCellDimensions.gridCols > 0 &&
+                spaceNetworkGridL3MinCellDimensions.gridRows > 0
+              "
+            >
+              網格 x（欄）：{{ spaceNetworkGridL3MinCellDimensions.gridCols }} · 網格 y（列）：{{
+                spaceNetworkGridL3MinCellDimensions.gridRows
+              }}
+            </div>
+            <div
+              v-if="
+                spaceNetworkGridL3MinCellDimensions.innerDrawWidth > 0 &&
+                spaceNetworkGridL3MinCellDimensions.innerDrawHeight > 0
+              "
+            >
+              內繪區寬 × 高（px）：{{ spaceNetworkGridL3MinCellDimensions.innerDrawWidth }} ×
+              {{ spaceNetworkGridL3MinCellDimensions.innerDrawHeight }}
+            </div>
+            <div>單格寬（水平）：{{ spaceNetworkGridL3MinCellDimensions.minWidth }} pt</div>
+            <div>單格高（垂直）：{{ spaceNetworkGridL3MinCellDimensions.minHeight }} pt</div>
+          </div>
+          <div v-else class="text-muted" style="font-size: 11px; line-height: 1.45">
+            請在 Upper 切換至
+            <code class="small">space-network-grid-l3</code>／
+            <code class="small">space-network-grid-json-data-l3</code>（taipei_l3）或
+            <code class="small">space-network-grid-m3</code>／
+            <code class="small">space-network-grid-json-data-m3</code>（m 黑點縮減後／taipei_m3）
+            以量測面板後更新。
+          </div>
+        </div>
+
+        <!-- 沒有可執行操作的提示（taipei_g／taipei_h 另有底部專區，不顯示此列） -->
+        <div
+          v-else-if="
+            currentLayer &&
+            !isTaipeiTestStraightening &&
+            !isTaipeiF &&
+            !hasSpaceNetworkStandaloneRouteWeightToggle
+          "
+          class="pb-3 mb-3"
+        >
+          <div class="my-title-xs-gray text-center">
+            {{
+              currentLayer.executeFunction ? '此圖層不屬於 Taipei 群組' : '此圖層沒有可執行的操作'
+            }}
+          </div>
+        </div>
+
+        <!-- taipei_h2：路線導航（紅點＋黑點起迄、最短路徑） -->
+        <div
+          v-if="isTaipeiH2TrafficLayer && currentLayer?.spaceNetworkGridJsonData?.length"
+          class="pb-3 mb-0 border-top pt-3"
+        >
+          <div class="my-title-xs-gray pb-2">路線導航（選兩站）</div>
+          <label class="form-label mb-1 my-font-size-xs text-muted">起點</label>
+          <select
+            class="form-select form-select-sm mb-2"
+            :value="taipeiH2TrafficDraftKeys[0] ?? ''"
+            @change="onTaipeiH2TrafficHighlightChange(0, $event)"
+          >
+            <option value="">（未選）</option>
+            <option
+              v-for="opt in taipeiH2TrafficStationOptions"
+              :key="'h2a-' + opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <label class="form-label mb-1 my-font-size-xs text-muted">迄點</label>
+          <select
+            class="form-select form-select-sm mb-2"
+            :value="taipeiH2TrafficDraftKeys[1] ?? ''"
+            @change="onTaipeiH2TrafficHighlightChange(1, $event)"
+          >
+            <option value="">（未選）</option>
+            <option
+              v-for="opt in taipeiH2TrafficStationOptions"
+              :key="'h2b-' + opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示導航</div>
+            <div class="layer-toggle" @click.stop>
+              <input
+                type="checkbox"
+                id="switch-taipei-h2-show-nav-scaling"
+                :checked="dataStore.taipeiH2ShowNavigationScaling"
+                @change="dataStore.setTaipeiH2ShowNavigationScaling($event.target.checked)"
+              />
+              <label for="switch-taipei-h2-show-nav-scaling"></label>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="confirmTaipeiH2TrafficNavigation()"
+          >
+            確定導航
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="clearTaipeiH2TrafficNavigation()"
+          >
+            清除導航
+          </button>
+          <div
+            v-if="
+              taipeiH2ShortestPathUi &&
+              dataStore.taipeiH2TrafficHighlightKeys[0] &&
+              dataStore.taipeiH2TrafficHighlightKeys[1]
+            "
+            class="mt-2 p-2 rounded"
+            style="
+              font-size: 11px;
+              background: rgba(106, 27, 154, 0.08);
+              border: 1px solid rgba(106, 27, 154, 0.25);
+            "
+          >
+            <div class="fw-semibold text-dark mb-1">導航路徑 · 途經站點</div>
+            <div v-if="taipeiH2ShortestPathUi.error" class="text-danger">
+              {{ taipeiH2ShortestPathUi.error }}
+            </div>
+            <div v-else class="text-dark" style="line-height: 1.45">
+              {{ taipeiH2ShortestPathUi.pathWithRoutesJoined || taipeiH2ShortestPathUi.pathJoined }}
+            </div>
+          </div>
+          <div
+            v-if="taipeiH2TrafficStationOptions.length === 0"
+            class="text-muted mt-2"
+            style="font-size: 11px"
+          >
+            路線導航需有 ConnectData／StationData（載入路網 JSON 並完成車站資料後才有站點清單）。
+          </div>
+        </div>
+
+        <!-- taipei_c5：路線導航（紅點＋黑點起迄、最短路徑） -->
+        <div
+          v-if="isTaipeiC5TrafficLayer && currentLayer?.spaceNetworkGridJsonData?.length"
+          class="pb-3 mb-0 border-top pt-3"
+        >
+          <div class="my-title-xs-gray pb-2">路線導航（選兩站）</div>
+          <label class="form-label mb-1 my-font-size-xs text-muted">起點</label>
+          <select
+            class="form-select form-select-sm mb-2"
+            :value="taipeiC5TrafficDraftKeys[0] ?? ''"
+            @change="onTaipeiC5TrafficHighlightChange(0, $event)"
+          >
+            <option value="">（未選）</option>
+            <option
+              v-for="opt in taipeiC5TrafficStationOptions"
+              :key="'c5a-' + opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <label class="form-label mb-1 my-font-size-xs text-muted">迄點</label>
+          <select
+            class="form-select form-select-sm mb-2"
+            :value="taipeiC5TrafficDraftKeys[1] ?? ''"
+            @change="onTaipeiC5TrafficHighlightChange(1, $event)"
+          >
+            <option value="">（未選）</option>
+            <option
+              v-for="opt in taipeiC5TrafficStationOptions"
+              :key="'c5b-' + opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="confirmTaipeiC5TrafficNavigation()"
+          >
+            確定導航
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="clearTaipeiC5TrafficNavigation()"
+          >
+            清除導航
+          </button>
+          <div class="text-muted mt-2" style="font-size: 11px">
+            起迄站需不同；若選到同站會自動清空另一個選單。
+          </div>
+          <div
+            v-if="
+              taipeiC5ShortestPathUi &&
+              dataStore.taipeiC5TrafficHighlightKeys[0] &&
+              dataStore.taipeiC5TrafficHighlightKeys[1]
+            "
+            class="mt-2 p-2 rounded"
+            style="
+              font-size: 11px;
+              background: rgba(106, 27, 154, 0.08);
+              border: 1px solid rgba(106, 27, 154, 0.25);
+            "
+          >
+            <div class="fw-semibold text-dark mb-1">導航路徑 · 途經站點</div>
+            <div v-if="taipeiC5ShortestPathUi.error" class="text-danger">
+              {{ taipeiC5ShortestPathUi.error }}
+            </div>
+            <div v-else class="text-dark" style="line-height: 1.45">
+              {{ taipeiC5ShortestPathUi.pathWithRoutesJoined || taipeiC5ShortestPathUi.pathJoined }}
+            </div>
+          </div>
+          <div
+            v-if="taipeiC5TrafficStationOptions.length === 0"
+            class="text-muted mt-2"
+            style="font-size: 11px"
+          >
+            路線導航需有 ConnectData／StationData（載入路網 JSON 並完成車站資料後才有站點清單）。
+          </div>
+        </div>
+
+        <!-- taipei_c6：路線導航（與 c5 分模板複製） -->
+        <div
+          v-if="isTaipeiC6TrafficLayer && currentLayer?.spaceNetworkGridJsonData?.length"
+          class="pb-3 mb-0 border-top pt-3"
+        >
+          <div class="my-title-xs-gray pb-2">路線導航（選兩站）· taipei_c6</div>
+          <label class="form-label mb-1 my-font-size-xs text-muted">起點</label>
+          <select
+            class="form-select form-select-sm mb-2"
+            :value="taipeiC6TrafficDraftKeys[0] ?? ''"
+            @change="onTaipeiC6TrafficHighlightChange(0, $event)"
+          >
+            <option value="">（未選）</option>
+            <option
+              v-for="opt in taipeiC6TrafficStationOptions"
+              :key="'c6a-' + opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <label class="form-label mb-1 my-font-size-xs text-muted">迄點</label>
+          <select
+            class="form-select form-select-sm mb-2"
+            :value="taipeiC6TrafficDraftKeys[1] ?? ''"
+            @change="onTaipeiC6TrafficHighlightChange(1, $event)"
+          >
+            <option value="">（未選）</option>
+            <option
+              v-for="opt in taipeiC6TrafficStationOptions"
+              :key="'c6b-' + opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="confirmTaipeiC6TrafficNavigation()"
+          >
+            確定導航
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="clearTaipeiC6TrafficNavigation()"
+          >
+            清除導航
+          </button>
+          <div class="text-muted mt-2" style="font-size: 11px">
+            起迄站需不同；若選到同站會自動清空另一個選單。
+          </div>
+          <div
+            v-if="
+              taipeiC6ShortestPathUi &&
+              dataStore.taipeiC6TrafficHighlightKeys[0] &&
+              dataStore.taipeiC6TrafficHighlightKeys[1]
+            "
+            class="mt-2 p-2 rounded"
+            style="
+              font-size: 11px;
+              background: rgba(106, 27, 154, 0.08);
+              border: 1px solid rgba(106, 27, 154, 0.25);
+            "
+          >
+            <div class="fw-semibold text-dark mb-1">導航路徑 · 途經站點</div>
+            <div v-if="taipeiC6ShortestPathUi.error" class="text-danger">
+              {{ taipeiC6ShortestPathUi.error }}
+            </div>
+            <div v-else class="text-dark" style="line-height: 1.45">
+              {{ taipeiC6ShortestPathUi.pathWithRoutesJoined || taipeiC6ShortestPathUi.pathJoined }}
+            </div>
+          </div>
+          <div
+            v-if="taipeiC6TrafficStationOptions.length === 0"
+            class="text-muted mt-2"
+            style="font-size: 11px"
+          >
+            路線導航需有 ConnectData／StationData（載入路網 JSON 並完成車站資料後才有站點清單）。
+          </div>
+        </div>
+
+        <!-- taipei_g／taipei_h：依權重差門檻合併黑點路段（Control 分頁最底部） -->
+        <div
+          v-if="isTaipeiF && currentLayer?.spaceNetworkGridJsonData?.length"
+          class="pb-3 mb-0 border-top pt-3"
+        >
+          <div class="my-title-xs-gray pb-2">合併黑點路段（合併後取較大權重）</div>
+          <button
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="mergeTaipeiFBlackJunctionSegments(0)"
+          >
+            合併黑點路段 (權重差&lt;=0)
+          </button>
+          <button
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="mergeTaipeiFBlackJunctionSegments(1)"
+          >
+            合併黑點路段 (權重差&lt;=1)
+          </button>
+          <button
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="mergeTaipeiFBlackJunctionSegments(2)"
+          >
+            合併黑點路段 (權重差&lt;=2)
+          </button>
+          <button
+            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+            @click="mergeTaipeiFBlackJunctionSegments(3)"
+          >
+            合併黑點路段 (權重差&lt;=3)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 沒有開啟的圖層 -->
+    <div v-else class="d-flex align-items-center justify-content-center h-100">
+      <div class="my-title-xs-gray text-center">沒有開啟的圖層</div>
+    </div>
+
+    <input
+      id="taipei-osm-sn4-local-file-input"
+      type="file"
+      class="d-none"
+      accept=".osm,.xml,application/xml,text/xml,*/*"
+      @change="onTaipeiOsmSn4LocalFileInputChange"
+    />
+  </div>
+</template>
+
+<style scoped>
+  /* 🎨 開關樣式：同 LeftView 的 LayersTab toggle（input + label） */
+  .layer-toggle input[type='checkbox'] {
+    height: 0;
+    width: 0;
+    visibility: hidden;
+  }
+
+  .layer-toggle label {
+    cursor: pointer;
+    width: 28px;
+    height: 16px;
+    background: var(--my-color-gray-300);
+    display: block;
+    border-radius: 16px;
+    position: relative;
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .layer-toggle label:after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: var(--my-color-white);
+    border-radius: 12px;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .layer-toggle input:checked + label {
+    background: var(--my-color-green);
+  }
+
+  .layer-toggle input:checked + label:after {
+    transform: translateX(12px);
+  }
+
+  .layer-toggle input:disabled + label {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+</style>
