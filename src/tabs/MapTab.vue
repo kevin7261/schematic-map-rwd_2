@@ -14,6 +14,10 @@
     expandLonLatChainFromRouteCoordinates,
     isMapDrawnRoutesExportArray,
   } from '@/utils/mapDrawnRoutesImport.js';
+  import {
+    LAYER_ID as OSM_PIPELINE_LAYER_ID,
+    setOsm2GeojsonSessionOsmXml,
+  } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
 
   export default {
     name: 'MapTab',
@@ -328,6 +332,235 @@
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/"/g, '&quot;');
+
+      // ==================== 畫線模式 (Draw Mode) ====================
+
+      const drawMode = ref(false);          // 是否在畫線模式
+      const drawPoints = ref([]);           // 當前正在畫的折線頂點 [[lon,lat], ...]
+      let drawPreviewPolyline = null;       // Leaflet Polyline 預覽圖層
+      let drawPreviewDot = null;            // 當前最後一點的圓點
+      let dblClickPending = false;          // 防止 dblclick 觸發兩次 click 的 flag
+
+      /** 將 drawPoints 渲染成預覽折線 */
+      const refreshDrawPreview = () => {
+        if (!map) return;
+        const pts = drawPoints.value.map(([lon, lat]) => [lat, lon]);
+        if (drawPreviewPolyline) {
+          drawPreviewPolyline.setLatLngs(pts);
+        } else if (pts.length >= 2) {
+          drawPreviewPolyline = L.polyline(pts, {
+            color: '#e07000',
+            weight: 3,
+            opacity: 0.9,
+            dashArray: '6 4',
+            pane: 'overlayPane',
+          });
+          if (drawPreviewPolyline.setPane) drawPreviewPolyline.setPane('overlayPane');
+          drawPreviewPolyline.addTo(map);
+        }
+        // 最後一點圓點
+        if (drawPreviewDot) {
+          if (drawPoints.value.length > 0) {
+            const last = drawPoints.value[drawPoints.value.length - 1];
+            drawPreviewDot.setLatLng([last[1], last[0]]);
+          } else {
+            map.removeLayer(drawPreviewDot);
+            drawPreviewDot = null;
+          }
+        } else if (drawPoints.value.length > 0) {
+          const last = drawPoints.value[drawPoints.value.length - 1];
+          drawPreviewDot = L.circleMarker([last[1], last[0]], {
+            radius: 5,
+            color: '#e07000',
+            weight: 2,
+            fillColor: '#fff3cd',
+            fillOpacity: 1,
+            pane: 'markerPane',
+          }).addTo(map);
+        }
+      };
+
+      /** 清除預覽圖層 */
+      const clearDrawPreview = () => {
+        if (!map) return;
+        if (drawPreviewPolyline) { map.removeLayer(drawPreviewPolyline); drawPreviewPolyline = null; }
+        if (drawPreviewDot) { map.removeLayer(drawPreviewDot); drawPreviewDot = null; }
+      };
+
+      /** 完成當前一段折線，轉成路段格式寫入 layer.jsonData */
+      const finishCurrentLine = () => {
+        const pts = drawPoints.value;
+        if (pts.length < 2) {
+          drawPoints.value = [];
+          clearDrawPreview();
+          return;
+        }
+        const startPt = pts[0];
+        const endPt = pts[pts.length - 1];
+        const bends = pts.slice(1, -1);
+        const ts = Date.now();
+        const newRow = {
+          routeName: '手繪路線',
+          color: '#e07000',
+          segment: {
+            start: {
+              station_id: '',
+              station_name: '',
+              route_name_list: [],
+              x_grid: startPt[0],
+              y_grid: startPt[1],
+              type: 'terminal',
+              connect_number: 1,
+            },
+            stations: bends.map((b) => ({
+              station_id: '',
+              station_name: '',
+              x_grid: b[0],
+              y_grid: b[1],
+              type: 'normal',
+            })),
+            end: {
+              station_id: '',
+              station_name: '',
+              route_name_list: [],
+              x_grid: endPt[0],
+              y_grid: endPt[1],
+              type: 'terminal',
+              connect_number: 1,
+            },
+          },
+          routeCoordinates: [startPt, bends, endPt],
+          _drawn: true,
+          _drawnAt: ts,
+        };
+        // 寫入 layer.jsonData
+        const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        if (currentLayer) {
+          const existing = Array.isArray(currentLayer.jsonData) ? currentLayer.jsonData : [];
+          currentLayer.jsonData = [...existing, newRow];
+        }
+        drawPoints.value = [];
+        clearDrawPreview();
+        // 重繪地圖以顯示新畫的線
+        loadOrSyncLayers();
+      };
+
+      /** 撤銷最後一段手繪路線 */
+      const undoLastDrawnLine = () => {
+        const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        if (!currentLayer || !Array.isArray(currentLayer.jsonData)) return;
+        const idx = [...currentLayer.jsonData].map((r, i) => r._drawn ? i : -1).filter(i => i >= 0);
+        if (idx.length === 0) return;
+        const rows = [...currentLayer.jsonData];
+        rows.splice(idx[idx.length - 1], 1);
+        currentLayer.jsonData = rows;
+        loadOrSyncLayers();
+      };
+
+      /** click 事件：加一個頂點 */
+      const onDrawMapClick = (e) => {
+        if (dblClickPending) return;
+        drawPoints.value = [...drawPoints.value, [e.latlng.lng, e.latlng.lat]];
+        refreshDrawPreview();
+      };
+
+      /** dblclick 事件：完成線段（移除最後一個多餘的 click 點） */
+      const onDrawMapDblClick = (e) => {
+        dblClickPending = true;
+        // dblclick 前 Leaflet 已觸發兩次 click，移除最後一個（與 dblclick 位置相同）
+        const pts = [...drawPoints.value];
+        if (pts.length > 0) pts.pop();
+        drawPoints.value = pts;
+        finishCurrentLine();
+        setTimeout(() => { dblClickPending = false; }, 50);
+        L.DomEvent.stopPropagation(e);
+      };
+
+      /** Escape 取消當前未完成的線段 */
+      const onDrawKeyDown = (e) => {
+        if (!drawMode.value) return;
+        if (e.key === 'Escape') {
+          drawPoints.value = [];
+          clearDrawPreview();
+        }
+      };
+
+      const enterDrawMode = () => {
+        if (!map) return;
+        drawMode.value = true;
+        map.dragging.disable();
+        map.scrollWheelZoom.disable();
+        map.doubleClickZoom.disable();
+        map.on('click', onDrawMapClick);
+        map.on('dblclick', onDrawMapDblClick);
+        if (mapEl.value) mapEl.value.style.cursor = 'crosshair';
+        window.addEventListener('keydown', onDrawKeyDown);
+      };
+
+      const exitDrawMode = () => {
+        if (!map) return;
+        // 如果有未完成的線段，放棄
+        drawPoints.value = [];
+        clearDrawPreview();
+        drawMode.value = false;
+        map.dragging.enable();
+        map.scrollWheelZoom.enable();
+        map.doubleClickZoom.enable();
+        map.off('click', onDrawMapClick);
+        map.off('dblclick', onDrawMapDblClick);
+        if (mapEl.value) mapEl.value.style.cursor = '';
+        window.removeEventListener('keydown', onDrawKeyDown);
+      };
+
+      const toggleDrawMode = () => {
+        if (drawMode.value) exitDrawMode();
+        else enterDrawMode();
+      };
+
+      const hasDrawnLines = computed(() => {
+        const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        return currentLayer && Array.isArray(currentLayer.jsonData) &&
+          currentLayer.jsonData.some((r) => r._drawn);
+      });
+
+      /** 目前圖層是否有可清空之地圖幾何（線／點／未完成的預覽） */
+      const hasRenderableGeometryOnActiveLayer = computed(() => {
+        if (drawPoints.value.length > 0) return true;
+        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        if (!ly) return false;
+        if (Array.isArray(ly.jsonData) && ly.jsonData.length > 0) return true;
+        const feats = ly.geojsonData?.features;
+        return Array.isArray(feats) && feats.length > 0;
+      });
+
+      /** 清空目前作用圖層之線、站資料（含載入／匯出路線與 GeoJSON）；OSM 管線圖層一併清 session／衍生欄位 */
+      const clearActiveLayerLinesAndPoints = () => {
+        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        if (!ly) return;
+        if (
+          !window.confirm(
+            '確定清空目前圖層在地圖上的所有線段與站點？（含已載入／匯出的路段與 GeoJSON）'
+          )
+        ) {
+          return;
+        }
+        if (drawMode.value) exitDrawMode();
+        drawPoints.value = [];
+        clearDrawPreview();
+
+        ly.jsonData = null;
+        ly.geojsonData = { type: 'FeatureCollection', features: [] };
+        ly.processedJsonData = null;
+        ly.dashboardData = null;
+        ly.dataTableData = null;
+        ly.layerInfoData = null;
+
+        if (ly.layerId === OSM_PIPELINE_LAYER_ID) {
+          setOsm2GeojsonSessionOsmXml('');
+        }
+
+        loadOrSyncLayers();
+      };
 
       const loadOrSyncLayers = async (retryAttempt = 0) => {
         if (!mapEl.value) return;
@@ -711,6 +944,9 @@
       );
 
       onUnmounted(() => {
+        // 清理畫線模式
+        if (drawMode.value) exitDrawMode();
+
         // 清理地圖實例
         if (map) {
           try {
@@ -950,6 +1186,14 @@
         visibleLayers,
         setActiveLayerTab,
         getLayerFullTitle,
+        // Draw mode
+        drawMode,
+        drawPoints,
+        toggleDrawMode,
+        undoLastDrawnLine,
+        hasDrawnLines,
+        clearActiveLayerLinesAndPoints,
+        hasRenderableGeometryOnActiveLayer,
       };
     },
   };
@@ -999,7 +1243,41 @@
         <div
           class="position-absolute map-bottom-controls d-flex align-items-center rounded-pill shadow my-blur gap-2 p-2 mb-3"
         >
-          <div class="d-flex align-items-center">
+          <!-- 畫線模式 -->
+          <button
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+            :class="drawMode ? 'btn-warning' : 'my-btn-transparent'"
+            :title="drawMode ? '退出畫線模式（ESC / 再按一次）' : '進入畫線模式（在地圖上點擊畫線，雙擊完成）'"
+            @click="toggleDrawMode"
+          >
+            {{ drawMode ? '畫線中…' : '畫線' }}
+          </button>
+
+          <!-- 撤銷最後一段手繪線 -->
+          <button
+            v-if="hasDrawnLines"
+            class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
+            title="撤銷最後一段手繪路線"
+            @click="undoLastDrawnLine"
+          >
+            撤銷
+          </button>
+
+          <button
+            class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer text-danger"
+            title="清空目前圖層所有線段與站點"
+            :disabled="!hasRenderableGeometryOnActiveLayer"
+            @click="clearActiveLayerLinesAndPoints"
+          >
+            全部清空
+          </button>
+
+          <!-- 畫線模式提示 -->
+          <span v-if="drawMode" class="my-font-size-xs text-warning-emphasis text-nowrap px-1">
+            單擊加點・雙擊完成・ESC 取消
+          </span>
+
+          <div v-if="!drawMode" class="d-flex align-items-center">
             <div class="dropdown dropup">
               <button
                 class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap"
@@ -1021,39 +1299,39 @@
                 </li>
               </ul>
             </div>
+
+            <!-- 顯示鄉鎮區界 -->
+            <button
+              class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
+              :title="
+                townshipBoundaryButtonLabel === '隱藏鄉鎮區界'
+                  ? '隱藏鄉鎮區界圖層'
+                  : '顯示鄉鎮區界圖層'
+              "
+              @click="toggleTownshipBoundary"
+            >
+              {{ townshipBoundaryButtonLabel }}
+            </button>
+
+            <!-- 顯示全部 -->
+            <button
+              class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
+              @click="showAllFeatures"
+              :disabled="!isAnyLayerVisible"
+              title="顯示圖面所有資料範圍"
+            >
+              顯示全部
+            </button>
+
+            <!-- 顯示全市 -->
+            <button
+              class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
+              @click="showFullCity"
+              title="回到預設地圖範圍"
+            >
+              顯示全市
+            </button>
           </div>
-
-          <!-- 顯示鄉鎮區界 -->
-          <button
-            class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
-            :title="
-              townshipBoundaryButtonLabel === '隱藏鄉鎮區界'
-                ? '隱藏鄉鎮區界圖層'
-                : '顯示鄉鎮區界圖層'
-            "
-            @click="toggleTownshipBoundary"
-          >
-            {{ townshipBoundaryButtonLabel }}
-          </button>
-
-          <!-- 顯示全部 -->
-          <button
-            class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
-            @click="showAllFeatures"
-            :disabled="!isAnyLayerVisible"
-            title="顯示圖面所有資料範圍"
-          >
-            顯示全部
-          </button>
-
-          <!-- 顯示全市 -->
-          <button
-            class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
-            @click="showFullCity"
-            title="回到預設地圖範圍"
-          >
-            顯示全市
-          </button>
         </div>
       </div>
     </div>
