@@ -567,9 +567,9 @@ export async function loadOsmXmlAsGeoJsonForRoutes(layer) {
     }
 
     const xmlText = await response.text();
-    if (layer?.layerId === 'osm_2_geojson') {
+    if (layer?.layerId === 'osm_2_geojson_2_json') {
       const { osmXmlToOsm2GeojsonLoaderResult } = await import(
-        '@/utils/layers/osm_2_geojson/index.js'
+        '@/utils/layers/osm_2_geojson_2_json/index.js'
       );
       return osmXmlToOsm2GeojsonLoaderResult(xmlText);
     }

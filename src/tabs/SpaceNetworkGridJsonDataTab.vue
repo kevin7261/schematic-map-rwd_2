@@ -71,7 +71,7 @@
    */
   import { useDataStore } from '@/stores/dataStore.js';
   import { copyToClipboard } from '@/utils/utils.js';
-  import { LAYER_ID as OSM_2_LAYER_ID, getOsm2GeojsonSessionOsmXml } from '@/utils/layers/osm_2_geojson/sessionOsmXml.js';
+  import { LAYER_ID as OSM_2_LAYER_ID, getOsm2GeojsonSessionOsmXml } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
 
   // ==================== 🏪 狀態管理初始化 (State Management Initialization) ====================
 
@@ -102,7 +102,7 @@
       default: () => [],
     },
     /**
-     * osm_2_geojson 專用上分頁：`osm-xml` | `osm-geojson` | `osm-derived-json`；空字串＝原本的 space-network-grid-json-data 邏輯
+     * osm_2_geojson_2_json 專用上分頁：`osm-xml` | `osm-geojson` | `osm-derived-json`；空字串＝原本的 space-network-grid-json-data 邏輯
      */
     osmViewerMode: {
       type: String,
@@ -166,7 +166,10 @@
     }
     return allLayers.filter(
       (layer) =>
-        layer.visible && (layer.spaceNetworkGridJsonData || layer.processedJsonData != null)
+        layer.visible &&
+        (layer.spaceNetworkGridJsonData ||
+          layer.processedJsonData != null ||
+          (layer.layerId === OSM_2_LAYER_ID && Array.isArray(layer.jsonData)))
     );
   });
 
@@ -187,6 +190,7 @@
     const layer = visibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
     if (!layer) return null;
     if (layer.processedJsonData != null) return layer.processedJsonData;
+    if (layer.layerId === OSM_2_LAYER_ID && Array.isArray(layer.jsonData)) return layer.jsonData;
     return layer.spaceNetworkGridJsonData || null;
   });
 
@@ -196,7 +200,7 @@
     }
     if (props.osmViewerMode === 'osm-xml') return 'OSM XML 來源（session／public/data）';
     if (props.osmViewerMode === 'osm-geojson') return 'geojsonData（FeatureCollection）';
-    return '衍生路網欄位（processedJsonData／jsonData／dataTable／儀表等）';
+    return 'jsonData 路段匯出陣列（與 taipei_city_2026.json 同形；Upper 僅顯示該陣列）';
   });
 
   /** 空白狀態主文案（內容區） */
@@ -206,7 +210,7 @@
     if (props.osmViewerMode === 'osm-xml') return '此圖層沒有可顯示的 OSM XML 文字';
     if (props.osmViewerMode === 'osm-geojson')
       return '此圖層沒有可用的 geojsonData';
-    return '此圖層尚無衍生路網欄位（請先載入 OSM）';
+    return '此圖層尚無 jsonData 路段匯出（請先載入 OSM）';
   });
 
   /** 無可見圖層時外層空狀態 */
@@ -247,13 +251,23 @@
         return String(e);
       }
     }
+    /** json-viewer：此圖層路段匯出為頂層陣列（與 taipei_city_2026.json），不包一層 processedJsonData */
+    if (layer.layerId === OSM_2_LAYER_ID && Array.isArray(layer.jsonData)) {
+      try {
+        return JSON.stringify(layer.jsonData, null, 2);
+      } catch (e) {
+        return String(e);
+      }
+    }
     const bundle = {
-      processedJsonData: layer.processedJsonData ?? undefined,
       jsonData: layer.jsonData ?? undefined,
       dataTableData: layer.dataTableData ?? undefined,
       dashboardData: layer.dashboardData ?? undefined,
       layerInfoData: layer.layerInfoData ?? undefined,
     };
+    if (layer.processedJsonData != null) {
+      bundle.processedJsonData = layer.processedJsonData;
+    }
     Object.keys(bundle).forEach((k) => {
       if (bundle[k] === undefined) delete bundle[k];
     });
@@ -429,7 +443,9 @@
             @click="setActiveLayerTab(layer.layerId)"
           >
             <span>
-              <span v-if="getLayerFullTitle(layer).groupName" class="my-title-xs-gray"
+              <span
+                v-if="!viewerUpperTabId && getLayerFullTitle(layer).groupName"
+                class="my-title-xs-gray"
                 >{{ getLayerFullTitle(layer).groupName }} -
               </span>
               <span class="my-title-sm-black">{{

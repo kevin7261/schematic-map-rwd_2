@@ -161,9 +161,9 @@ import {
 } from '../utils/dataExecute/index.js';
 import {
   executeOsmGeojsonToTaipeiSn4ASpaceGrid,
-  LAYER_ID as OSM_2_GEOJSON_LAYER_ID,
+  LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
-} from '../utils/layers/osm_2_geojson/index.js';
+} from '../utils/layers/osm_2_geojson_2_json/index.js';
 import {
   getAllNetworkDrawSketchLayerIds,
   networkDrawPipelineB3LayerIdForSketch,
@@ -276,8 +276,8 @@ export const useDataStore = defineStore(
         groupName: '空間網絡網格',
         groupLayers: [
           {
-            layerId: 'osm_2_geojson',
-            layerName: 'OSM → GeoJSON',
+            layerId: 'osm_2_geojson_2_json',
+            layerName: 'OSM → GeoJSON → JSON',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -2179,7 +2179,7 @@ export const useDataStore = defineStore(
           layer.dashboardData = result.dashboardData;
           layer.layerInfoData = result.layerInfoData;
           if (
-            layer.layerId === OSM_2_GEOJSON_LAYER_ID &&
+            layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID &&
             typeof result.sourceOsmXmlText === 'string'
           ) {
             setOsm2GeojsonSessionOsmXml(result.sourceOsmXmlText);

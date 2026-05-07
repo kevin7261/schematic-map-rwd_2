@@ -1,6 +1,6 @@
-/** osm_2_geojson：Upper「OSM XML」檢視用 session；不入 Pinia persist */
+/** osm_2_geojson_2_json：Upper「OSM XML」檢視用 session；不入 Pinia persist */
 
-export const LAYER_ID = 'osm_2_geojson';
+export const LAYER_ID = 'osm_2_geojson_2_json';
 
 let sessionOsmXmlSourceText = '';
 

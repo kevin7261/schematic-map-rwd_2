@@ -253,9 +253,8 @@ Features): * - 使用 Vue 2 Options API 進行組件管理 * - 整合多個分�
       const MapTabRef = ref(null);
       const mapTabContainerRef = ref(null);
       const osm2GeojsonViewersContainerRef = ref(null);
-      const SpaceNetworkGridJsonDataTabOsm2OsmXml = ref(null);
-      const SpaceNetworkGridJsonDataTabOsm2Geojson = ref(null);
-      const SpaceNetworkGridJsonDataTabOsm2Derived = ref(null);
+      /** osm_2_geojson_2_json 三 Upper 分頁共用一個 JSON 檢視元件，模式由 activeUpperTab 推導 */
+      const SpaceNetworkGridJsonDataTabOsm2 = ref(null);
 
       // 目前 UpperView 所選圖層（由各子 Tab 回傳）
       const activeUpperLayerId = ref(null);
@@ -267,6 +266,20 @@ Features): * - 使用 Vue 2 Options API 進行組件管理 * - 整合多個分�
       const upperM3BoundLayerId = computed(() =>
         activeUpperLayerId.value === 'taipei_sn4_m' ? 'taipei_sn4_m' : 'taipei_m3_dp_nd_2'
       );
+
+      /** osm-viewer／geojson-viewer／json-viewer → SpaceNetworkGridJsonDataTab.osmViewerMode */
+      const osm2UpperJsonViewerMode = computed(() => {
+        switch (props.activeUpperTab) {
+          case 'osm-viewer':
+            return 'osm-xml';
+          case 'geojson-viewer':
+            return 'osm-geojson';
+          case 'json-viewer':
+            return 'osm-derived-json';
+          default:
+            return '';
+        }
+      });
 
       // 所有可能的 tabs 列表
       const allPossibleTabs = [
@@ -687,36 +700,15 @@ Features): * - 使用 Vue 2 Options API 進行組件管理 * - 整合多個分�
                 }
               }, 100);
             });
-          } else if (newTab === 'osm-viewer') {
+          } else if (
+            newTab === 'osm-viewer' ||
+            newTab === 'geojson-viewer' ||
+            newTab === 'json-viewer'
+          ) {
             nextTick(() => {
               setTimeout(() => {
-                if (
-                  SpaceNetworkGridJsonDataTabOsm2OsmXml.value &&
-                  SpaceNetworkGridJsonDataTabOsm2OsmXml.value.resize
-                ) {
-                  SpaceNetworkGridJsonDataTabOsm2OsmXml.value.resize();
-                }
-              }, 100);
-            });
-          } else if (newTab === 'geojson-viewer') {
-            nextTick(() => {
-              setTimeout(() => {
-                if (
-                  SpaceNetworkGridJsonDataTabOsm2Geojson.value &&
-                  SpaceNetworkGridJsonDataTabOsm2Geojson.value.resize
-                ) {
-                  SpaceNetworkGridJsonDataTabOsm2Geojson.value.resize();
-                }
-              }, 100);
-            });
-          } else if (newTab === 'json-viewer') {
-            nextTick(() => {
-              setTimeout(() => {
-                if (
-                  SpaceNetworkGridJsonDataTabOsm2Derived.value &&
-                  SpaceNetworkGridJsonDataTabOsm2Derived.value.resize
-                ) {
-                  SpaceNetworkGridJsonDataTabOsm2Derived.value.resize();
+                if (SpaceNetworkGridJsonDataTabOsm2.value?.resize) {
+                  SpaceNetworkGridJsonDataTabOsm2.value.resize();
                 }
               }, 100);
             });
@@ -990,10 +982,9 @@ Features): * - 使用 Vue 2 Options API 進行組件管理 * - 整合多個分�
         networkDrawContainerRef, // 網絡繪製容器引用
         networkDrawSn4ContainerRef, // Sn4 網絡繪製容器引用
         mapTabContainerRef, // Leaflet（MapTab）容器引用
-        osm2GeojsonViewersContainerRef, // osm_2_geojson 三視窗容器引用
-        SpaceNetworkGridJsonDataTabOsm2OsmXml,
-        SpaceNetworkGridJsonDataTabOsm2Geojson,
-        SpaceNetworkGridJsonDataTabOsm2Derived,
+        osm2GeojsonViewersContainerRef, // osm_2_geojson_2_json 三視窗容器引用
+        SpaceNetworkGridJsonDataTabOsm2,
+        osm2UpperJsonViewerMode,
         MapTabRef,
         highlightFeature, // 高亮顯示功能
         resetView, // 重設視圖功能
@@ -1059,7 +1050,7 @@ Features): * - 使用 Vue 2 Options API 進行組件管理 * - 整合多個分�
         >
           <i :class="getIcon('map').icon"></i>
         </button>
-        <!-- 📄 osm_2_geojson：OSM XML／GeoJSON／路網衍生 JSON -->
+        <!-- 📄 osm_2_geojson_2_json：OSM XML／GeoJSON／路網衍生 JSON -->
         <button
           class="btn rounded-circle border-0 d-flex align-items-center justify-content-center my-btn-transparent my-font-size-xs"
           :class="{ 'my-btn-blue': activeUpperTab === 'osm-viewer' }"
@@ -1517,7 +1508,7 @@ Features): * - 使用 Vue 2 Options API 進行組件管理 * - 整合多個分�
         />
       </div>
 
-      <!-- osm_2_geojson：OSM／GeoJSON／衍生 JSON -->
+      <!-- osm_2_geojson_2_json：OSM／GeoJSON／衍生 JSON -->
       <div
         v-show="
           activeUpperTab === 'osm-viewer' ||
@@ -1528,27 +1519,8 @@ Features): * - 使用 Vue 2 Options API 進行組件管理 * - 整合多個分�
         class="h-100 overflow-hidden"
       >
         <SpaceNetworkGridJsonDataTab
-          v-show="activeUpperTab === 'osm-viewer'"
-          ref="SpaceNetworkGridJsonDataTabOsm2OsmXml"
-          osm-viewer-mode="osm-xml"
-          :container-height="contentHeight"
-          :is-panel-dragging="isPanelDragging"
-          :active-markers="activeMarkers"
-          @active-layer-change="handleActiveLayerChange"
-        />
-        <SpaceNetworkGridJsonDataTab
-          v-show="activeUpperTab === 'geojson-viewer'"
-          ref="SpaceNetworkGridJsonDataTabOsm2Geojson"
-          osm-viewer-mode="osm-geojson"
-          :container-height="contentHeight"
-          :is-panel-dragging="isPanelDragging"
-          :active-markers="activeMarkers"
-          @active-layer-change="handleActiveLayerChange"
-        />
-        <SpaceNetworkGridJsonDataTab
-          v-show="activeUpperTab === 'json-viewer'"
-          ref="SpaceNetworkGridJsonDataTabOsm2Derived"
-          osm-viewer-mode="osm-derived-json"
+          ref="SpaceNetworkGridJsonDataTabOsm2"
+          :osm-viewer-mode="osm2UpperJsonViewerMode"
           :container-height="contentHeight"
           :is-panel-dragging="isPanelDragging"
           :active-markers="activeMarkers"
