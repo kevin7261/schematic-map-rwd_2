@@ -107,12 +107,10 @@ import { ref, computed, nextTick } from 'vue';
 import {
   loadDataLayerJson,
   loadGridSchematicJson,
-  loadSpaceNetworkGridJson,
   loadTaipeiK3J3RoutesTrafficJson,
   loadTaipeiSn4KJ3RoutesTrafficJson,
   loadTaipeiSn4LJ3RoutesTrafficJson,
   loadTaipeiSn4MJ3RoutesTrafficJson,
-  loadTaipeiA5J3RoutesTrafficJson,
   loadTaipeiA6J3RoutesTrafficJson,
   loadTaipeiL3J3RoutesTrafficJson,
   loadTaipeiM3J3RoutesTrafficJson,
@@ -120,7 +118,6 @@ import {
   processMetroToDrawData,
   loadGeoJsonForRoutes,
   loadOsmXmlAsGeoJsonForRoutes,
-  loadCsvTrafficForLayer,
 } from '../utils/dataProcessor.js';
 
 import { getSchematicPlotBoundsFromLayer } from '../utils/schematicPlotMapper.js';
@@ -132,17 +129,9 @@ import {
 } from '../utils/networkDrawSketchToSpaceNetworkSegments.js';
 
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
-import {
-  refreshTaipeiH2NavigationTableAndWeights,
-  refreshTaipeiC5NavigationTableAndWeights,
-  refreshTaipeiC6NavigationTableAndWeights,
-} from '../utils/taipeiH2ShortestPath.js';
+import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
 
 import {
-  execute_a_to_b_test,
-  execute_b_to_c_test,
-  execute_c_to_d_test,
-  execute_d_to_e_test,
   executeTaipeiTest3_A3_To_B3,
   executeTaipeiTest3_B3_To_C3,
   executeTaipeiTest3_C3_To_D3,
@@ -186,14 +175,11 @@ import {
   executeTaipeiTest3_I3_To_J3_Nd_Grid2,
   executeTaipeiTest3_K3_To_L3_Nd_Grid2,
   executeTaipeiTest3_L3_To_M3_Nd_Grid2,
-  execute_A5_To_B5,
   execute_A6_To_B6,
-  execute_B5_To_C5,
   execute_B6_To_C6,
   executeOsmGeojsonToRouteSegmentsProc2,
   executeOsmGeojsonToTaipeiSn4A,
 } from '../utils/dataExecute/index.js';
-import { TAIPEI_TEST_PIPELINE_EXECUTE_LAYER_IDS } from '../utils/taipeiTestPipeline.js';
 import {
   getAllNetworkDrawSketchLayerIds,
   networkDrawPipelineB3LayerIdForSketch,
@@ -1578,156 +1564,6 @@ export const useDataStore = defineStore(
         ],
       },
       {
-        groupName: '版面網格測試_2',
-        groupLayers: [
-          {
-            layerId: 'taipei_a5',
-            layerName: 'a 空間網絡網格起始',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'red',
-            jsonData: null,
-            trafficData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            spaceNetworkGridJsonDataK3Tab: null,
-            spaceNetworkGridJsonDataK3Tab_SectionData: null,
-            spaceNetworkGridJsonDataK3Tab_ConnectData: null,
-            spaceNetworkGridJsonDataK3Tab_StationData: null,
-            processedJsonDataK3Tab: null,
-            showStationPlacement: true,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: loadTaipeiA5J3RoutesTrafficJson,
-            csvLoader_Traffic: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: 'taipei_city_2026/j3_routes_traffic_taipei_test3.json',
-            //jsonFileName: 'test/j3_routes_traffic_taipei_test3_dp_nd.json',
-            csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
-            /** 版面網格：a5 K3Tab → taipei_b5（mergeConnectSpans…＋流量後權重 ÷100）；零權重合併等見 taipei_c5 */
-            executeFunction: execute_A5_To_B5,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            squareGridCellsTaipeiTest3: false,
-            upperViewTabs: [
-              'space-network-grid',
-              'dashboard',
-              'space-network-grid-json-data',
-              'layout-network-grid',
-              'layout-network-grid-json-data',
-            ],
-          },
-          {
-            /** a5→b5 產出層；後續 K3 診斷／snap／近距／手動合併等請用 taipei_c5（此層僅 b5→c5 複製） */
-            layerId: 'taipei_b5',
-            layerName: 'b 權重縮小 1/100',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'yellow',
-            jsonData: null,
-            trafficData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            spaceNetworkGridJsonDataK3Tab: null,
-            spaceNetworkGridJsonDataK3Tab_SectionData: null,
-            spaceNetworkGridJsonDataK3Tab_ConnectData: null,
-            spaceNetworkGridJsonDataK3Tab_StationData: null,
-            processedJsonDataK3Tab: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            csvLoader_Traffic: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: null,
-            csvFileName_traffic: null,
-            /** 將 taipei_b5 路網與衍生欄位複製至 taipei_c5（與 b4→c4 語意相同） */
-            executeFunction: execute_B5_To_C5,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            squareGridCellsTaipeiTest3: false,
-            upperViewTabs: ['layout-network-grid', 'layout-network-grid-json-data'],
-          },
-          {
-            layerId: 'taipei_c5',
-            layerName: 'c 版面網格（複製自 b）',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'green',
-            jsonData: null,
-            trafficData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            spaceNetworkGridJsonDataK3Tab: null,
-            spaceNetworkGridJsonDataK3Tab_SectionData: null,
-            spaceNetworkGridJsonDataK3Tab_ConnectData: null,
-            spaceNetworkGridJsonDataK3Tab_StationData: null,
-            processedJsonDataK3Tab: null,
-            showStationPlacement: true,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            csvLoader_Traffic: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: null,
-            csvFileName_traffic: null,
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            squareGridCellsTaipeiTest3: false,
-            upperViewTabs: ['layout-network-grid', 'layout-network-grid-json-data'],
-          },
-        ],
-      },
-      {
         groupName: '資料處理_2',
         groupLayers: [
           {
@@ -2798,365 +2634,6 @@ export const useDataStore = defineStore(
         ],
       },
       {
-        groupName: '空間網絡網格測試_2',
-        groupLayers: [
-          {
-            layerId: 'taipei_a2',
-            layerName: 'a 直線化',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'yellow',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: loadSpaceNetworkGridJson,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: 'taipei/step02_old/01_straighten_taipei.json',
-            //jsonFileName: 'taipei_city/step02/01_straighten_taipei_city.json',
-            executeFunction: execute_a_to_b_test,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            upperViewTabs: [
-              'space-network-grid',
-              'layout-grid-test',
-              'dashboard',
-              'space-network-grid-json-data',
-              'layout-grid-json-data-test',
-            ],
-          },
-          {
-            layerId: 'taipei_b2',
-            layerName: 'b 疊加網格計算',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'yellow',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: null,
-            executeFunction: execute_b_to_c_test,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-          },
-          {
-            layerId: 'taipei_c2',
-            layerName: 'c 站點往中心聚集',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            minSpacingOverlayCell: null,
-            overlayRemovalMaps: null,
-            gridTooltipMaps: null,
-            overlayRetentionReasons: null,
-            colorName: 'yellow',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: null,
-            executeFunction: execute_c_to_d_test,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-          },
-          {
-            layerId: 'taipei_d2',
-            layerName: 'd 網格正規化',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            minSpacingOverlayCell: null,
-            overlayRemovalMaps: null,
-            gridTooltipMaps: null,
-            overlayRetentionReasons: null,
-            colorName: 'yellow',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: null,
-            executeFunction: execute_d_to_e_test,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-          },
-          {
-            layerId: 'taipei_e2',
-            layerName: 'e 最後結果',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            overlayRetentionReasons: null,
-            colorName: 'yellow',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: null,
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-          },
-          {
-            layerId: 'taipei_f2',
-            layerName: 'f 路線優化',
-            /** 與 taipei_f 相同流程；預設載入 e2 匯出 e_final_taipei_test2.json */
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'teal',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: loadSpaceNetworkGridJson,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            jsonFileName: 'taipei_city/e2_final_taipei_test.json',
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-          },
-          {
-            layerId: 'taipei_g2',
-            layerName: 'g 權重簡化',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'cyan',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: loadSpaceNetworkGridJson,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            //jsonFileName: 'taipei_city/e_final_taipei_city.json',
-            //jsonFileName: 'taipei_city/e2_final_taipei_test.json',
-            jsonFileName: 'taipei_city/f2_network_taipei_test.json',
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-            taipeiFResizeAutoMergeHorizontalNext: 0,
-            taipeiFResizeAutoMergeVerticalNext: 0,
-          },
-          {
-            layerId: 'taipei_h2',
-            layerName: 'h 流量測試',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'orange',
-            jsonData: null,
-            trafficData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: loadSpaceNetworkGridJson,
-            csvLoader_Traffic: loadCsvTrafficForLayer,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            //jsonFileName: 'taipei/e_final_taipei_test2.json',
-            //jsonFileName: 'taipei_city/e2_final_taipei_test.json',
-            jsonFileName: 'taipei_city/f2_network_taipei_test.json',
-            csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-            taipeiFResizeAutoMergeHorizontalNext: 0,
-            taipeiFResizeAutoMergeVerticalNext: 0,
-          },
-          {
-            /** 與「空間網絡網格測試_1」taipei_h 相同設定之獨立複本（layerId 不同，互不共用狀態） */
-            layerId: 'taipei_i2',
-            layerName: 'i2 流量測試',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'orange',
-            jsonData: null,
-            trafficData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: loadSpaceNetworkGridJson,
-            csvLoader_Traffic: loadCsvTrafficForLayer,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            //jsonFileName: 'taipei_city/e_final_taipei_city.json',
-            //jsonFileName: 'taipei/e_final_taipei_2.json',
-            jsonFileName: 'taipei_city/f2_network_taipei_test_modify.json',
-            csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
-            taipeiFResizeAutoMergeHorizontalNext: 0,
-            taipeiFResizeAutoMergeVerticalNext: 0,
-            /** 預設關閉「權重放大」；與全域 taipeiFSpaceNetworkGridScaling 分開，可於 Control 再開 */
-            taipeiFSpaceNetworkGridScaling: false,
-          },
-        ],
-      },
-      {
         groupName: '測試圖層',
         groupLayers: [
           {
@@ -3716,7 +3193,7 @@ export const useDataStore = defineStore(
           // layoutGridJsonData_Test：版面網格測試專用資料欄位
           layer.layoutGridJsonData_Test =
             result.layoutGridJsonData_Test ?? layer.layoutGridJsonData_Test;
-          // layoutGridJsonData_Test2：版面網格測試_2專用資料欄位
+          // layoutGridJsonData_Test2：與 layout-network-grid 測試分頁對應之資料欄位
           layer.layoutGridJsonData_Test2 =
             result.layoutGridJsonData_Test2 ?? layer.layoutGridJsonData_Test2;
           // layoutGridJsonData_Test3：版面網格測試3專用資料欄位
@@ -3838,36 +3315,6 @@ export const useDataStore = defineStore(
       };
     };
 
-    // ==================== LayoutGridTab_Test2 尺寸管理 ====================
-
-    // LayoutGridTab_Test2 當前尺寸（以 pt 為單位）
-    const layoutGridTabTest2Dimensions = ref({
-      x: 0, // 寬度（pt）
-      y: 0, // 高度（pt）
-    });
-
-    // 更新 LayoutGridTab_Test2 尺寸
-    const updateLayoutGridTabTest2Dimensions = (x, y) => {
-      layoutGridTabTest2Dimensions.value = {
-        x: Math.round(x),
-        y: Math.round(y),
-      };
-    };
-
-    // LayoutGridTab_Test2 網格最小尺寸（以 pt 為單位）
-    const layoutGridTabTest2MinCellDimensions = ref({
-      minWidth: 0, // 最小寬度（pt）
-      minHeight: 0, // 最小高度（pt）
-    });
-
-    // 更新 LayoutGridTab_Test2 網格最小尺寸
-    const updateLayoutGridTabTest2MinCellDimensions = (minWidth, minHeight) => {
-      layoutGridTabTest2MinCellDimensions.value = {
-        minWidth: Math.round(minWidth),
-        minHeight: Math.round(minHeight),
-      };
-    };
-
     // LayoutGridTab_Test3 尺寸（以 pt 為單位）
     const layoutGridTabTest3Dimensions = ref({
       x: 0, // 寬度（pt）
@@ -3980,7 +3427,7 @@ export const useDataStore = defineStore(
     };
 
     /**
-     * taipei_k4（a4～c5）：滑鼠所在 snap 欄／列內繪寬高依帶索引距離加權（所在帶 n 倍、相鄰帶 n-1…，最小 1）。
+     * taipei_k4（a4～c6）：滑鼠所在 snap 欄／列內繪寬高依帶索引距離加權（所在帶 n 倍、相鄰帶 n-1…，最小 1）。
      * 與「依 max 比例分配」可併用。預設 n=5。
      */
     const spaceNetworkK4MouseBandFocusMagnifyEnabled = ref(false);
@@ -4061,7 +3508,7 @@ export const useDataStore = defineStore(
         k3JsonMinStationDistancePx.value = Math.min(200, n);
       }
     };
-    // taipei_b5／c5：黑點合併門檻（相鄰兩段 |Δweight| <= N 觸發合併；預設 10；手動合併在 taipei_c5）
+    // taipei_b6／c6：黑點合併門檻（相鄰兩段 |Δweight| <= N 觸發合併；預設 10；手動合併在 taipei_c6）
     const taipeiK3MergeMaxWeightDiff = ref(10);
     const setTaipeiK3MergeMaxWeightDiff = (value) => {
       const n = Math.round(Number(value));
@@ -4079,27 +3526,7 @@ export const useDataStore = defineStore(
         k3JsonDataTabViewport.value = { width: w, height: h };
       }
     };
-    /** taipei_b5（版面網格測試_2）：由 layout-network-grid 繪製 b5 時之診斷資料（內繪區 px） */
-    const taipeiB5LayoutGridDiagSegments = ref(null);
-    const setTaipeiB5LayoutGridDiagSegments = (segments) => {
-      if (Array.isArray(segments) && segments.length > 0) {
-        taipeiB5LayoutGridDiagSegments.value = segments;
-      } else {
-        taipeiB5LayoutGridDiagSegments.value = null;
-      }
-    };
-
-    /** taipei_c5（版面網格測試_2）：主操作圖層；與主圖 layout-network-grid-k3 對齊之診斷資料（內繪區 px） */
-    const taipeiC5LayoutGridDiagSegments = ref(null);
-    const setTaipeiC5LayoutGridDiagSegments = (segments) => {
-      if (Array.isArray(segments) && segments.length > 0) {
-        taipeiC5LayoutGridDiagSegments.value = segments;
-      } else {
-        taipeiC5LayoutGridDiagSegments.value = null;
-      }
-    };
-
-    /** taipei_b6（版面網格測試_3）：由 layout-network-grid 繪製 b6 時之診斷資料（與 b5 分 ref 複製） */
+    /** taipei_b6（版面網格測試_3）：由 layout-network-grid 繪製 b6 時之診斷資料（內繪區 px） */
     const taipeiB6LayoutGridDiagSegments = ref(null);
     const setTaipeiB6LayoutGridDiagSegments = (segments) => {
       if (Array.isArray(segments) && segments.length > 0) {
@@ -4369,40 +3796,8 @@ export const useDataStore = defineStore(
         v != null && String(v).trim() !== '' ? String(v) : '500';
     };
 
-    /** taipei_h2 路線導航：兩個下拉選中的起迄站（JSON 字串存 select value） */
-    const taipeiH2TrafficHighlightKeys = ref([null, null]);
-    const taipeiH2TrafficHighlightRedrawTrigger = ref(0);
-    /** 顯示導航：以 nav_weight（最短路徑上為 5）驅動格狀比例尺 */
-    const taipeiH2ShowNavigationScaling = ref(false);
-
-    const syncTaipeiH2NavigationDerivedState = () => {
-      const layer = findLayerById('taipei_h2');
-      if (layer) {
-        refreshTaipeiH2NavigationTableAndWeights(
-          layer,
-          taipeiH2TrafficHighlightKeys.value,
-          taipeiH2ShowNavigationScaling.value
-        );
-      }
-      taipeiH2TrafficHighlightRedrawTrigger.value += 1;
-    };
-
-    const setTaipeiH2ShowNavigationScaling = (value) => {
-      taipeiH2ShowNavigationScaling.value = !!value;
-      syncTaipeiH2NavigationDerivedState();
-    };
-
-    /** 離開 taipei_h2 圖層時還原導航狀態與 nav_weight */
-    const leaveTaipeiH2NavigationContext = () => {
-      taipeiH2ShowNavigationScaling.value = false;
-      taipeiH2TrafficHighlightKeys.value = [null, null];
-      const layer = findLayerById('taipei_h2');
-      if (layer) {
-        refreshTaipeiH2NavigationTableAndWeights(layer, [null, null], false);
-      }
-      taipeiH2TrafficHighlightRedrawTrigger.value += 1;
-    };
-    const parseTaipeiH2TrafficHighlightKey = (key) => {
+    /** 路線導航下拉選值解析（c6 等 K3 版面圖層） */
+    const parseTrafficStationHighlightKey = (key) => {
       if (key == null || String(key).trim() === '') return null;
       try {
         const o = JSON.parse(String(key));
@@ -4422,57 +3817,11 @@ export const useDataStore = defineStore(
       }
       return null;
     };
-    const getTaipeiH2TrafficHighlightPicks = () =>
-      taipeiH2TrafficHighlightKeys.value
-        .map((k) => parseTaipeiH2TrafficHighlightKey(k))
-        .filter(Boolean);
-    const setTaipeiH2TrafficHighlightKey = (slot, key) => {
-      const s = slot === 1 ? 1 : 0;
-      const next = [...taipeiH2TrafficHighlightKeys.value];
-      next[s] = key != null && String(key).trim() !== '' ? String(key).trim() : null;
-      taipeiH2TrafficHighlightKeys.value = next;
-      syncTaipeiH2NavigationDerivedState();
-    };
-    const clearTaipeiH2TrafficHighlights = () => {
-      taipeiH2TrafficHighlightKeys.value = [null, null];
-      syncTaipeiH2NavigationDerivedState();
-    };
 
-    /** taipei_c5 路線導航：兩個下拉選中的起迄站（JSON 字串存 select value） */
-    const taipeiC5TrafficHighlightKeys = ref([null, null]);
-    const taipeiC5TrafficHighlightRedrawTrigger = ref(0);
-    const parseTaipeiC5TrafficHighlightKey = (key) => parseTaipeiH2TrafficHighlightKey(key);
-    const getTaipeiC5TrafficHighlightPicks = () =>
-      taipeiC5TrafficHighlightKeys.value
-        .map((k) => parseTaipeiC5TrafficHighlightKey(k))
-        .filter(Boolean);
-    const syncTaipeiC5NavigationDerivedState = () => {
-      const layer = findLayerById('taipei_c5');
-      if (layer) {
-        refreshTaipeiC5NavigationTableAndWeights(layer, taipeiC5TrafficHighlightKeys.value);
-      }
-      taipeiC5TrafficHighlightRedrawTrigger.value += 1;
-    };
-    const setTaipeiC5TrafficHighlightKey = (slot, key) => {
-      const s = slot === 1 ? 1 : 0;
-      const next = [...taipeiC5TrafficHighlightKeys.value];
-      next[s] = key != null && String(key).trim() !== '' ? String(key).trim() : null;
-      // 起迄站必須不同；若重複，保留當次選擇並清空另一格。
-      if (next[0] && next[1] && next[0] === next[1]) {
-        next[s === 0 ? 1 : 0] = null;
-      }
-      taipeiC5TrafficHighlightKeys.value = next;
-      syncTaipeiC5NavigationDerivedState();
-    };
-    const clearTaipeiC5TrafficHighlights = () => {
-      taipeiC5TrafficHighlightKeys.value = [null, null];
-      syncTaipeiC5NavigationDerivedState();
-    };
-
-    /** taipei_c6 路線導航（與 taipei_c5 分 ref 複製，版面網格測試_2／版面網格測試_3 不共用） */
+    /** taipei_c6 路線導航 */
     const taipeiC6TrafficHighlightKeys = ref([null, null]);
     const taipeiC6TrafficHighlightRedrawTrigger = ref(0);
-    const parseTaipeiC6TrafficHighlightKey = (key) => parseTaipeiH2TrafficHighlightKey(key);
+    const parseTaipeiC6TrafficHighlightKey = (key) => parseTrafficStationHighlightKey(key);
     const getTaipeiC6TrafficHighlightPicks = () =>
       taipeiC6TrafficHighlightKeys.value
         .map((k) => parseTaipeiC6TrafficHighlightKey(k))
@@ -4979,23 +4328,6 @@ export const useDataStore = defineStore(
       hvFlipStepTrigger.value += 1;
     };
 
-    /** taipei_a / taipei_a2 一鍵執行流程：由 ControlTab 註冊，供 execute_a_to_b_test 觸發 */
-    let _taipeiTestStraighteningPipeline = null;
-    const setTaipeiTestStraighteningPipeline = (fn) => {
-      _taipeiTestStraighteningPipeline = typeof fn === 'function' ? fn : null;
-    };
-    const runTaipeiTestStraighteningPipeline = () => {
-      if (_taipeiTestStraighteningPipeline) _taipeiTestStraighteningPipeline();
-    };
-
-    /** 測試管線 execute 的來源圖層（ControlTab 執行「執行下一步」前設定；a～d） */
-    const taipeiTestExecuteSourceLayerId = ref('taipei_a');
-    const setTaipeiTestExecuteSourceLayerId = (layerId) => {
-      if (layerId != null && TAIPEI_TEST_PIPELINE_EXECUTE_LAYER_IDS.includes(layerId)) {
-        taipeiTestExecuteSourceLayerId.value = layerId;
-      }
-    };
-
     /** 串接Flip L型：按過「下一步」或「一鍵完成」後才顯示高亮與虛線 */
     const connectFlipOverlayVisible = ref(false);
     const setConnectFlipOverlayVisible = (value) => {
@@ -5307,11 +4639,6 @@ export const useDataStore = defineStore(
       d3jsDimensions,
       updateD3jsDimensions,
       updateComputedGridState,
-      // LayoutGridTab_Test2 尺寸管理
-      layoutGridTabTest2Dimensions,
-      updateLayoutGridTabTest2Dimensions,
-      layoutGridTabTest2MinCellDimensions,
-      updateLayoutGridTabTest2MinCellDimensions,
       // LayoutGridTab_Test3 尺寸管理
       layoutGridTabTest3Dimensions,
       updateLayoutGridTabTest3Dimensions,
@@ -5342,27 +4669,12 @@ export const useDataStore = defineStore(
       blackStationHighlightRedrawTrigger,
       taipeiL3ReductionWeightDiffThreshold,
       setTaipeiL3ReductionWeightDiffThreshold,
-      taipeiH2TrafficHighlightKeys,
-      taipeiH2TrafficHighlightRedrawTrigger,
-      parseTaipeiH2TrafficHighlightKey,
-      getTaipeiH2TrafficHighlightPicks,
-      setTaipeiH2TrafficHighlightKey,
-      clearTaipeiH2TrafficHighlights,
-      taipeiC5TrafficHighlightKeys,
-      taipeiC5TrafficHighlightRedrawTrigger,
-      parseTaipeiC5TrafficHighlightKey,
-      getTaipeiC5TrafficHighlightPicks,
-      setTaipeiC5TrafficHighlightKey,
-      clearTaipeiC5TrafficHighlights,
       taipeiC6TrafficHighlightKeys,
       taipeiC6TrafficHighlightRedrawTrigger,
       parseTaipeiC6TrafficHighlightKey,
       getTaipeiC6TrafficHighlightPicks,
       setTaipeiC6TrafficHighlightKey,
       clearTaipeiC6TrafficHighlights,
-      taipeiH2ShowNavigationScaling,
-      setTaipeiH2ShowNavigationScaling,
-      leaveTaipeiH2NavigationContext,
       highlightedOverlayShrinkStrip,
       setHighlightedOverlayShrinkStrip,
       overlayShrinkStripRedrawTrigger,
@@ -5400,10 +4712,6 @@ export const useDataStore = defineStore(
       hvFlipNextIndex,
       hvFlipStepTrigger,
       advanceFlipStep,
-      setTaipeiTestStraighteningPipeline,
-      runTaipeiTestStraighteningPipeline,
-      taipeiTestExecuteSourceLayerId,
-      setTaipeiTestExecuteSourceLayerId,
       connectFlipOverlayVisible,
       setConnectFlipOverlayVisible,
       nShapeNextIndex,
@@ -5463,10 +4771,6 @@ export const useDataStore = defineStore(
       setTaipeiK3MergeMaxWeightDiff,
       k3JsonDataTabViewport,
       setK3JsonDataTabViewport,
-      taipeiB5LayoutGridDiagSegments,
-      setTaipeiB5LayoutGridDiagSegments,
-      taipeiC5LayoutGridDiagSegments,
-      setTaipeiC5LayoutGridDiagSegments,
       taipeiB6LayoutGridDiagSegments,
       setTaipeiB6LayoutGridDiagSegments,
       taipeiC6LayoutGridDiagSegments,

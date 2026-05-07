@@ -33,28 +33,6 @@
     reduceGrid as reduceGridUtil,
   } from '@/utils/gridMergeReduce.js';
   import {
-    buildStraightSegments,
-    computeFlipAnalysis,
-    flipLShapeInRoutesData,
-    buildNShapeList,
-    computeNShapeAnalysis,
-    reduceNShapeInRoutesData,
-    findOverlappingSegmentRanges,
-    mergeRoutesByCoords,
-    mergeAndStripConnectPoints,
-    reconfigureStations,
-  } from '@/utils/segmentUtils.js';
-  import { straightenRoutesOnCurrentLayer } from '@/utils/dataExecute/straightenRoutesCurrentLayer.js';
-  import {
-    applyHVZAllToSpaceNetworkData,
-    applyHVZStepToSpaceNetworkData,
-    countHVZSegments,
-  } from '@/utils/taipeiTest3/applyHVZToSpaceNetwork.js';
-  import {
-    applyFlipLAllToSpaceNetworkData,
-    applyFlipLStepToSpaceNetworkData,
-  } from '@/utils/taipeiTest3/applyFlipLToSpaceNetwork.js';
-  import {
     findBestA3RowForSegment,
     a3ExportRowEndpointSummary,
     a3MidStationLabels,
@@ -65,12 +43,7 @@
   } from '@/utils/taipeiTest3/flatSegmentsToGeojsonStyleExportRows.js';
   import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
   import { taipeiK4MapK3TabJsonToPlotPxForDisplay } from '@/utils/taipeiK4SpaceNetworkPlotPx.js';
-  import {
-    buildTaipeiB5DiagnosticsSegmentsLikeLayoutGrid,
-    buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid,
-  } from '@/utils/taipeiK4ControlDiagnosticsSegments.js';
-  import { endpointSimplifyOnLayer } from '@/utils/dataExecute/endpointSimplifyCurrentLayer.js';
-  import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
+  import { buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid } from '@/utils/taipeiK4ControlDiagnosticsSegments.js';
   import {
     collectStationPlacementPoints,
     collectLineStationGridPointsFromStationData,
@@ -110,12 +83,6 @@
     applyTaipeiFRowShiftToLayerData,
   } from '@/utils/taipeiFColHighlightShift.js';
   import {
-    TAIPEI_TEST2_F_LAYER_ID,
-    snapshotTaipeiFNetworkLayer,
-    restoreTaipeiFNetworkLayer,
-    validateTaipeiF2ColRowShiftResult,
-  } from '@/utils/taipeiF2ColRowShiftGuard.js';
-  import {
     probeLineStationCentering,
     runLineStationsTowardSchematicCenter,
     runListedSectionStationsTowardSchematicCenter,
@@ -123,9 +90,7 @@
     stepOneSectionStationTowardSchematicCenter,
   } from '@/utils/layerStationsTowardSchematicCenter.js';
   import { listSectionRoutesBetweenConnects } from '@/utils/sectionRouteConnectEndpoints.js';
-  import { isTaipeiTestStraighteningLayerId } from '@/utils/taipeiTestStraighteningLayerIds.js';
   import {
-    getTaipeiTestPipelineByExecuteLayer,
     getTaipeiTestLayerBForGridNormLayer,
     isTaipeiTestGridNormLayerTab,
     isTaipeiTestCLayerTab,
@@ -144,7 +109,6 @@
     applyTaipeiL3BlackDotReductionWhileMinDiffLessThan,
   } from '@/utils/taipeiL3BlackDotReductionStep.js';
   import { executeTaipeiB4ZeroWeightMergeAndRedistribute } from '@/utils/dataExecute/executeTaipeiB4ZeroWeightMergeAndRedistribute.js';
-  import { executeTaipeiB5ZeroWeightMergeAndRedistribute } from '@/utils/dataExecute/executeTaipeiB5ZeroWeightMergeAndRedistribute.js';
   import { executeTaipeiB6ZeroWeightMergeAndRedistribute } from '@/utils/dataExecute/executeTaipeiB6ZeroWeightMergeAndRedistribute.js';
   // ==================== 🏪 狀態管理初始化 (State Management Initialization) ====================
 
@@ -182,18 +146,7 @@
    * 追蹤 executeFunction 執行過程的狀態，用於顯示計算中指示器
    */
   const isExecuting = ref(false);
-  /** taipei_c5：手動「零權重合併＋mergeConnectSpans…」執行中 */
-  const isTaipeiB5ManualZeroMergeBusy = ref(false);
-  const runTaipeiB5ManualZeroWeightMerge = async () => {
-    if (isTaipeiB5ManualZeroMergeBusy.value) return;
-    isTaipeiB5ManualZeroMergeBusy.value = true;
-    try {
-      await executeTaipeiB5ZeroWeightMergeAndRedistribute();
-    } finally {
-      isTaipeiB5ManualZeroMergeBusy.value = false;
-    }
-  };
-  /** taipei_c6：手動零權重合併（與 c5 分狀態／分 execute 檔，不共用） */
+  /** taipei_c6：手動零權重合併 */
   const isTaipeiB6ManualZeroMergeBusy = ref(false);
   const runTaipeiB6ManualZeroWeightMerge = async () => {
     if (isTaipeiB6ManualZeroMergeBusy.value) return;
@@ -204,7 +157,7 @@
       isTaipeiB6ManualZeroMergeBusy.value = false;
     }
   };
-  /** taipei_c4：手動「零權重合併＋mergeConnectSpans…」執行中（與 c5 分狀態，不共用） */
+  /** taipei_c4：手動「零權重合併＋mergeConnectSpans…」執行中（與 c6 分狀態，不共用） */
   const isTaipeiB4ManualZeroMergeBusy = ref(false);
   const runTaipeiB4ManualZeroWeightMerge = async () => {
     if (isTaipeiB4ManualZeroMergeBusy.value) return;
@@ -287,10 +240,8 @@
     if (
       groupName !== '資料處理_2' &&
       groupName !== '網格繪製_2' &&
-      groupName !== '空間網絡網格測試_2' &&
       groupName !== '空間網絡網格測試_3' &&
       groupName !== '空間網絡網格測試_4' &&
-      groupName !== '版面網格測試_2' &&
       groupName !== '版面網格測試_3'
     )
       return false;
@@ -385,75 +336,7 @@
   });
 
   /**
-   * K3 JSON 分頁——taipei_b5（版面網格測試_2，a5 產出層）專用診斷取段（與 b4 分函式複製，版面網格測試_1／版面網格測試_2 不共用本體）。
-   * 座標與主圖 layout-network-grid-k3 一致（k4 rebuild + 內繪區 px／tooltip snap）。
-   */
-  const getK3TabRawSegmentsForTaipeiB5 = (layer) => {
-    if (!layer || layer.layerId !== 'taipei_b5') return null;
-    const liveFromLayoutGrid = dataStore.taipeiB5LayoutGridDiagSegments;
-    if (Array.isArray(liveFromLayoutGrid) && liveFromLayoutGrid.length > 0) {
-      return liveFromLayoutGrid;
-    }
-    const src = layer.spaceNetworkGridJsonDataK3Tab;
-    if (!Array.isArray(src) || src.length === 0) return null;
-    const chart = dataStore.d3jsDimensions;
-    const w = chart?.width;
-    const h = chart?.height;
-    if (!w || w < 40 || !h || h < 30) return src;
-    const likeGrid = buildTaipeiB5DiagnosticsSegmentsLikeLayoutGrid(
-      layer,
-      src,
-      w,
-      h,
-      dataStore.k3JsonOverlapDistancePx
-    );
-    if (likeGrid && likeGrid.length) return likeGrid;
-    return taipeiK4MapK3TabJsonToPlotPxForDisplay(
-      src,
-      src,
-      layer,
-      w,
-      h,
-      dataStore.k3JsonOverlapDistancePx
-    );
-  };
-
-  /**
-   * K3 JSON 分頁——taipei_c5（版面網格測試_2 主操作圖層）專用診斷取段（與 b5 分函式相同語意）。
-   * 座標與主圖 layout-network-grid-k3 一致（k4 rebuild + 內繪區 px／tooltip snap）。
-   */
-  const getK3TabRawSegmentsForTaipeiC5 = (layer) => {
-    if (!layer || layer.layerId !== 'taipei_c5') return null;
-    const liveFromLayoutGrid = dataStore.taipeiC5LayoutGridDiagSegments;
-    if (Array.isArray(liveFromLayoutGrid) && liveFromLayoutGrid.length > 0) {
-      return liveFromLayoutGrid;
-    }
-    const src = layer.spaceNetworkGridJsonDataK3Tab;
-    if (!Array.isArray(src) || src.length === 0) return null;
-    const chart = dataStore.d3jsDimensions;
-    const w = chart?.width;
-    const h = chart?.height;
-    if (!w || w < 40 || !h || h < 30) return src;
-    const likeGrid = buildTaipeiB5DiagnosticsSegmentsLikeLayoutGrid(
-      layer,
-      src,
-      w,
-      h,
-      dataStore.k3JsonOverlapDistancePx
-    );
-    if (likeGrid && likeGrid.length) return likeGrid;
-    return taipeiK4MapK3TabJsonToPlotPxForDisplay(
-      src,
-      src,
-      layer,
-      w,
-      h,
-      dataStore.k3JsonOverlapDistancePx
-    );
-  };
-
-  /**
-   * K3 JSON 分頁——taipei_b6（版面網格測試_3，a6 產出層）專用診斷取段（與 b5 分函式複製）。
+   * K3 JSON 分頁——taipei_b6（版面網格測試_3，a6 產出層）專用診斷取段。
    */
   const getK3TabRawSegmentsForTaipeiB6 = (layer) => {
     if (!layer || layer.layerId !== 'taipei_b6') return null;
@@ -520,8 +403,6 @@
 
   const getK3TabRawSegments = (layer) => {
     if (!layer) return null;
-    if (layer.layerId === 'taipei_b5') return getK3TabRawSegmentsForTaipeiB5(layer);
-    if (layer.layerId === 'taipei_c5') return getK3TabRawSegmentsForTaipeiC5(layer);
     if (layer.layerId === 'taipei_b6') return getK3TabRawSegmentsForTaipeiB6(layer);
     if (layer.layerId === 'taipei_c6') return getK3TabRawSegmentsForTaipeiC6(layer);
     return null;
@@ -1759,21 +1640,11 @@
     };
   });
 
-  /** taipei_i2：權重放大預設關（圖層欄位）；其餘 f／g／h 層用全域 store */
-  const taipeiFGridScalingChecked = computed(() => {
-    const lyr = currentLayer.value;
-    if (lyr?.layerId === 'taipei_i2') {
-      return lyr.taipeiFSpaceNetworkGridScaling === true;
-    }
-    return dataStore.taipeiFSpaceNetworkGridScaling !== false;
-  });
+  const taipeiFGridScalingChecked = computed(
+    () => dataStore.taipeiFSpaceNetworkGridScaling !== false
+  );
 
   const onTaipeiFGridScalingChange = (checked) => {
-    const lyr = currentLayer.value;
-    if (lyr?.layerId === 'taipei_i2') {
-      lyr.taipeiFSpaceNetworkGridScaling = checked;
-      return;
-    }
     dataStore.setTaipeiFSpaceNetworkGridScaling(checked);
   };
 
@@ -1784,166 +1655,7 @@
     lyr.squareGridCellsTaipeiTest3 = !!on;
   };
 
-  /** taipei_h2：路線導航（起迄站選取、最短路徑與圖面高亮） */
-  const isTaipeiH2TrafficLayer = computed(() => currentLayer.value?.layerId === 'taipei_h2');
-  /** taipei_c5：路線導航（起迄站選取、最短路徑與圖面高亮） */
-  const isTaipeiC5TrafficLayer = computed(() => currentLayer.value?.layerId === 'taipei_c5');
-
-  const taipeiH2TrafficStationOptions = computed(() => {
-    const layer = currentLayer.value;
-    if (!layer || layer.layerId !== 'taipei_h2') return [];
-    const redOpts = [];
-    const cd = layer.spaceNetworkGridJsonData_ConnectData;
-    if (Array.isArray(cd)) {
-      const seenCn = new Set();
-      for (const c of cd) {
-        if (!c) continue;
-        const cn = c.connect_number ?? c.tags?.connect_number;
-        if (cn == null || seenCn.has(Number(cn))) continue;
-        seenCn.add(Number(cn));
-        const name = (c.station_name ?? c.tags?.station_name ?? c.tags?.name ?? '')
-          .toString()
-          .trim();
-        const label = name ? `紅點 · ${name}（#${cn}）` : `紅點 · Connect #${cn}`;
-        redOpts.push({
-          value: JSON.stringify({ t: 'c', n: Number(cn) }),
-          label,
-        });
-      }
-    }
-    redOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
-    const blackOpts = [];
-    const rows = collectLineStationGridPointsFromStationData(
-      layer.spaceNetworkGridJsonData_StationData
-    );
-    for (const row of rows) {
-      const sid = row.meta?.station_id ?? row.meta?.tags?.station_id;
-      const labelBase = row.name || '黑點';
-      const label = `黑點 · ${labelBase}（${row.x}, ${row.y}）`;
-      blackOpts.push({
-        value: JSON.stringify({
-          t: 'b',
-          x: row.x,
-          y: row.y,
-          i: sid != null ? String(sid) : '',
-        }),
-        label,
-      });
-    }
-    blackOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
-    return [...redOpts, ...blackOpts];
-  });
-  const taipeiC5TrafficStationOptions = computed(() => {
-    const layer = currentLayer.value;
-    if (!layer || layer.layerId !== 'taipei_c5') return [];
-    const redOpts = [];
-    const cd = layer.spaceNetworkGridJsonData_ConnectData;
-    if (Array.isArray(cd)) {
-      const seenCn = new Set();
-      for (const c of cd) {
-        if (!c) continue;
-        const cn = c.connect_number ?? c.tags?.connect_number;
-        if (cn == null || seenCn.has(Number(cn))) continue;
-        seenCn.add(Number(cn));
-        const name = (c.station_name ?? c.tags?.station_name ?? c.tags?.name ?? '')
-          .toString()
-          .trim();
-        const label = name ? `紅點 · ${name}（#${cn}）` : `紅點 · Connect #${cn}`;
-        redOpts.push({
-          value: JSON.stringify({ t: 'c', n: Number(cn) }),
-          label,
-        });
-      }
-    }
-    redOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
-    const blackOpts = [];
-    const rows = collectLineStationGridPointsFromStationData(
-      layer.spaceNetworkGridJsonData_StationData
-    );
-    for (const row of rows) {
-      const sid = row.meta?.station_id ?? row.meta?.tags?.station_id;
-      const labelBase = row.name || '黑點';
-      const label = `黑點 · ${labelBase}（${row.x}, ${row.y}）`;
-      blackOpts.push({
-        value: JSON.stringify({
-          t: 'b',
-          x: row.x,
-          y: row.y,
-          i: sid != null ? String(sid) : '',
-        }),
-        label,
-      });
-    }
-    blackOpts.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
-    return [...redOpts, ...blackOpts];
-  });
-
-  // 導航下拉先暫存；按「確定導航」才真正寫入 store 觸發計算
-  const taipeiH2TrafficDraftKeys = ref(['', '']);
-  const taipeiC5TrafficDraftKeys = ref(['', '']);
-  const syncTaipeiH2TrafficDraftFromStore = () => {
-    taipeiH2TrafficDraftKeys.value = [
-      dataStore.taipeiH2TrafficHighlightKeys[0] ?? '',
-      dataStore.taipeiH2TrafficHighlightKeys[1] ?? '',
-    ];
-  };
-  const syncTaipeiC5TrafficDraftFromStore = () => {
-    taipeiC5TrafficDraftKeys.value = [
-      dataStore.taipeiC5TrafficHighlightKeys[0] ?? '',
-      dataStore.taipeiC5TrafficHighlightKeys[1] ?? '',
-    ];
-  };
-  syncTaipeiH2TrafficDraftFromStore();
-  syncTaipeiC5TrafficDraftFromStore();
-
-  const onTaipeiH2TrafficHighlightChange = (slot, event) => {
-    const raw = event?.target?.value;
-    const s = slot === 1 ? 1 : 0;
-    const next = [...taipeiH2TrafficDraftKeys.value];
-    next[s] = raw && String(raw).trim() !== '' ? String(raw).trim() : '';
-    taipeiH2TrafficDraftKeys.value = next;
-  };
-  const onTaipeiC5TrafficHighlightChange = (slot, event) => {
-    const raw = event?.target?.value;
-    const s = slot === 1 ? 1 : 0;
-    const next = [...taipeiC5TrafficDraftKeys.value];
-    next[s] = raw && String(raw).trim() !== '' ? String(raw).trim() : '';
-    taipeiC5TrafficDraftKeys.value = next;
-  };
-  const confirmTaipeiH2TrafficNavigation = () => {
-    dataStore.setTaipeiH2TrafficHighlightKey(0, taipeiH2TrafficDraftKeys.value[0] || null);
-    dataStore.setTaipeiH2TrafficHighlightKey(1, taipeiH2TrafficDraftKeys.value[1] || null);
-    syncTaipeiH2TrafficDraftFromStore();
-  };
-  const confirmTaipeiC5TrafficNavigation = () => {
-    dataStore.setTaipeiC5TrafficHighlightKey(0, taipeiC5TrafficDraftKeys.value[0] || null);
-    dataStore.setTaipeiC5TrafficHighlightKey(1, taipeiC5TrafficDraftKeys.value[1] || null);
-    syncTaipeiC5TrafficDraftFromStore();
-  };
-  const clearTaipeiH2TrafficNavigation = () => {
-    dataStore.clearTaipeiH2TrafficHighlights();
-    syncTaipeiH2TrafficDraftFromStore();
-  };
-  const clearTaipeiC5TrafficNavigation = () => {
-    dataStore.clearTaipeiC5TrafficHighlights();
-    syncTaipeiC5TrafficDraftFromStore();
-  };
-
-  /** 與 Python 範例相同語意：起迄間最短路徑上的所有車站（含端點），以「、」串接 */
-  const taipeiH2ShortestPathUi = computed(() => {
-    const layer = currentLayer.value;
-    if (!layer || layer.layerId !== 'taipei_h2') return null;
-    const keys = dataStore.taipeiH2TrafficHighlightKeys;
-    return taipeiH2ComputeShortestPathOverlay(layer, keys);
-  });
-  const taipeiC5ShortestPathUi = computed(() => {
-    const layer = currentLayer.value;
-    if (!layer || layer.layerId !== 'taipei_c5') return null;
-    const keys = dataStore.taipeiC5TrafficHighlightKeys;
-    return taipeiH2ComputeShortestPathOverlay(layer, keys);
-  });
-
-  /** taipei_c6：路線導航（與 c5 分狀態／store 複製） */
+  /** taipei_c6：路線導航 */
   const isTaipeiC6TrafficLayer = computed(() => currentLayer.value?.layerId === 'taipei_c6');
 
   const taipeiC6TrafficStationOptions = computed(() => {
@@ -2153,29 +1865,7 @@
     let effectiveDelta = delta;
     let pathsForStore = delta !== 0 ? shiftedPaths : e.verticalPaths;
     if (delta !== 0) {
-      let snap = null;
-      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
-        snap = snapshotTaipeiFNetworkLayer(layer);
-      }
       shiftMeta = applyTaipeiFColShiftToLayerData(layer, e.verticalPaths, delta, e.segmentIndices);
-      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
-        const guard = validateTaipeiF2ColRowShiftResult(layer);
-        const badTopo = !!shiftMeta.topologyError;
-        if (!guard.ok || badTopo) {
-          restoreTaipeiFNetworkLayer(layer, snap);
-          dataStore.requestSpaceNetworkGridFullRedraw();
-          const parts = [];
-          if (badTopo && shiftMeta.topologyError) parts.push(shiftMeta.topologyError);
-          if (!guard.ok) parts.push(guard.reason);
-          shiftMeta = {
-            columnXBefore: 0,
-            columnXAfter: 0,
-            topologyError: parts.join(' ') || 'taipei_f2：欄位移已還原。',
-          };
-          effectiveDelta = 0;
-          pathsForStore = e.verticalPaths;
-        }
-      }
     }
 
     const sectionSegSet = buildSectionDataFlatSegmentIndexSet(layer);
@@ -2273,34 +1963,12 @@
     let effectiveDelta = delta;
     let pathsForStore = delta !== 0 ? shiftedPaths : e.horizontalPaths;
     if (delta !== 0) {
-      let snap = null;
-      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
-        snap = snapshotTaipeiFNetworkLayer(layer);
-      }
       shiftMeta = applyTaipeiFRowShiftToLayerData(
         layer,
         e.horizontalPaths,
         delta,
         e.segmentIndices
       );
-      if (layer.layerId === TAIPEI_TEST2_F_LAYER_ID) {
-        const guard = validateTaipeiF2ColRowShiftResult(layer);
-        const badTopo = !!shiftMeta.topologyError;
-        if (!guard.ok || badTopo) {
-          restoreTaipeiFNetworkLayer(layer, snap);
-          dataStore.requestSpaceNetworkGridFullRedraw();
-          const parts = [];
-          if (badTopo && shiftMeta.topologyError) parts.push(shiftMeta.topologyError);
-          if (!guard.ok) parts.push(guard.reason);
-          shiftMeta = {
-            rowYBefore: 0,
-            rowYAfter: 0,
-            topologyError: parts.join(' ') || 'taipei_f2：列位移已還原。',
-          };
-          effectiveDelta = 0;
-          pathsForStore = e.horizontalPaths;
-        }
-      }
     }
 
     const sectionSegSetRow = buildSectionDataFlatSegmentIndexSet(layer);
@@ -2779,14 +2447,6 @@
         dataStore.clearTaipeiFRowRouteHighlight();
         stopTaipeiFCenteringAutoAdvance();
       }
-      if (id !== 'taipei_h2') {
-        dataStore.leaveTaipeiH2NavigationContext();
-        syncTaipeiH2TrafficDraftFromStore();
-      }
-      if (id !== 'taipei_c5') {
-        dataStore.clearTaipeiC5TrafficHighlights();
-        syncTaipeiC5TrafficDraftFromStore();
-      }
       if (id !== 'taipei_c6') {
         dataStore.clearTaipeiC6TrafficHighlights();
         syncTaipeiC6TrafficDraftFromStore();
@@ -2819,10 +2479,6 @@
     currentLayer.value.spaceNetworkGridJsonData = JSON.parse(JSON.stringify(layout));
   };
 
-  const isTaipeiTestStraightening = computed(() => {
-    return currentLayer.value && isTaipeiTestStraighteningLayerId(currentLayer.value.layerId);
-  });
-
   /** 執行下一步：具 geojson／layout／space 路網；k3／l3 另認分頁專用路網欄位 */
   const currentLayerHasExecuteInputData = computed(() => {
     const layer = currentLayer.value;
@@ -2835,9 +2491,6 @@
       layer.layerId === 'taipei_a4' ||
       layer.layerId === 'taipei_b4' ||
       layer.layerId === 'taipei_c4' ||
-      layer.layerId === 'taipei_a5' ||
-      layer.layerId === 'taipei_b5' ||
-      layer.layerId === 'taipei_c5' ||
       layer.layerId === 'taipei_a6' ||
       layer.layerId === 'taipei_b6' ||
       layer.layerId === 'taipei_c6'
@@ -3185,9 +2838,6 @@
       layer.layerId === 'taipei_a4' ||
       layer.layerId === 'taipei_b4' ||
       layer.layerId === 'taipei_c4' ||
-      layer.layerId === 'taipei_a5' ||
-      layer.layerId === 'taipei_b5' ||
-      layer.layerId === 'taipei_c5' ||
       layer.layerId === 'taipei_a6' ||
       layer.layerId === 'taipei_b6' ||
       layer.layerId === 'taipei_c6' ||
@@ -3198,7 +2848,6 @@
     ) {
       return null;
     }
-    if (isTaipeiTestStraighteningLayerId(layer.layerId)) return null;
     if (!layer.isLoaded) {
       return {
         layerId: layer.layerId,
@@ -3315,9 +2964,6 @@
       noSpaceNetwork: false,
     };
   });
-
-  /** (7→8) 迴圈執行次數：追蹤一鍵流程中串接Flip → ㄈ縮減的迴圈次數 */
-  const connectFlipNShapeLoopCount = ref(0);
 
   /** 網格正規化／結果圖層：顯示紅點＋黑點最小水平／垂直間距 */
   const isGridNormStationMetricsLayer = computed(() => {
@@ -3565,546 +3211,15 @@
     return v.toFixed(4);
   };
 
-  /** taipei_a 的總段數；順序為同一 route_name 由頭到尾，再換下一個 route */
-  const hvZSegmentTotal = computed(() => {
-    if (!currentLayer.value || !isTaipeiTestStraighteningLayerId(currentLayer.value.layerId))
-      return 0;
-    return countHVZSegments(currentLayer.value.spaceNetworkGridJsonData);
-  });
-
-  /**
-   * 直線路段列表（供 flip 分析用）
-   */
-  const getTaipeiTestLayoutData = (routesData) => {
-    if (!Array.isArray(routesData)) return [];
-    if (routesData.length > 0 && routesData[0]?.segments && !routesData[0]?.points) {
-      return routesData.flatMap((route) =>
-        (route.segments || []).map((segment) => ({
-          ...segment,
-          name: route.route_name || route.name || 'Unknown',
-        }))
-      );
-    }
-    return routesData;
-  };
-
-  const straightSegments = computed(() => {
-    const data = currentLayer.value?.spaceNetworkGridJsonData;
-    return buildStraightSegments(getTaipeiTestLayoutData(data));
-  });
-
-  /** 偵測重疊路段（只高亮重疊區段），並設定 store 高亮 */
-  const detectOverlappingSegments = () => {
-    const segs = straightSegments.value;
-    const ranges = findOverlappingSegmentRanges(segs);
-    dataStore.setOverlappingSegmentHighlight(ranges);
-    dataStore.clearConnectOnOtherRouteHighlight();
-  };
-
-  /** taipei_a：一鍵執行 — 儲存車站資訊 → 路線直線化 → Z形 → Flip L → 末端簡化 → 路線串接 → (串接Flip → ㄈ縮減為L)loop 直到無 flip 且無縮減 → 重算交叉點 → 車站配置 */
-  const executeOneClickPipeline = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    if (!layer.spaceNetworkGridJsonData?.length) return;
-    saveStationInfo();
-    runStraightenCurrentLayer();
-    executeHVZAll();
-    executeFlipAll();
-    executeEndpointSimplify();
-    executeConnectFlipPreprocess();
-    // (7 → 8) loop：串接Flip 全部 → ㄈ縮減為L，重複直到本輪完全沒有 flip 與縮減
-    connectFlipNShapeLoopCount.value = 0;
-    let didWork = true;
-    while (didWork) {
-      connectFlipNShapeLoopCount.value++;
-      const flipped = executeConnectThenFlipAll();
-      const reduced = executeNShapeAll();
-      didWork = flipped || reduced;
-    }
-    executeReconfigureStations();
-    layer.showStationPlacement = true;
-    dataStore.advanceFlipStep();
-  };
-  dataStore.setTaipeiTestStraighteningPipeline(executeOneClickPipeline);
-
-  /** taipei_a：儲存車站資訊到 SectionData/ConnectData/StationData，存好後紅點黑點改由車站配置控制 */
-  const saveStationInfo = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    const { sectionData, connectData, stationData } = computeStationDataFromRoutes(data);
-    layer.spaceNetworkGridJsonData_SectionData = sectionData;
-    layer.spaceNetworkGridJsonData_ConnectData = connectData;
-    layer.spaceNetworkGridJsonData_StationData = stationData;
-    dataStore.advanceFlipStep();
-  };
-
-  /** 路線直線化：對當前圖層執行網格吸附＋插值（邏輯複製自 execute_2_1_to_2_2） */
-  const runStraightenCurrentLayer = () => {
-    const layer = currentLayer.value;
-    if (!layer || !layer.spaceNetworkGridJsonData?.length) return;
-    straightenRoutesOnCurrentLayer(layer);
-  };
-
-  /** 直線 Z 形水平垂直化（演算法見 applyHVZToSpaceNetwork.js） */
-  const executeHVZStep = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    dataStore.hvZNextIndex = applyHVZStepToSpaceNetworkData(data, dataStore.hvZNextIndex);
-    dataStore.advanceHVZStep();
-  };
-
-  /** taipei_a：一鍵完成，全部改為水平垂直，絕不留下非 HV 線；同路線不可重疊 */
-  const executeHVZAll = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    applyHVZAllToSpaceNetworkData(data);
-    dataStore.hvZNextIndex = countHVZSegments(data);
-    dataStore.advanceHVZStep();
-  };
-
-  /** taipei_a：Flip L 型總數（straightSegments 中相鄰兩段形成一個 L） */
-  const hvFlipLTotal = computed(() => {
-    const segs = straightSegments.value;
-    return Math.max(0, (segs?.length ?? 0) - 1);
-  });
-
-  /** taipei_a：下一步 flip 一個 L 型 */
-  const executeFlipStep = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    const totalL = hvFlipLTotal.value;
-    if (totalL <= 0) return;
-    const { nextFlipIndex, routesData } = applyFlipLStepToSpaceNetworkData(
-      data,
-      dataStore.hvFlipNextIndex
-    );
-    layer.spaceNetworkGridJsonData = routesData;
-    dataStore.hvFlipNextIndex = nextFlipIndex % Math.max(1, totalL);
-    dataStore.advanceFlipStep();
-  };
-
-  /** taipei_a：一鍵完成，flip 所有可 flip 的 L 型 */
-  const executeFlipAll = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    layer.spaceNetworkGridJsonData = applyFlipLAllToSpaceNetworkData(data);
-    dataStore.hvFlipNextIndex = 0;
-    dataStore.advanceFlipStep();
-  };
-
-  /** 串接Flip L型：末端簡化 — 末端裁切＋車站均勻分佈（與 Colab 2-6 同邏輯） */
-  const executeEndpointSimplify = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    layer.spaceNetworkGridJsonData = endpointSimplifyOnLayer(data);
-    dataStore.hvFlipNextIndex = 0;
-    dataStore.setConnectFlipOverlayVisible(false);
-    dataStore.advanceFlipStep();
-  };
-
-  /** 串接Flip L型：重新計算交叉點，把路線斷開（只更新 spaceNetworkGridJsonData；SectionData/ConnectData/StationData 由「儲存車站資訊」寫入後不再被此覆寫） */
-  const executeReconfigureStations = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    const oldConnect = layer.spaceNetworkGridJsonData_ConnectData ?? null;
-    const { routesData } = reconfigureStations(data, oldConnect);
-    layer.spaceNetworkGridJsonData = routesData;
-    dataStore.hvFlipNextIndex = 0;
-    dataStore.setConnectFlipOverlayVisible(false);
-    dataStore.advanceFlipStep();
-  };
-
-  /** 路線串接 — 同 route_name 串接成一條路線，移除紅點與黑點 */
-  const executeConnectFlipPreprocess = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return;
-    layer.spaceNetworkGridJsonData = mergeAndStripConnectPoints(data);
-    dataStore.hvFlipNextIndex = 0;
-    dataStore.setConnectFlipOverlayVisible(false);
-    dataStore.advanceFlipStep();
-  };
-
-  /** 串接Flip L型 專用 options：取消紅點會移動／與其他路線交叉；改用 ABCD 矩形內有其他路線轉折點／起迄點／線段正交交叉點 */
-  const CONNECT_FLIP_OPTIONS = {
-    skipConnectMove: true,
-    skipCrossing: true,
-    useRectangleOtherRouteCheck: true,
-  };
-
-  /** 空間網絡網格測試_2（taipei_a2）：轉折點有紅點則不可串接 Flip */
-  const getConnectFlipOptions = () => ({
-    ...CONNECT_FLIP_OPTIONS,
-    ...(currentLayer.value?.layerId === 'taipei_a2' ? { forbidFlipIfLCornerHasConnect: true } : {}),
-  });
-
-  /** taipei_a：串接Flip L型 - 下一步（串接後，若綠虛線則執行 flip 並重新計算，再切到下一 L）
-   * @returns {{ didFlip: boolean }} 本步是否有執行 flip
-   */
-  const executeConnectThenFlipStep = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return { didFlip: false };
-    let data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return { didFlip: false };
-    const merged = mergeRoutesByCoords(data);
-    data = merged;
-
-    const layoutData = getTaipeiTestLayoutData(data);
-    const straightSegs = buildStraightSegments(layoutData);
-    const totalL = Math.max(0, straightSegs.length - 1);
-    let didFlip = false;
-    if (totalL > 0) {
-      const idx = dataStore.hvFlipNextIndex % totalL;
-      const result = flipLShapeInRoutesData(data, idx, getConnectFlipOptions());
-      if (result.changed) {
-        data = result.routesData;
-        didFlip = true;
-      }
-      dataStore.hvFlipNextIndex = (dataStore.hvFlipNextIndex + 1) % totalL;
-    }
-    layer.spaceNetworkGridJsonData = data;
-    dataStore.advanceFlipStep();
-    dataStore.setConnectFlipOverlayVisible(true);
-    return { didFlip };
-  };
-
-  /** 串接Flip L型 自動執行：每步間隔後自動呼叫「下一步」，讓使用者看到逐步動畫 */
-  const connectFlipAutoRunning = ref(false);
-  let connectFlipAutoTimer = null;
-  const connectFlipAutoDelay = ref(600);
-
-  const stopConnectFlipAuto = () => {
-    connectFlipAutoRunning.value = false;
-    if (connectFlipAutoTimer) {
-      clearTimeout(connectFlipAutoTimer);
-      connectFlipAutoTimer = null;
-    }
-  };
-
-  /** 串接Flip L型 自動執行：與一鍵完成相同邏輯 — 每輪跑完整 network，若有 flip 則新一輪從頭跑，直到該輪無 flip 才停止 */
-  const startConnectFlipAuto = () => {
-    if (connectFlipAutoRunning.value) {
-      stopConnectFlipAuto();
-      return;
-    }
-    connectFlipAutoRunning.value = true;
-    dataStore.setConnectFlipOverlayVisible(true);
-    let flippedInThisLoop = false;
-    const runNext = () => {
-      if (!connectFlipAutoRunning.value) return;
-      const layer = currentLayer.value;
-      if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) {
-        stopConnectFlipAuto();
-        return;
-      }
-      const layoutDataBefore = getTaipeiTestLayoutData(layer.spaceNetworkGridJsonData);
-      const straightSegsBefore = buildStraightSegments(layoutDataBefore);
-      const totalLBefore = Math.max(0, straightSegsBefore.length - 1);
-      if (totalLBefore <= 0) {
-        stopConnectFlipAuto();
-        return;
-      }
-      const { didFlip } = executeConnectThenFlipStep();
-      if (didFlip) flippedInThisLoop = true;
-
-      const layoutDataAfter = getTaipeiTestLayoutData(layer.spaceNetworkGridJsonData);
-      const straightSegsAfter = buildStraightSegments(layoutDataAfter);
-      const totalLAfter = Math.max(0, straightSegsAfter.length - 1);
-      const finishedLoop = dataStore.hvFlipNextIndex === 0;
-
-      if (finishedLoop) {
-        if (!flippedInThisLoop) {
-          stopConnectFlipAuto();
-          return;
-        }
-        flippedInThisLoop = false;
-      }
-      if (totalLAfter <= 0) {
-        stopConnectFlipAuto();
-        return;
-      }
-      connectFlipAutoTimer = setTimeout(runNext, connectFlipAutoDelay.value);
-    };
-    runNext();
-  };
-
-  /** taipei_a：串接Flip L型 - 一鍵完成
-   * 邏輯：完整執行整個 network 為一輪 loop；若有任一次 flip，從頭開始新一輪；直到某一輪沒有任何 flip 才停止
-   * @returns {boolean} 本輪是否有執行任何 flip
-   */
-  const executeConnectThenFlipAll = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return false;
-    let data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return false;
-    data = mergeRoutesByCoords(data);
-
-    let anyFlip = false;
-    for (let pass = 0; pass < 100; pass++) {
-      const layoutData = getTaipeiTestLayoutData(data);
-      const straightSegs = buildStraightSegments(layoutData);
-      const totalL = Math.max(0, straightSegs.length - 1);
-      if (totalL <= 0) break;
-      let changedAny = false;
-      for (let idx = 0; idx < totalL; idx++) {
-        const result = flipLShapeInRoutesData(data, idx, getConnectFlipOptions());
-        if (result.changed) {
-          data = result.routesData;
-          changedAny = true;
-          anyFlip = true;
-        }
-      }
-      if (!changedAny) break;
-    }
-    layer.spaceNetworkGridJsonData = data;
-    dataStore.hvFlipNextIndex = 0;
-    dataStore.advanceFlipStep();
-    dataStore.setConnectFlipOverlayVisible(true);
-    return anyFlip;
-  };
-
-  // ──────────────────────────────────────────────────────────────────
-  // ㄈ 縮減為 L 型
-  // ──────────────────────────────────────────────────────────────────
-
-  /** 串接Flip L型 的相同 options 也用於 ㄈ縮減 */
-  const REDUCE_N_OPTIONS = {
-    skipConnectMove: true,
-    skipCrossing: true,
-    useRectangleOtherRouteCheck: true,
-  };
-
-  /** ㄈ 型清單 computed（依當前 spaceNetworkGridJsonData 即時計算） */
-  const nShapeList = computed(() => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return [];
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return [];
-    const layoutData = getTaipeiTestLayoutData(data);
-    const straightSegs = buildStraightSegments(layoutData);
-    return buildNShapeList(straightSegs);
-  });
-
-  const nShapeTotal = computed(() => nShapeList.value.length);
-
-  /** ㄈ縮減 下一步：取當前 nShapeList 中的第一個 ㄈ，嘗試縮減 */
-  const executeNShapeStep = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return { didReduce: false };
-    let data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return { didReduce: false };
-    const layoutData = getTaipeiTestLayoutData(data);
-    const straightSegs = buildStraightSegments(layoutData);
-    const list = buildNShapeList(straightSegs);
-    if (list.length === 0) return { didReduce: false };
-    const idx = dataStore.nShapeNextIndex % list.length;
-    const segStartIdx = list[idx];
-    const result = reduceNShapeInRoutesData(data, segStartIdx, REDUCE_N_OPTIONS);
-    if (result.changed) {
-      data = result.routesData;
-    }
-    dataStore.nShapeNextIndex = (dataStore.nShapeNextIndex + 1) % Math.max(1, list.length);
-    layer.spaceNetworkGridJsonData = data;
-    dataStore.advanceNShapeStep();
-    dataStore.setNShapeOverlayVisible(true);
-    return { didReduce: result.changed };
-  };
-
-  /** ㄈ縮減 一鍵完成：整輪掃過所有 ㄈ，有縮減則從頭再跑，直到某輪無縮減為止
-   * @returns {boolean} 本輪是否有執行任何縮減
-   */
-  const executeNShapeAll = () => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return false;
-    let data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return false;
-    let anyReduce = false;
-    for (let pass = 0; pass < 100; pass++) {
-      const layoutData = getTaipeiTestLayoutData(data);
-      const straightSegs = buildStraightSegments(layoutData);
-      const list = buildNShapeList(straightSegs);
-      if (list.length === 0) break;
-      let changedAny = false;
-      for (const segStartIdx of list) {
-        const result = reduceNShapeInRoutesData(data, segStartIdx, REDUCE_N_OPTIONS);
-        if (result.changed) {
-          data = result.routesData;
-          changedAny = true;
-          anyReduce = true;
-        }
-      }
-      if (!changedAny) break;
-    }
-    layer.spaceNetworkGridJsonData = data;
-    dataStore.nShapeNextIndex = 0;
-    dataStore.advanceNShapeStep();
-    dataStore.setNShapeOverlayVisible(true);
-    return anyReduce;
-  };
-
-  /** ㄈ縮減 自動執行 */
-  const nShapeAutoRunning = ref(false);
-  let nShapeAutoTimer = null;
-  const nShapeAutoDelay = ref(600);
-
-  const stopNShapeAuto = () => {
-    nShapeAutoRunning.value = false;
-    if (nShapeAutoTimer) {
-      clearTimeout(nShapeAutoTimer);
-      nShapeAutoTimer = null;
-    }
-  };
-
-  const startNShapeAuto = () => {
-    if (nShapeAutoRunning.value) {
-      stopNShapeAuto();
-      return;
-    }
-    nShapeAutoRunning.value = true;
-    dataStore.setNShapeOverlayVisible(true);
-    let reducedInThisLoop = false;
-    const runNext = () => {
-      if (!nShapeAutoRunning.value) return;
-      const layer = currentLayer.value;
-      if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) {
-        stopNShapeAuto();
-        return;
-      }
-      const listBefore = nShapeList.value;
-      if (listBefore.length === 0) {
-        stopNShapeAuto();
-        return;
-      }
-      const { didReduce } = executeNShapeStep();
-      if (didReduce) reducedInThisLoop = true;
-      const finishedLoop = dataStore.nShapeNextIndex === 0;
-      if (finishedLoop) {
-        if (!reducedInThisLoop) {
-          stopNShapeAuto();
-          return;
-        }
-        reducedInThisLoop = false;
-      }
-      if (nShapeList.value.length === 0) {
-        stopNShapeAuto();
-        return;
-      }
-      nShapeAutoTimer = setTimeout(runNext, nShapeAutoDelay.value);
-    };
-    runNext();
-  };
-
-  /** ㄈ縮減 當前選中 ㄈ 的分析 */
-  const nShapeAnalysis = computed(() => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return null;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return null;
-    const list = nShapeList.value;
-    if (list.length === 0) return null;
-    const idx = dataStore.nShapeNextIndex % list.length;
-    const segStartIdx = list[idx];
-    const layoutData = getTaipeiTestLayoutData(data);
-    const straightSegs = buildStraightSegments(layoutData);
-    return computeNShapeAnalysis(straightSegs, segStartIdx, REDUCE_N_OPTIONS);
-  });
-
-  /**
-   * 儲存車站配置結果為 08_compact_layout 格式的 JSON
-   * 開發環境：優先 POST 到 /api/save-result 自動寫入 public/data/result/
-   * 若 API 不可用（如 build 後）：改為觸發下載
-   */
-  const saveCompactLayoutToResult = async () => {
-    const layer = currentLayer.value;
-    if (!layer || !layer.spaceNetworkGridJsonData) return;
-    const raw = layer.spaceNetworkGridJsonData;
-    const flat = getTaipeiTestLayoutData(raw);
-    if (!Array.isArray(flat) || flat.length === 0) return;
-    const normalized = flat.map((seg) => ({
-      name: seg.name ?? seg.route_name ?? 'Unknown',
-      processed: seg.processed ?? false,
-      points: Array.isArray(seg.points) ? seg.points : [],
-      properties_start: seg.properties_start ?? null,
-      properties_end: seg.properties_end ?? null,
-      way_properties: seg.way_properties ?? null,
-      segment_counts: Array.isArray(seg.segment_counts)
-        ? seg.segment_counts
-        : [seg.points?.length ?? 0],
-      length: typeof seg.length === 'number' ? seg.length : (seg.points?.length ?? 0),
-      nodes: Array.isArray(seg.nodes) ? seg.nodes : [],
-    }));
-    const json = JSON.stringify(normalized, null, 2);
-    try {
-      const res = await fetch('/api/save-result', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: json,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        alert(`已儲存至 ${data.path ?? 'data/result/08_compact_layout_taipei.json'}`);
-        return;
-      }
-    } catch {
-      /* API 不可用時改為下載 */
-    }
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '08_compact_layout_taipei.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  /** taipei_a 串接Flip L型：當前選中 L 的 flip 分析（用放寬規則顯示不能 flip 的原因） */
-  const connectFlipAnalysis = computed(() => {
-    const layer = currentLayer.value;
-    if (!layer || !isTaipeiTestStraighteningLayerId(layer.layerId)) return null;
-    const data = layer.spaceNetworkGridJsonData;
-    if (!Array.isArray(data) || data.length === 0) return null;
-    const layoutData = getTaipeiTestLayoutData(data);
-    const straightSegs = buildStraightSegments(layoutData);
-    const totalL = Math.max(0, (straightSegs?.length ?? 0) - 1);
-    if (totalL <= 0) return null;
-    const segStartIdx = dataStore.hvFlipNextIndex % totalL;
-    return computeFlipAnalysis(straightSegs, segStartIdx, layoutData, getConnectFlipOptions());
-  });
-
-  /** 切換圖層時清除「曾 flip 的紅點」紀錄；離開直線化測試時隱藏串接Flip 高亮並停止自動執行 */
-  watch(activeLayerTab, (tab) => {
-    lastFlippedConnectPoints.value = {};
-    stopConnectFlipAuto();
-    stopNShapeAuto();
-    if (!isTaipeiTestStraighteningLayerId(tab)) {
-      dataStore.setConnectFlipOverlayVisible(false);
-      dataStore.setNShapeOverlayVisible(false);
-    }
-  });
-
-  /** 與空間網路地圖分頁共用：目前操作分頁選中的圖層 */
   watch(
     activeLayerTab,
     (tab) => {
+      lastFlippedConnectPoints.value = {};
       dataStore.setControlActiveLayerId(tab ?? null);
     },
     { immediate: true }
   );
+
 
   /**
    * 手繪「執行下一步」等由 store 指定圖層時，同步本頁選取；否則 activeLayerTab 仍停在 network_draw_sketch
@@ -4122,28 +3237,6 @@
       activeLayerTab.value = id;
     }
   );
-
-  /**
-   * 📊 取得 LayoutGridTab_Test2 當前尺寸 (Get LayoutGridTab_Test2 Current Dimensions)
-   * 從 dataStore 中獲取 LayoutGridTab_Test2 的當前尺寸（以 pt 為單位）
-   *
-   * @type {ComputedRef<{x: number, y: number}>}
-   * @returns {{x: number, y: number}} 當前尺寸的 x（寬度）和 y（高度）
-   */
-  const layoutGridTabTest2Dimensions = computed(() => {
-    return dataStore.layoutGridTabTest2Dimensions;
-  });
-
-  /**
-   * 📊 取得 LayoutGridTab_Test2 網格最小尺寸 (Get LayoutGridTab_Test2 Min Cell Dimensions)
-   * 從 dataStore 中獲取 LayoutGridTab_Test2 的網格最小尺寸（以 pt 為單位）
-   *
-   * @type {ComputedRef<{minWidth: number, minHeight: number}>}
-   * @returns {{minWidth: number, minHeight: number}} 最小寬度和最小高度
-   */
-  const layoutGridTabTest2MinCellDimensions = computed(() => {
-    return dataStore.layoutGridTabTest2MinCellDimensions;
-  });
 
   /**
    * 📊 取得 LayoutGridTab_Test3 當前尺寸 (Get LayoutGridTab_Test3 Current Dimensions)
@@ -4212,7 +3305,7 @@
 
   /**
    * 📊 取得當前網格實際長寬 (Get Current Grid Actual Dimensions)
-   * 從 layoutGridJsonData_Test2（LayoutGridTab_Test2）中獲取當前網格的實際長寬（經過合併和縮減後）
+   * 從 layoutGridJsonData_Test2（版面網格測試分頁資料欄）中獲取當前網格的實際長寬（經過合併和縮減後）
    * 優先從 meta 中讀取，如果沒有則從實際座標計算
    * 使用 computed 確保在數據變化時自動更新
    *
@@ -4539,9 +3632,6 @@
       // 等待 UI 更新以顯示"計算中"畫面
       await nextTick();
 
-      if (getTaipeiTestPipelineByExecuteLayer(currentLayer.value.layerId)) {
-        dataStore.setTaipeiTestExecuteSourceLayerId(currentLayer.value.layerId);
-      }
       // 執行函數（可為 async）
       await Promise.resolve(currentLayer.value.executeFunction(jsonData));
 
@@ -5473,7 +4563,7 @@
         // 記錄在 DataTable 的「合併2」欄位
         targetRow.合併2 = 'V';
 
-        // 觸發重繪：只更新 Test2（LayoutGridTab_Test2 的 watch 會自動監聽並重繪）
+        // 觸發重繪：深拷 layoutGridJsonData_Test2 使相依元件 watch 重繪
         // 重繪時會自動更新最小尺寸（在 drawGridNodes 函數中）
         currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
           JSON.stringify(currentLayer.value.layoutGridJsonData_Test2)
@@ -5621,8 +4711,7 @@
 
     console.log(`✅ 網格已縮減2：新尺寸 ${newX} x ${newY}`);
 
-    // 5. 觸發資料更新（只更新 Test2，不影響 Test）
-    // LayoutGridTab_Test2 的 watch 會監聽 layoutGridJsonData_Test2 的變化並自動重繪
+    // 5. 觸發資料更新（layoutGridJsonData_Test2；深拷觸發 watch 重繪）
     // 重繪時會自動更新最小尺寸（在 drawGridNodes 函數中）
     currentLayer.value.layoutGridJsonData_Test2 = JSON.parse(
       JSON.stringify(currentLayer.value.layoutGridJsonData_Test2)
@@ -6308,7 +5397,7 @@
    */
   const randomizeTaipeiFWeights = async () => {
     if (!currentLayer.value || !isTaipeiTestGLayerTab(currentLayer.value.layerId)) {
-      console.warn('隨機產生權重（g 層）僅適用 taipei_g／taipei_g2（taipei_h 使用流量 CSV）');
+      console.warn('隨機產生權重（g 層）僅適用 taipei_g（taipei_h 使用流量 CSV）');
       return;
     }
     const routes = currentLayer.value.spaceNetworkGridJsonData;
@@ -6370,7 +5459,7 @@
    */
   const mergeTaipeiFBlackJunctionSegments = async (maxWeightDiff) => {
     if (!currentLayer.value || !isTaipeiTestGOrHWeightLayerTab(currentLayer.value.layerId)) {
-      console.warn('黑點路段合併僅適用 taipei_g／taipei_g2／taipei_h／taipei_h2');
+      console.warn('黑點路段合併僅適用 taipei_g／taipei_h');
       return;
     }
     const raw = currentLayer.value.spaceNetworkGridJsonData;
@@ -7042,22 +6131,20 @@
     URL.revokeObjectURL(url);
   };
 
-  /** taipei_e／taipei_e2：僅匯出地圖路段格式（陣列；每筆 routeName、segment、routeCoordinates） */
+  /** taipei_e：僅匯出地圖路段格式（陣列；每筆 routeName、segment、routeCoordinates） */
   const downloadFinalJson = () => {
     const id = currentLayer.value?.layerId;
     if (!isTaipeiTestELayerTab(id)) return;
-    const filename = id === 'taipei_e2' ? 'e_final_taipei_test2.json' : 'e_final_taipei.json';
-    downloadMapDrawnExportJson(id, filename);
+    downloadMapDrawnExportJson(id, 'e_final_taipei.json');
   };
 
-  /** taipei_f／f2：地圖路段匯出，結構與 e_final（routeName／segment／routeCoordinates）一致 */
-  const taipeiFNetworkExportFilename = (layerId) =>
-    layerId === 'taipei_f2' ? 'f_network_taipei_test2.json' : 'f_network_taipei.json';
+  /** taipei_f：地圖路段匯出，結構與 e_final（routeName／segment／routeCoordinates）一致 */
+  const taipeiFNetworkExportFilename = () => 'f_network_taipei.json';
 
   const downloadTaipeiFNetworkJson = () => {
     const id = currentLayer.value?.layerId;
     if (!isTaipeiTestFLayerTab(id)) return;
-    downloadMapDrawnExportJson(id, taipeiFNetworkExportFilename(id));
+    downloadMapDrawnExportJson(id, taipeiFNetworkExportFilename());
   };
 
   /** taipei_j3／j3_dp／j3_dp_2／j3_dp_nd／j3_dp_nd_2：路段匯出（與 e／f 相同語意）＋ dataTableData／layerInfo／dashboard */
@@ -7468,14 +6555,6 @@
             style="line-height: 1.35"
           >
             手繪加站點：已插入 {{ networkDrawSketchSn4StationCount }} 處（紫色圓點）
-          </div>
-          <!-- 顯示 (7→8) 迴圈執行次數（僅 taipei_a 圖層） -->
-          <div
-            v-if="isTaipeiTestStraightening && connectFlipNShapeLoopCount > 0"
-            class="mt-2 text-center"
-            style="font-size: 11px; color: #666"
-          >
-            (7→8) 迴圈執行次數：{{ connectFlipNShapeLoopCount }} 次
           </div>
         </div>
 
@@ -8490,39 +7569,6 @@
           </button>
         </div>
 
-        <!-- LayoutGridTab_Test2 當前尺寸顯示（即時顯示） -->
-        <div
-          v-if="layoutGridTabTest2Dimensions.x > 0 || layoutGridTabTest2Dimensions.y > 0"
-          class="pb-3 mb-3 border-bottom"
-        >
-          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test2 當前尺寸</div>
-          <div class="text-center">
-            <div class="my-title-sm-black">
-              X: {{ layoutGridTabTest2Dimensions.x }} pt × Y:
-              {{ layoutGridTabTest2Dimensions.y }} pt
-            </div>
-            <small class="text-muted">寬度 × 高度</small>
-          </div>
-        </div>
-
-        <!-- LayoutGridTab_Test2 網格最小尺寸顯示（即時顯示） -->
-        <div
-          v-if="
-            layoutGridTabTest2MinCellDimensions.minWidth > 0 ||
-            layoutGridTabTest2MinCellDimensions.minHeight > 0
-          "
-          class="pb-3 mb-3 border-bottom"
-        >
-          <div class="my-title-xs-gray pb-2">LayoutGridTab_Test2 網格最小尺寸</div>
-          <div class="text-center">
-            <div class="my-title-sm-black">
-              最小寬度: {{ layoutGridTabTest2MinCellDimensions.minWidth }} pt × 最小高度:
-              {{ layoutGridTabTest2MinCellDimensions.minHeight }} pt
-            </div>
-            <small class="text-muted">最小寬度 × 最小高度</small>
-          </div>
-        </div>
-
         <!-- LayoutGridTab_Test3 當前尺寸（僅 6-1 簡化2 圖層面板顯示，避免與其他圖層混淆） -->
         <div
           v-if="
@@ -9322,312 +8368,6 @@
           </button>
         </div>
 
-        <!-- taipei_a：儲存車站資訊（存到 SectionData/ConnectData/StationData，存好後紅點黑點刪除，改由車站配置控制） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">儲存車站資訊</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-              style="background: #e3f2fd; color: #1565c0"
-              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
-              @click="saveStationInfo"
-            >
-              儲存車站資訊
-            </button>
-            <span
-              v-if="currentLayer?.spaceNetworkGridJsonData_SectionData?.length"
-              class="text-muted"
-              style="font-size: 11px"
-            >
-              已儲存（紅點黑點已刪除，可開啟「車站配置」顯示）
-            </span>
-          </div>
-        </div>
-
-        <!-- 路線直線化（邏輯複製自 2-1 交叉點路線直線化 execute_2_1_to_2_2） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">路線直線化</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
-              @click="runStraightenCurrentLayer"
-            >
-              執行路線直線化
-            </button>
-          </div>
-        </div>
-
-        <!-- taipei_a：Z 形水平垂直化下一步（每按一次執行一筆，依同路線順序） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">直線 Z 形水平垂直化</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              @click="executeHVZStep"
-            >
-              下一步
-            </button>
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              @click="executeHVZAll"
-            >
-              一鍵完成
-            </button>
-            <span v-if="hvZSegmentTotal > 0" class="align-self-center" style="font-size: 11px">
-              第 {{ (dataStore.hvZNextIndex % hvZSegmentTotal) + 1 }} / {{ hvZSegmentTotal }} 筆
-            </span>
-          </div>
-        </div>
-
-        <!-- taipei_a：Flip L 型（每步 flip 一個 L） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">Flip L 型</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              @click="executeFlipStep"
-            >
-              下一步
-            </button>
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              @click="executeFlipAll"
-            >
-              一鍵完成
-            </button>
-            <span v-if="hvFlipLTotal > 0" class="align-self-center" style="font-size: 11px">
-              第 {{ (dataStore.hvFlipNextIndex % hvFlipLTotal) + 1 }} / {{ hvFlipLTotal }} 個 L
-            </span>
-          </div>
-        </div>
-
-        <!-- taipei_a：末端簡化 -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">末端簡化</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-              style="background: #e8f5e9; color: #2e7d32"
-              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
-              @click="executeEndpointSimplify"
-            >
-              末端簡化
-            </button>
-          </div>
-        </div>
-
-        <!-- taipei_a：路線串接（同 route_name 串接成一條路線） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">路線串接</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-              style="background: #ffc107; color: #000"
-              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
-              @click="executeConnectFlipPreprocess"
-            >
-              路線串接
-            </button>
-          </div>
-        </div>
-
-        <!-- taipei_a：串接Flip L型（僅同 route_name 內串接，再做 flip） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">串接Flip L型</div>
-          <div class="d-flex flex-column gap-2">
-            <div class="d-flex gap-2 flex-wrap align-items-center">
-              <button
-                type="button"
-                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-                @click="executeConnectThenFlipStep"
-              >
-                下一步
-              </button>
-              <button
-                type="button"
-                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-                @click="executeConnectThenFlipAll"
-              >
-                一鍵完成
-              </button>
-              <button
-                type="button"
-                class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-                :class="connectFlipAutoRunning ? 'btn-danger text-white' : 'my-btn-blue'"
-                @click="startConnectFlipAuto"
-              >
-                {{ connectFlipAutoRunning ? '停止' : '自動執行' }}
-              </button>
-              <span v-if="hvFlipLTotal > 0" class="align-self-center" style="font-size: 11px">
-                第 {{ (dataStore.hvFlipNextIndex % hvFlipLTotal) + 1 }} / {{ hvFlipLTotal }} 個 L
-              </span>
-            </div>
-            <div class="d-flex gap-2 align-items-center" style="font-size: 11px">
-              <label class="text-nowrap">間隔 ms：</label>
-              <input
-                v-model.number="connectFlipAutoDelay"
-                type="number"
-                min="100"
-                max="5000"
-                step="100"
-                style="width: 70px; font-size: 11px"
-                class="form-control form-control-sm py-0"
-              />
-            </div>
-            <div
-              v-if="
-                connectFlipAnalysis && !connectFlipAnalysis.canFlip && connectFlipAnalysis.reason
-              "
-              class="small text-danger"
-              style="font-size: 11px; line-height: 1.3"
-            >
-              不能 flip：{{ connectFlipAnalysis.reason }}
-            </div>
-          </div>
-        </div>
-
-        <!-- taipei_a：ㄈ 縮減為 L 型 -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">ㄈ 縮減為 L 型</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              :disabled="nShapeTotal === 0"
-              @click="executeNShapeStep"
-            >
-              下一步
-            </button>
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              :disabled="nShapeTotal === 0"
-              @click="executeNShapeAll"
-            >
-              一鍵完成
-            </button>
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-              :class="nShapeAutoRunning ? 'btn-danger text-white' : 'my-btn-blue'"
-              :disabled="nShapeTotal === 0 && !nShapeAutoRunning"
-              @click="startNShapeAuto"
-            >
-              {{ nShapeAutoRunning ? '停止' : '自動執行' }}
-            </button>
-            <span v-if="nShapeTotal > 0" class="align-self-center" style="font-size: 11px">
-              第 {{ (dataStore.nShapeNextIndex % nShapeTotal) + 1 }} / {{ nShapeTotal }} 個 ㄈ
-            </span>
-            <span v-else class="align-self-center text-muted" style="font-size: 11px"
-              >無 ㄈ 型</span
-            >
-          </div>
-          <div class="d-flex gap-2 align-items-center mt-1" style="font-size: 11px">
-            <label class="text-nowrap">間隔 ms：</label>
-            <input
-              v-model.number="nShapeAutoDelay"
-              type="number"
-              min="100"
-              max="5000"
-              step="100"
-              style="width: 70px; font-size: 11px"
-              class="form-control form-control-sm py-0"
-            />
-          </div>
-          <div
-            v-if="nShapeAnalysis && !nShapeAnalysis.canReduce && nShapeAnalysis.reason"
-            class="small text-danger mt-1"
-            style="font-size: 11px; line-height: 1.3"
-          >
-            不能縮減：{{ nShapeAnalysis.reason }}
-          </div>
-        </div>
-
-        <!-- 重新計算交叉點（taipei_a，在診斷高亮上面） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">重新計算交叉點</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-              style="background: #e3f2fd; color: #1565c0"
-              :disabled="!currentLayer?.spaceNetworkGridJsonData?.length"
-              @click="executeReconfigureStations"
-            >
-              重新計算交叉點，把路線斷開
-            </button>
-          </div>
-        </div>
-
-        <!-- 診斷高亮：重疊路段 -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">診斷高亮</div>
-          <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button
-              type="button"
-              class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap my-cursor-pointer"
-              @click="detectOverlappingSegments"
-            >
-              重疊路段
-            </button>
-            <button
-              v-if="(dataStore.overlappingSegmentRanges?.length || 0) > 0"
-              type="button"
-              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-              style="background: #dee2e6; color: #495057"
-              @click="dataStore.clearOverlappingSegmentHighlight()"
-            >
-              清除高亮
-            </button>
-            <span
-              v-if="(dataStore.overlappingSegmentRanges?.length || 0) > 0"
-              class="align-self-center"
-              style="font-size: 11px; color: #c00"
-            >
-              重疊 {{ dataStore.overlappingSegmentRanges.length }} 處
-            </span>
-          </div>
-        </div>
-
-        <!-- 車站配置（taipei_a，操作 tab 最下面） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">車站配置</div>
-          <button
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
-            :class="currentLayer.showStationPlacement ? 'my-btn-green' : 'my-btn-blue'"
-            @click="currentLayer.showStationPlacement = !currentLayer.showStationPlacement"
-          >
-            {{
-              currentLayer.showStationPlacement
-                ? '✓ 已配置車站（點擊隱藏）'
-                : '配置車站（紅點＋黑點）'
-            }}
-          </button>
-        </div>
-
-        <!-- 儲存（taipei_a） -->
-        <div v-if="isTaipeiTestStraightening && currentLayer" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">儲存</div>
-          <button
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue"
-            :disabled="!currentLayer.spaceNetworkGridJsonData?.length"
-            @click="saveCompactLayoutToResult"
-          >
-            儲存至 data/result
-          </button>
-          <div class="text-muted mt-1" style="font-size: 11px">
-            開發環境（npm run serve）會自動寫入 public/data/result/；build 後改為下載
-          </div>
-        </div>
 
         <!-- 空間網路主分頁／K3／L3 分頁共用：路線上權重數字（預設顯示）；taipei_f／g 用上方專區「顯示權重」 -->
         <div v-if="hasSpaceNetworkStandaloneRouteWeightToggle" class="pb-3 mb-3 border-bottom">
@@ -9812,11 +8552,10 @@
               <label for="switch-space-network-black-station-names"></label>
             </div>
           </div>
-          <!-- taipei_b4／b5：僅 a 產出與 b→c 複製；snap／近距／重疊診斷／手動合併等請在 taipei_c4／c5 -->
+          <!-- taipei_b4：僅 a 產出與 b→c 複製；snap／近距／重疊診斷／手動合併等請在 taipei_c4 -->
           <template
             v-if="
               currentLayer?.layerId !== 'taipei_b4' &&
-              currentLayer?.layerId !== 'taipei_b5' &&
               currentLayer?.layerId !== 'taipei_b6'
             "
           >
@@ -9865,77 +8604,12 @@
               />
             </div>
             <div
-              v-if="currentLayer?.layerId === 'taipei_c5'"
-              class="mt-2 p-3 border rounded"
-              style="font-size: 11px; line-height: 1.5; background: #f1f8f4"
-            >
-              <div class="my-content-sm-black mb-2">taipei_c5 手動處理（與 b4 零權重合併語意）</div>
-              <div class="d-flex align-items-center justify-content-between mb-2">
-                <div class="my-content-sm-black">
-                  合併門檻（|Δweight| ≤ N）
-                  <span class="text-muted fw-normal" style="font-size: 10px">；預設 10</span>
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  :value="dataStore.taipeiK3MergeMaxWeightDiff"
-                  @input="dataStore.setTaipeiK3MergeMaxWeightDiff($event.target.value)"
-                  class="form-control form-control-sm"
-                  style="width: 92px; display: inline-block"
-                />
-              </div>
-              <ol
-                class="text-muted mb-2 ps-3"
-                style="font-size: 10px; line-height: 1.6; margin-bottom: 0.75rem !important"
-              >
-                <li class="mb-1">
-                  以<strong>目前 taipei_c5</strong> K3Tab 為輸入（請先執行 b5「執行下一步」自
-                  taipei_b5 複製路網）。
-                </li>
-                <li class="mb-1">
-                  執行與 <strong>taipei_b4</strong> 相同之黑點合併：相鄰兩段
-                  <strong>|Δweight| ≤ {{ dataStore.taipeiK3MergeMaxWeightDiff }}</strong> 即合併。
-                </li>
-                <li class="mb-1">
-                  執行
-                  <code class="small">mergeConnectSpansPlaceBlackStationsAndSplit</code>
-                  。
-                </li>
-                <li class="mb-1">
-                  套用 <strong>taipei_a5</strong> 之 mapDrawn／CSV（流量會以<strong
-                    >原始 CSV 單位</strong
-                  >覆寫各切段權重，與 a5→b5 相同）。
-                </li>
-                <li class="mb-0">
-                  對<strong>覆寫後</strong>之權重再做與 <strong>a5→b5</strong> 相同之
-                  <strong>floor(÷100)</strong>（正權重至少為 1），並將整份路網寫回
-                  <strong>taipei_c5</strong>。此步<strong>不是</strong>對「已除過 100 的舊 c5
-                  數值」再除一次，而是對<strong>CSV 剛寫入的大數</strong>做與主流程一致的縮放。
-                </li>
-              </ol>
-              <div class="text-muted mb-3" style="font-size: 10px; line-height: 1.55">
-                <strong>a5→b5</strong> 不會自動執行此流程；請在檢視近距診斷後按需操作。
-              </div>
-              <button
-                type="button"
-                class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
-                :disabled="
-                  isTaipeiB5ManualZeroMergeBusy ||
-                  !((currentLayer?.spaceNetworkGridJsonDataK3Tab || []).length > 0)
-                "
-                @click="runTaipeiB5ManualZeroWeightMerge"
-              >
-                {{ isTaipeiB5ManualZeroMergeBusy ? '執行中…' : '開始執行' }}
-              </button>
-            </div>
-            <div
               v-if="currentLayer?.layerId === 'taipei_c6'"
               class="mt-2 p-3 border rounded"
               style="font-size: 11px; line-height: 1.5; background: #f1f8f4"
             >
               <div class="my-content-sm-black mb-2">
-                taipei_c6 手動處理（與 c5 零權重合併語意；測試_3 獨立複製）
+                taipei_c6 手動處理（版面網格測試_3）
               </div>
               <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="my-content-sm-black">
@@ -9961,7 +8635,7 @@
                   taipei_b6 複製路網）。
                 </li>
                 <li class="mb-1">
-                  執行與 <strong>taipei_c5</strong> 相同之黑點合併：相鄰兩段
+                  執行與 <strong>taipei_b4／c4</strong> 相同語意之黑點合併：相鄰兩段
                   <strong>|Δweight| ≤ {{ dataStore.taipeiK3MergeMaxWeightDiff }}</strong> 即合併。
                 </li>
                 <li class="mb-1">
@@ -10182,16 +8856,13 @@
                     currentLayer?.layerId === 'taipei_a4' ||
                     currentLayer?.layerId === 'taipei_b4' ||
                     currentLayer?.layerId === 'taipei_c4' ||
-                    currentLayer?.layerId === 'taipei_a5' ||
-                    currentLayer?.layerId === 'taipei_b5' ||
-                    currentLayer?.layerId === 'taipei_c5' ||
                     currentLayer?.layerId === 'taipei_a6' ||
                     currentLayer?.layerId === 'taipei_b6' ||
                     currentLayer?.layerId === 'taipei_c6'
                   "
                   class="text-muted"
                 >
-                  （taipei_c4／c5／c6：內繪區 px 與主圖 layout-network-grid-k3 路徑 tooltip 一致，含
+                  （taipei_c4／c6：內繪區 px 與主圖 layout-network-grid-k3 路徑 tooltip 一致，含
                   k4 弧長重算後黑點與 snap；視窗尺寸依目前量測）
                 </span>
               </div>
@@ -10375,7 +9046,6 @@
         <div
           v-else-if="
             currentLayer &&
-            !isTaipeiTestStraightening &&
             !isTaipeiF &&
             !hasSpaceNetworkStandaloneRouteWeightToggle
           "
@@ -10388,182 +9058,8 @@
           </div>
         </div>
 
-        <!-- taipei_h2：路線導航（紅點＋黑點起迄、最短路徑） -->
-        <div
-          v-if="isTaipeiH2TrafficLayer && currentLayer?.spaceNetworkGridJsonData?.length"
-          class="pb-3 mb-0 border-top pt-3"
-        >
-          <div class="my-title-xs-gray pb-2">路線導航（選兩站）</div>
-          <label class="form-label mb-1 my-font-size-xs text-muted">起點</label>
-          <select
-            class="form-select form-select-sm mb-2"
-            :value="taipeiH2TrafficDraftKeys[0] ?? ''"
-            @change="onTaipeiH2TrafficHighlightChange(0, $event)"
-          >
-            <option value="">（未選）</option>
-            <option
-              v-for="opt in taipeiH2TrafficStationOptions"
-              :key="'h2a-' + opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </option>
-          </select>
-          <label class="form-label mb-1 my-font-size-xs text-muted">迄點</label>
-          <select
-            class="form-select form-select-sm mb-2"
-            :value="taipeiH2TrafficDraftKeys[1] ?? ''"
-            @change="onTaipeiH2TrafficHighlightChange(1, $event)"
-          >
-            <option value="">（未選）</option>
-            <option
-              v-for="opt in taipeiH2TrafficStationOptions"
-              :key="'h2b-' + opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </option>
-          </select>
-          <div class="d-flex align-items-center justify-content-between mb-2">
-            <div class="my-content-sm-black">顯示導航</div>
-            <div class="layer-toggle" @click.stop>
-              <input
-                type="checkbox"
-                id="switch-taipei-h2-show-nav-scaling"
-                :checked="dataStore.taipeiH2ShowNavigationScaling"
-                @change="dataStore.setTaipeiH2ShowNavigationScaling($event.target.checked)"
-              />
-              <label for="switch-taipei-h2-show-nav-scaling"></label>
-            </div>
-          </div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
-            @click="confirmTaipeiH2TrafficNavigation()"
-          >
-            確定導航
-          </button>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
-            @click="clearTaipeiH2TrafficNavigation()"
-          >
-            清除導航
-          </button>
-          <div
-            v-if="
-              taipeiH2ShortestPathUi &&
-              dataStore.taipeiH2TrafficHighlightKeys[0] &&
-              dataStore.taipeiH2TrafficHighlightKeys[1]
-            "
-            class="mt-2 p-2 rounded"
-            style="
-              font-size: 11px;
-              background: rgba(106, 27, 154, 0.08);
-              border: 1px solid rgba(106, 27, 154, 0.25);
-            "
-          >
-            <div class="fw-semibold text-dark mb-1">導航路徑 · 途經站點</div>
-            <div v-if="taipeiH2ShortestPathUi.error" class="text-danger">
-              {{ taipeiH2ShortestPathUi.error }}
-            </div>
-            <div v-else class="text-dark" style="line-height: 1.45">
-              {{ taipeiH2ShortestPathUi.pathWithRoutesJoined || taipeiH2ShortestPathUi.pathJoined }}
-            </div>
-          </div>
-          <div
-            v-if="taipeiH2TrafficStationOptions.length === 0"
-            class="text-muted mt-2"
-            style="font-size: 11px"
-          >
-            路線導航需有 ConnectData／StationData（載入路網 JSON 並完成車站資料後才有站點清單）。
-          </div>
-        </div>
 
-        <!-- taipei_c5：路線導航（紅點＋黑點起迄、最短路徑） -->
-        <div
-          v-if="isTaipeiC5TrafficLayer && currentLayer?.spaceNetworkGridJsonData?.length"
-          class="pb-3 mb-0 border-top pt-3"
-        >
-          <div class="my-title-xs-gray pb-2">路線導航（選兩站）</div>
-          <label class="form-label mb-1 my-font-size-xs text-muted">起點</label>
-          <select
-            class="form-select form-select-sm mb-2"
-            :value="taipeiC5TrafficDraftKeys[0] ?? ''"
-            @change="onTaipeiC5TrafficHighlightChange(0, $event)"
-          >
-            <option value="">（未選）</option>
-            <option
-              v-for="opt in taipeiC5TrafficStationOptions"
-              :key="'c5a-' + opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </option>
-          </select>
-          <label class="form-label mb-1 my-font-size-xs text-muted">迄點</label>
-          <select
-            class="form-select form-select-sm mb-2"
-            :value="taipeiC5TrafficDraftKeys[1] ?? ''"
-            @change="onTaipeiC5TrafficHighlightChange(1, $event)"
-          >
-            <option value="">（未選）</option>
-            <option
-              v-for="opt in taipeiC5TrafficStationOptions"
-              :key="'c5b-' + opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </option>
-          </select>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
-            @click="confirmTaipeiC5TrafficNavigation()"
-          >
-            確定導航
-          </button>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
-            @click="clearTaipeiC5TrafficNavigation()"
-          >
-            清除導航
-          </button>
-          <div class="text-muted mt-2" style="font-size: 11px">
-            起迄站需不同；若選到同站會自動清空另一個選單。
-          </div>
-          <div
-            v-if="
-              taipeiC5ShortestPathUi &&
-              dataStore.taipeiC5TrafficHighlightKeys[0] &&
-              dataStore.taipeiC5TrafficHighlightKeys[1]
-            "
-            class="mt-2 p-2 rounded"
-            style="
-              font-size: 11px;
-              background: rgba(106, 27, 154, 0.08);
-              border: 1px solid rgba(106, 27, 154, 0.25);
-            "
-          >
-            <div class="fw-semibold text-dark mb-1">導航路徑 · 途經站點</div>
-            <div v-if="taipeiC5ShortestPathUi.error" class="text-danger">
-              {{ taipeiC5ShortestPathUi.error }}
-            </div>
-            <div v-else class="text-dark" style="line-height: 1.45">
-              {{ taipeiC5ShortestPathUi.pathWithRoutesJoined || taipeiC5ShortestPathUi.pathJoined }}
-            </div>
-          </div>
-          <div
-            v-if="taipeiC5TrafficStationOptions.length === 0"
-            class="text-muted mt-2"
-            style="font-size: 11px"
-          >
-            路線導航需有 ConnectData／StationData（載入路網 JSON 並完成車站資料後才有站點清單）。
-          </div>
-        </div>
-
-        <!-- taipei_c6：路線導航（與 c5 分模板複製） -->
+        <!-- taipei_c6：路線導航 -->
         <div
           v-if="isTaipeiC6TrafficLayer && currentLayer?.spaceNetworkGridJsonData?.length"
           class="pb-3 mb-0 border-top pt-3"

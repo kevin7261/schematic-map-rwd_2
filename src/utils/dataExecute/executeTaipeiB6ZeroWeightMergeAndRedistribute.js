@@ -2,7 +2,7 @@
 
 /**
  * 以 taipei_b6 的 K3Tab（權威來源）為輸入跑零權重黑點合併，寫回 taipei_c6。
- * （與 executeTaipeiB5ZeroWeightMergeAndRedistribute 分檔複製，版面網格測試_2／版面網格測試_3 不共用本體。）
+ * 與 b4→c4 等管線分檔，版面網格測試_3 專用；舊版 b5 管線已移除。
  *
  * 重要：**輸入固定讀 b6**，不讀 c6。
  */

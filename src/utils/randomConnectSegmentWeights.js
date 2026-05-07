@@ -2498,7 +2498,7 @@ export function pruneTaipeiFEmptyGridRowsAndCols(spaceNetworkData, options = {})
  * 合併後該段 `station_weights` 之 weight 為兩段權重之較大值。
  * 會就地改寫傳入的 spaceNetworkData（與 applyRandomWeightsBetweenAdjacentStations 相同結構）。
  * @param {{ maxWeightDiff?: number, mergeAxisConstraint?: 'horizontal'|'vertical', collectMergedStations?: boolean, connectData?: Array, stationData?: Array, sectionData?: Array, bothWeightsMustBeZero?: boolean }} [options]
- *   `bothWeightsMustBeZero`：僅當相接兩段在接點之 span 權重皆為 0 時合併（合併後 weight 為 0），用於 taipei_a5→b5。
+ *   `bothWeightsMustBeZero`：僅當相接兩段在接點之 span 權重皆為 0 時合併（合併後 weight 為 0），用於 taipei_a6→b6。
  * @returns {{ mergeCount: number, mergedStations: Array<{路線:string, 車站名稱:string, x_grid:number|null, y_grid:number|null, 格鍵:string, 權重:number}> }}
  */
 export function mergeTaipeiFSegmentsAtEqualWeightBlackJunctions(spaceNetworkData, options = {}) {

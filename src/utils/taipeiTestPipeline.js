@@ -1,10 +1,8 @@
 /**
- * 空間網絡網格測試_2：a2→b2→c2→d2→e2 管線
+ * 原「空間網絡網格測試_2」管線（taipei_a2～e2）已移除；保留空結構供既有 helper 回傳 null／false。
  */
 
-export const TAIPEI_TEST_PIPELINES = [
-  { a: 'taipei_a2', b: 'taipei_b2', c: 'taipei_c2', d: 'taipei_d2', e: 'taipei_e2' },
-];
+export const TAIPEI_TEST_PIPELINES = [];
 
 /** 會觸發 executeFunction 的圖層（a～d） */
 export const TAIPEI_TEST_PIPELINE_EXECUTE_LAYER_IDS = TAIPEI_TEST_PIPELINES.flatMap((p) => [
@@ -35,10 +33,10 @@ export function resolveTaipeiTestPipelineStep(layerId) {
   return null;
 }
 
-const C_IDS = ['taipei_c2'];
-const D_IDS = ['taipei_d2'];
-const E_IDS = ['taipei_e2'];
-const B_IDS = ['taipei_b2'];
+const C_IDS = [];
+const D_IDS = [];
+const E_IDS = [];
+const B_IDS = [];
 
 export function isTaipeiTestBLayerTab(tab) {
   return tab != null && B_IDS.includes(tab);
@@ -68,9 +66,9 @@ export function isTaipeiTestGridNormLayerTab(tab) {
   return isTaipeiTestCDELayerTab(tab);
 }
 
-const F_IDS = ['taipei_f2'];
-const G_IDS = ['taipei_g2'];
-const H_IDS = ['taipei_h2'];
+const F_IDS = [];
+const G_IDS = [];
+const H_IDS = [];
 const I_IDS = [];
 
 export function isTaipeiTestFLayerTab(tab) {
@@ -89,23 +87,22 @@ export function isTaipeiTestILayerTab(tab) {
   return tab != null && I_IDS.includes(tab);
 }
 
-/** f～i 路網／權重層（與原 isTaipeiEfinalSpaceLayerTab 語意相同，含測試2） */
+/** f～i 路網／權重層（與原 isTaipeiEfinalSpaceLayerTab 語意相同） */
 export function isTaipeiTestFghiSpaceLayerTab(tab) {
   return (
     isTaipeiTestFLayerTab(tab) ||
     isTaipeiTestGLayerTab(tab) ||
     isTaipeiTestHLayerTab(tab) ||
-    isTaipeiTestILayerTab(tab) ||
-    tab === 'taipei_i2'
+    isTaipeiTestILayerTab(tab)
   );
 }
 
 export function isTaipeiTestGOrHWeightLayerTab(tab) {
-  return isTaipeiTestGLayerTab(tab) || isTaipeiTestHLayerTab(tab) || tab === 'taipei_i2';
+  return isTaipeiTestGLayerTab(tab) || isTaipeiTestHLayerTab(tab);
 }
 
-/** f～i 含測試2：供 dataProcessor／prune／randomConnect 等 id 判斷 */
-export const TAIPEI_TEST_FGHI_LAYER_IDS = [...F_IDS, ...G_IDS, ...H_IDS, ...I_IDS, 'taipei_i2'];
+/** 供 dataProcessor／prune／randomConnect 等 id 判斷 */
+export const TAIPEI_TEST_FGHI_LAYER_IDS = [...F_IDS, ...G_IDS, ...H_IDS, ...I_IDS];
 
 export function isTaipeiTestFghiLayerId(id) {
   return id != null && TAIPEI_TEST_FGHI_LAYER_IDS.includes(id);
@@ -135,11 +132,7 @@ export const TAIPEI_TEST3_BCDEFG_LAYER_IDS = [
   'taipei_sn4_i',
   'taipei_sn4_j',
   'taipei_sn4_k',
-  'taipei_a5',
-  /** 版面網格測試_2：a5→b5；b5→c5 複製後 c5 為 K3 主操作圖層 */
-  'taipei_b5',
-  'taipei_c5',
-  /** 版面網格測試_3：（與測試_2 分群複製）a6→b6；b6→c6 */
+  /** 版面網格測試_3：a6→b6；b6→c6 */
   'taipei_a6',
   'taipei_b6',
   'taipei_c6',
@@ -188,9 +181,6 @@ export function isTaipeiTest3I3OrJ3LayerTab(tab) {
     tab === 'taipei_i3' ||
     tab === 'taipei_j3' ||
     tab === 'taipei_k3' ||
-    tab === 'taipei_a5' ||
-    tab === 'taipei_b5' ||
-    tab === 'taipei_c5' ||
     tab === 'taipei_a6' ||
     tab === 'taipei_b6' ||
     tab === 'taipei_c6' ||
@@ -243,13 +233,8 @@ export function isLayoutGridTest3LayerTab(tab) {
   return tab != null && LAYOUT_GRID_TEST_3_LAYER_IDS.includes(tab);
 }
 
-/** 與 SpaceNetworkGridTab 車站配置專區一致：a～i 測試路網圖層（含測試2） */
+/** 與 SpaceNetworkGridTab 車站配置專區一致：測試路網圖層 */
 export const TAIPEI_TEST_SPACE_NETWORK_STATION_TAB_IDS = [
-  'taipei_a2',
-  'taipei_b2',
-  'taipei_c2',
-  'taipei_d2',
-  'taipei_e2',
   'taipei_a3',
   'taipei_b3',
   'taipei_c3',
@@ -270,9 +255,6 @@ export const TAIPEI_TEST_SPACE_NETWORK_STATION_TAB_IDS = [
   'taipei_sn4_i',
   'taipei_sn4_j',
   'taipei_sn4_k',
-  'taipei_a5',
-  'taipei_b5',
-  'taipei_c5',
   'taipei_a6',
   'taipei_b6',
   'taipei_c6',

@@ -1,8 +1,7 @@
 /* eslint-disable no-console */
 
 /**
- * taipei_b6 → taipei_c6：（與 execute_B5_To_C5 分檔複製，版面網格測試_2／版面網格測試_3 不共用本體）
- * 複製路網與衍生欄位（與 b4→c4／b5→c5 相同語意）。b6 為 a6→b6 產出；後續手動合併等操作在 c6。
+ * taipei_b6 → taipei_c6：複製路網與衍生欄位（與 b4→c4 相同語意）。b6 為 a6→b6 產出；後續手動合併在 c6。
  */
 
 import { useDataStore } from '@/stores/dataStore.js';

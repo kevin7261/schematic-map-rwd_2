@@ -145,54 +145,6 @@
     return { colWeightMax, rowWeightMax };
   }
 
-  /** taipei_h2「顯示導航」：整段 segment 折線以 nav_weight（預設 1）分配欄／列寬高 */
-  function accumulateTaipeiH2NavWeightColRowMaxFromFeatures(routeFeatures) {
-    const colWeightMax = new Map();
-    const rowWeightMax = new Map();
-    const consumeGeom = (geomCoords, props) => {
-      const wn = Number(props?.nav_weight ?? 1);
-      if (!Number.isFinite(wn) || wn <= 0) return;
-      if (!Array.isArray(geomCoords) || geomCoords.length < 2) return;
-      const refCoords = geomCoords
-        .map((pt) => {
-          if (Array.isArray(pt)) {
-            return pt.length >= 2 ? [pt[0], pt[1]] : null;
-          }
-          return pt && pt.x !== undefined && pt.y !== undefined ? [pt.x, pt.y] : null;
-        })
-        .filter((pt) => pt !== null);
-      if (refCoords.length < 2) return;
-      for (let i = 0; i < refCoords.length - 1; i++) {
-        const ax = Math.round(Number(refCoords[i][0]));
-        const ay = Math.round(Number(refCoords[i][1]));
-        const bx = Math.round(Number(refCoords[i + 1][0]));
-        const by = Math.round(Number(refCoords[i + 1][1]));
-        const verts = bresenhamGridCells(ax, ay, bx, by);
-        for (let j = 0; j < verts.length - 1; j++) {
-          const [x0, y0] = verts[j];
-          const [x1, y1] = verts[j + 1];
-          if (y0 === y1) {
-            const ix = Math.min(x0, x1);
-            colWeightMax.set(ix, Math.max(colWeightMax.get(ix) ?? -Infinity, wn));
-          } else if (x0 === x1) {
-            const iy = Math.min(y0, y1);
-            rowWeightMax.set(iy, Math.max(rowWeightMax.get(iy) ?? -Infinity, wn));
-          }
-        }
-      }
-    };
-    for (const feature of routeFeatures || []) {
-      if (!feature?.geometry) continue;
-      const props = feature.properties || {};
-      const geom = feature.geometry;
-      if (geom.type === 'LineString') consumeGeom(geom.coordinates, props);
-      else if (geom.type === 'MultiLineString') {
-        for (const coords of geom.coordinates || []) consumeGeom(coords, props);
-      }
-    }
-    return { colWeightMax, rowWeightMax };
-  }
-
   /**
    * 欄寬 ∝ 該欄最大權重（預設平方；squareWeights=false 時為線性）
    * 全為 0 則均分
@@ -861,13 +813,8 @@
     const MIN_W_PT = Number.isFinite(rawMinW) && rawMinW > 0 ? rawMinW : 10;
     const MIN_H_PT = Number.isFinite(rawMinH) && rawMinH > 0 ? rawMinH : 3;
 
-    /** taipei_i2：Control「目前最小網格」須與「縮減網格（resize 自動合併門檻）」同一套 pt 下限（實測低於門檻時以門檻顯示，與合併判斷一致） */
     let reportMinW = ptWRaw;
     let reportMinH = ptHRaw;
-    if (activeLayerTab.value === 'taipei_i2') {
-      if (ptWRaw > 0) reportMinW = Math.max(ptWRaw, MIN_W_PT);
-      if (ptHRaw > 0) reportMinH = Math.max(ptHRaw, MIN_H_PT);
-    }
     dataStore.updateSpaceNetworkGridMinCellDimensions(reportMinW, reportMinH);
 
     // 滑鼠縮放時不跑縮減網格（resize 依門檻自動合併）
@@ -886,7 +833,7 @@
     ) {
       return;
     }
-    // taipei_i：僅路網顯示，不跑與 Control 相同的 resize 自動合併（taipei_i2 行為同 taipei_h，會跑合併）
+    // taipei_i：僅路網顯示，不跑與 Control 相同的 resize 自動合併
     if (fLayer.layerId != null && isTaipeiTestILayerTab(fLayer.layerId)) return;
 
     if (ptWRaw >= MIN_W_PT) {
@@ -3085,18 +3032,7 @@
       }
     }
 
-    if (layerTab === 'taipei_h2' && dataStore.taipeiH2ShowNavigationScaling) {
-      const navAcc = accumulateTaipeiH2NavWeightColRowMaxFromFeatures(routeFeatures);
-      colWeightMax.clear();
-      rowWeightMax.clear();
-      navAcc.colWeightMax.forEach((v, k) => colWeightMax.set(k, v));
-      navAcc.rowWeightMax.forEach((v, k) => rowWeightMax.set(k, v));
-    }
-
-    const taipeiFWeightScalingEffective =
-      layerTab === 'taipei_i2'
-        ? dataStore.findLayerById('taipei_i2')?.taipeiFSpaceNetworkGridScaling === true
-        : dataStore.taipeiFSpaceNetworkGridScaling !== false;
+    const taipeiFWeightScalingEffective = dataStore.taipeiFSpaceNetworkGridScaling !== false;
     const taipeiFApplyWeightPixelScaling =
       useSchematicCellCenterGrid &&
       isTaipeiGOrHWeightLayer(layerTab) &&
@@ -3682,7 +3618,7 @@
       .y((d) => yScale(d[1]))
       .curve(d3.curveLinear);
 
-    /** taipei_h2／taipei_c5 導航：僅由 store 寫入 station_weights（路徑 10／其餘 0），此處不畫額外 highlight */
+    /** taipei_h2 導航：僅由 store 寫入 station_weights（路徑 10／其餘 0），此處不畫額外 highlight */
     const matchH2TrafficConnect = () => false;
     const matchH2TrafficBlack = () => false;
 
@@ -5417,9 +5353,6 @@
             skipConnectMove: true,
             skipCrossing: true,
             useRectangleOtherRouteCheck: true,
-            ...(activeLayer?.layerId === 'taipei_a2'
-              ? { forbidFlipIfLCornerHasConnect: true }
-              : {}),
           };
           const { flipColor } = computeFlipAnalysis(
             straightSegments,
@@ -5986,7 +5919,6 @@
       dataStore.showWeightLabels,
       dataStore.showRouteThickness,
       dataStore.taipeiFSpaceNetworkGridScaling,
-      dataStore.findLayerById('taipei_i2')?.taipeiFSpaceNetworkGridScaling,
       dataStore.taipeiFSpaceNetworkMouseZoom,
     ],
     async () => {
@@ -6122,39 +6054,7 @@
     }
   );
 
-  /** taipei_h2 路線導航：起迄／路徑樣式更新時重繪 */
-  watch(
-    () => dataStore.taipeiH2TrafficHighlightRedrawTrigger,
-    async (n) => {
-      if (n < 1) return;
-      const hasData = gridData.value || mapGeoJsonData.value;
-      if (hasData && activeLayerTab.value === 'taipei_h2') {
-        const containerId = getContainerId();
-        d3.select(`#${containerId}`).selectAll('svg').remove();
-        d3.select('body').selectAll('.d3js-map-tooltip').remove();
-        await nextTick();
-        drawSchematic();
-      }
-    }
-  );
-
-  /** taipei_c5 路線導航：起迄／路徑樣式更新時重繪 */
-  watch(
-    () => dataStore.taipeiC5TrafficHighlightRedrawTrigger,
-    async (n) => {
-      if (n < 1) return;
-      const hasData = gridData.value || mapGeoJsonData.value;
-      if (hasData && activeLayerTab.value === 'taipei_c5') {
-        const containerId = getContainerId();
-        d3.select(`#${containerId}`).selectAll('svg').remove();
-        d3.select('body').selectAll('.d3js-map-tooltip').remove();
-        await nextTick();
-        drawSchematic();
-      }
-    }
-  );
-
-  /** taipei_c6 路線導航（與 c5 分 watch 複製） */
+  /** taipei_c6 路線導航：起迄／路徑樣式更新時重繪 */
   watch(
     () => dataStore.taipeiC6TrafficHighlightRedrawTrigger,
     async (n) => {

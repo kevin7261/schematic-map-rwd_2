@@ -1,6 +1,6 @@
 /**
  * K3Tab 路段權重：除以 100 並 floor（正權重至少為 1）。
- * 與 taipei_b4／taipei_b5、runTaipeiB4PipelineFromK3Routes／runTaipeiB5PipelineFromK3Routes 相同規則。
+ * 與 taipei_b4／taipei_b6、runTaipeiB4PipelineFromK3Routes／runTaipeiB6PipelineFromK3Routes 相同規則。
  */
 
 function deepCloneJson(value) {

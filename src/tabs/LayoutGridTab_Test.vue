@@ -3730,9 +3730,6 @@
             skipConnectMove: true,
             skipCrossing: true,
             useRectangleOtherRouteCheck: true,
-            ...(activeLayer?.layerId === 'taipei_a2'
-              ? { forbidFlipIfLCornerHasConnect: true }
-              : {}),
           };
           const { flipColor } = computeFlipAnalysis(
             straightSegments,

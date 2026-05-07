@@ -93,7 +93,7 @@
       .replace(/'/g, '&#039;');
   }
 
-  /** taipei_c5：依 DataTable「銜接黑點」欄與目前站名對齊（與 buildTaipeiK3JunctionDataTableRows 同源鍵） */
+  /** K3 DataTable「銜接黑點」與站名對齊（與 buildTaipeiK3JunctionDataTableRows 同源鍵）；taipei_c6 等層 tooltip 使用 */
   function findTaipeiK3JunctionDataTableRowsForStation(dataTableData, stationNameRaw) {
     const key = normalizeTaipeiK3WeightKeyPart(stationNameRaw);
     if (!key || !Array.isArray(dataTableData)) return [];
@@ -184,54 +184,6 @@
               const iy = Math.min(y0, y1);
               rowWeightMax.set(iy, Math.max(rowWeightMax.get(iy) ?? -Infinity, wn));
             }
-          }
-        }
-      }
-    };
-    for (const feature of routeFeatures || []) {
-      if (!feature?.geometry) continue;
-      const props = feature.properties || {};
-      const geom = feature.geometry;
-      if (geom.type === 'LineString') consumeGeom(geom.coordinates, props);
-      else if (geom.type === 'MultiLineString') {
-        for (const coords of geom.coordinates || []) consumeGeom(coords, props);
-      }
-    }
-    return { colWeightMax, rowWeightMax };
-  }
-
-  /** taipei_h2「顯示導航」：整段 segment 折線以 nav_weight（預設 1）分配欄／列寬高 */
-  function accumulateTaipeiH2NavWeightColRowMaxFromFeatures(routeFeatures) {
-    const colWeightMax = new Map();
-    const rowWeightMax = new Map();
-    const consumeGeom = (geomCoords, props) => {
-      const wn = Number(props?.nav_weight ?? 1);
-      if (!Number.isFinite(wn) || wn <= 0) return;
-      if (!Array.isArray(geomCoords) || geomCoords.length < 2) return;
-      const refCoords = geomCoords
-        .map((pt) => {
-          if (Array.isArray(pt)) {
-            return pt.length >= 2 ? [pt[0], pt[1]] : null;
-          }
-          return pt && pt.x !== undefined && pt.y !== undefined ? [pt.x, pt.y] : null;
-        })
-        .filter((pt) => pt !== null);
-      if (refCoords.length < 2) return;
-      for (let i = 0; i < refCoords.length - 1; i++) {
-        const ax = Math.round(Number(refCoords[i][0]));
-        const ay = Math.round(Number(refCoords[i][1]));
-        const bx = Math.round(Number(refCoords[i + 1][0]));
-        const by = Math.round(Number(refCoords[i + 1][1]));
-        const verts = bresenhamGridCells(ax, ay, bx, by);
-        for (let j = 0; j < verts.length - 1; j++) {
-          const [x0, y0] = verts[j];
-          const [x1, y1] = verts[j + 1];
-          if (y0 === y1) {
-            const ix = Math.min(x0, x1);
-            colWeightMax.set(ix, Math.max(colWeightMax.get(ix) ?? -Infinity, wn));
-          } else if (x0 === x1) {
-            const iy = Math.min(y0, y1);
-            rowWeightMax.set(iy, Math.max(rowWeightMax.get(iy) ?? -Infinity, wn));
           }
         }
       }
@@ -588,9 +540,6 @@
   /** k3／k4 在此分頁讀寫之獨立欄位（與主「空間網絡網格」分頁的 spaceNetworkGridJsonData 等互不共用） */
   const K3_GRID_TAB_K_TAB_LAYER_IDS = [
     'taipei_k3',
-    'taipei_a5',
-    'taipei_b5',
-    'taipei_c5',
     'taipei_a6',
     'taipei_b6',
     'taipei_c6',
@@ -1097,13 +1046,8 @@
     const MIN_W_PT = Number.isFinite(rawMinW) && rawMinW > 0 ? rawMinW : 10;
     const MIN_H_PT = Number.isFinite(rawMinH) && rawMinH > 0 ? rawMinH : 3;
 
-    /** taipei_i2：Control「目前最小網格」須與「縮減網格（resize 自動合併門檻）」同一套 pt 下限（實測低於門檻時以門檻顯示，與合併判斷一致） */
     let reportMinW = ptWRaw;
     let reportMinH = ptHRaw;
-    if (activeLayerTab.value === 'taipei_i2') {
-      if (ptWRaw > 0) reportMinW = Math.max(ptWRaw, MIN_W_PT);
-      if (ptHRaw > 0) reportMinH = Math.max(ptHRaw, MIN_H_PT);
-    }
     dataStore.updateSpaceNetworkGridMinCellDimensions(reportMinW, reportMinH);
 
     // 滑鼠縮放時不跑縮減網格（resize 依門檻自動合併）
@@ -1122,7 +1066,7 @@
     ) {
       return;
     }
-    // taipei_i：僅路網顯示，不跑與 Control 相同的 resize 自動合併（taipei_i2 行為同 taipei_h，會跑合併）
+    // taipei_i：僅路網顯示，不跑與 Control 相同的 resize 自動合併
     if (fLayer.layerId != null && isTaipeiTestILayerTab(fLayer.layerId)) return;
 
     if (ptWRaw >= MIN_W_PT) {
@@ -2398,9 +2342,6 @@
   let scheduleTaipeiFDrawForMouseZoom = () => {};
 
   const isTaipeiK4FlatSegmentLayerTab = (layerId) =>
-    layerId === 'taipei_a5' ||
-    layerId === 'taipei_b5' ||
-    layerId === 'taipei_c5' ||
     layerId === 'taipei_a6' ||
     layerId === 'taipei_b6' ||
     layerId === 'taipei_c6';
@@ -2789,7 +2730,7 @@
                   // 真正的車站：node_type === 'connect' 或有 station_name
                   // 不繪製：node_type === 'line' 的幾何轉折點
                   // taipei_h3：tags._forceDrawBlackDot（見 g3ToH3PlaceBlackStationsFromA3Rows）
-                  // 黑點 display===false 時不繪製（taipei_b5 等）
+                  // 黑點 display===false 時不繪製（版面網格 K4 等）
                   const isBlackLike =
                     midProps.station_name ||
                     midProps.tags?.station_name ||
@@ -3362,18 +3303,7 @@
       }
     }
 
-    if (activeLayerTab.value === 'taipei_h2' && dataStore.taipeiH2ShowNavigationScaling) {
-      const navAcc = accumulateTaipeiH2NavWeightColRowMaxFromFeatures(routeFeatures);
-      colWeightMax.clear();
-      rowWeightMax.clear();
-      navAcc.colWeightMax.forEach((v, k) => colWeightMax.set(k, v));
-      navAcc.rowWeightMax.forEach((v, k) => rowWeightMax.set(k, v));
-    }
-
-    const taipeiFWeightScalingEffective =
-      activeLayerTab.value === 'taipei_i2'
-        ? dataStore.findLayerById('taipei_i2')?.taipeiFSpaceNetworkGridScaling === true
-        : dataStore.taipeiFSpaceNetworkGridScaling !== false;
+    const taipeiFWeightScalingEffective = dataStore.taipeiFSpaceNetworkGridScaling !== false;
     const taipeiFApplyWeightPixelScaling =
       useSchematicCellCenterGrid &&
       isTaipeiGOrHWeightLayer(activeLayerTab.value) &&
@@ -3439,10 +3369,7 @@
 
     /** taipei_k4：先線性 rebuild；開啟比例格時再把內繪 px 做欄／列加權 remap（點位與格線同映射）。 */
     if (
-      (activeLayerTab.value === 'taipei_a5' ||
-        activeLayerTab.value === 'taipei_b5' ||
-        activeLayerTab.value === 'taipei_c5' ||
-        activeLayerTab.value === 'taipei_a6' ||
+      (activeLayerTab.value === 'taipei_a6' ||
         activeLayerTab.value === 'taipei_b6' ||
         activeLayerTab.value === 'taipei_c6') &&
       Array.isArray(flatSegments) &&
@@ -3531,167 +3458,6 @@
         yScale = yW;
       }
     }
-
-    /** taipei_b5／c5（測試5）：把「主圖實際繪製前的 routeFeatures/stationFeatures」轉成與站點 hover 相同語意的內繪區 px 診斷資料。 */
-    const buildTaipeiB5DiagSegmentsFromRendered = () => {
-      if (activeLayerTab.value !== 'taipei_b5' && activeLayerTab.value !== 'taipei_c5') return null;
-      const sg = Math.max(1, Math.round(Number(dataStore.k3JsonOverlapDistancePx) || 10));
-      const toInnerPx = (gx, gy) => {
-        const px = Math.round((xScale(Number(gx)) - margin.left) / sg) * sg;
-        const py = Math.round((height - (yScale(Number(gy)) - margin.top)) / sg) * sg;
-        return [px, py];
-      };
-      const routeLines = [];
-      const toLineCoords = (coords) => {
-        if (!Array.isArray(coords)) return [];
-        if (coords.length && Array.isArray(coords[0]) && typeof coords[0][0] === 'number')
-          return [coords];
-        if (
-          coords.length &&
-          Array.isArray(coords[0]) &&
-          Array.isArray(coords[0][0]) &&
-          typeof coords[0][0][0] === 'number'
-        ) {
-          return coords;
-        }
-        return [];
-      };
-      const out = [];
-      for (const rf of routeFeatures || []) {
-        const props = rf?.properties || {};
-        const tags = props?.tags || {};
-        const routeName = String(props.name ?? tags.name ?? tags.ref ?? '').trim() || 'route';
-        const routeColor = String(props.color ?? tags.colour ?? tags.color ?? '').trim();
-        const routeKey = routeColor ? `color:${routeColor}` : `name:${routeName}`;
-        const lines = toLineCoords(rf?.geometry?.coordinates);
-        for (const line of lines) {
-          if (!Array.isArray(line) || line.length < 2) continue;
-          const points = [];
-          const nodes = [];
-          for (const c of line) {
-            if (!Array.isArray(c) || c.length < 2) continue;
-            const [px, py] = toInnerPx(c[0], c[1]);
-            points.push([px, py, {}]);
-            nodes.push({});
-          }
-          if (points.length >= 2) {
-            out.push({
-              diag_geometry: 'route',
-              route_name: routeName,
-              route_color: routeColor,
-              original_props: {
-                name: routeName,
-                color: routeColor,
-                way_properties: {
-                  tags: { ...tags, ...(routeColor ? { colour: routeColor } : {}) },
-                },
-                properties: { tags: { ...tags, ...(routeColor ? { colour: routeColor } : {}) } },
-              },
-              points,
-              nodes,
-            });
-            routeLines.push({ routeName, routeColor, routeKey, line });
-          }
-        }
-      }
-      const pointToSeg = (p, a, b) => {
-        const px = Number(p[0]);
-        const py = Number(p[1]);
-        const ax = Number(a[0]);
-        const ay = Number(a[1]);
-        const bx = Number(b[0]);
-        const by = Number(b[1]);
-        const dx = bx - ax;
-        const dy = by - ay;
-        const len2 = dx * dx + dy * dy;
-        if (len2 <= 1e-18) return Math.hypot(px - ax, py - ay);
-        const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
-        const qx = ax + t * dx;
-        const qy = ay + t * dy;
-        return Math.hypot(px - qx, py - qy);
-      };
-      const pointToLine = (p, line) => {
-        if (!Array.isArray(line) || line.length === 0) return Infinity;
-        if (line.length === 1)
-          return Math.hypot(Number(p[0]) - Number(line[0][0]), Number(p[1]) - Number(line[0][1]));
-        let best = Infinity;
-        for (let i = 1; i < line.length; i++)
-          best = Math.min(best, pointToSeg(p, line[i - 1], line[i]));
-        return best;
-      };
-      const stationBuckets = new Map();
-      const pushStation = (routeName, routeColor, node, gx, gy) => {
-        const rk = routeColor ? `color:${routeColor}` : `name:${routeName}`;
-        if (!stationBuckets.has(rk)) {
-          stationBuckets.set(rk, { routeName, routeColor, items: [] });
-        }
-        stationBuckets.get(rk).items.push({ gx, gy, node });
-      };
-      for (const sf of stationFeatures || []) {
-        const c = sf?.geometry?.coordinates;
-        if (!Array.isArray(c) || c.length < 2) continue;
-        const props = sf?.properties || {};
-        const tags = props?.tags || {};
-        const nt = String(sf?.nodeType ?? props?.node_type ?? '').trim() || 'line';
-        const isConnect = nt === 'connect';
-        const isBlackLike = !!(props.station_name || tags.station_name || tags._forceDrawBlackDot);
-        if (!isConnect && !(isBlackLike && props.display !== false)) continue;
-        let routeName = String(props.route_name ?? tags.route_name ?? tags.route_hint ?? '').trim();
-        let routeColor = String(props.color ?? tags.colour ?? tags.color ?? '').trim();
-        if (!routeName) {
-          let best = null;
-          let bestD = Infinity;
-          for (const rl of routeLines) {
-            const d = pointToLine(c, rl.line);
-            if (d < bestD) {
-              bestD = d;
-              best = rl;
-            }
-          }
-          if (best) {
-            routeName = best.routeName;
-            routeColor = best.routeColor;
-          } else {
-            routeName = 'route';
-          }
-        }
-        pushStation(
-          routeName,
-          routeColor,
-          { ...props, node_type: isConnect ? 'connect' : nt },
-          c[0],
-          c[1]
-        );
-      }
-      for (const b of stationBuckets.values()) {
-        const tags = {};
-        if (b.routeColor) tags.colour = b.routeColor;
-        if (b.routeName) tags.name = b.routeName;
-        const points = [];
-        const nodes = [];
-        for (const it of b.items) {
-          const [px, py] = toInnerPx(it.gx, it.gy);
-          points.push([px, py, it.node]);
-          nodes.push(it.node);
-        }
-        if (points.length) {
-          out.push({
-            diag_geometry: 'station',
-            route_name: b.routeName,
-            route_color: b.routeColor,
-            original_props: {
-              name: b.routeName,
-              color: b.routeColor,
-              way_properties: { tags },
-              properties: { tags },
-            },
-            points,
-            nodes,
-          });
-        }
-      }
-      return out.length ? out : null;
-    };
 
     const buildTaipeiB6DiagSegmentsFromRendered = () => {
       if (activeLayerTab.value !== 'taipei_b6' && activeLayerTab.value !== 'taipei_c6') return null;
@@ -3853,21 +3619,13 @@
       return out.length ? out : null;
     };
 
-    if (activeLayerTab.value === 'taipei_b5') {
-      dataStore.setTaipeiB5LayoutGridDiagSegments(buildTaipeiB5DiagSegmentsFromRendered());
-      dataStore.setTaipeiC5LayoutGridDiagSegments(null);
-    } else if (activeLayerTab.value === 'taipei_c5') {
-      dataStore.setTaipeiC5LayoutGridDiagSegments(buildTaipeiB5DiagSegmentsFromRendered());
-      dataStore.setTaipeiB5LayoutGridDiagSegments(null);
-    } else if (activeLayerTab.value === 'taipei_b6') {
+    if (activeLayerTab.value === 'taipei_b6') {
       dataStore.setTaipeiB6LayoutGridDiagSegments(buildTaipeiB6DiagSegmentsFromRendered());
       dataStore.setTaipeiC6LayoutGridDiagSegments(null);
     } else if (activeLayerTab.value === 'taipei_c6') {
       dataStore.setTaipeiC6LayoutGridDiagSegments(buildTaipeiB6DiagSegmentsFromRendered());
       dataStore.setTaipeiB6LayoutGridDiagSegments(null);
     } else {
-      dataStore.setTaipeiB5LayoutGridDiagSegments(null);
-      dataStore.setTaipeiC5LayoutGridDiagSegments(null);
       dataStore.setTaipeiB6LayoutGridDiagSegments(null);
       dataStore.setTaipeiC6LayoutGridDiagSegments(null);
     }
@@ -4161,9 +3919,6 @@
 
     /** taipei_k4：軸／網格刻度以繪區像素（0…寬／0…高）標示，與 JSON 分頁展示一致 */
     const isTaipeiK4PxPlotCoordinateLayer =
-      activeLayerTab.value === 'taipei_a5' ||
-      activeLayerTab.value === 'taipei_b5' ||
-      activeLayerTab.value === 'taipei_c5' ||
       activeLayerTab.value === 'taipei_a6' ||
       activeLayerTab.value === 'taipei_b6' ||
       activeLayerTab.value === 'taipei_c6';
@@ -4564,7 +4319,7 @@
       .y((d) => yScale(d[1]))
       .curve(d3.curveLinear);
 
-    /** taipei_h2／taipei_c5 導航：僅由 store 寫入 station_weights（路徑 10／其餘 0），此處不畫額外 highlight */
+    /** taipei_h2 導航：僅由 store 寫入 station_weights（路徑 10／其餘 0），此處不畫額外 highlight */
     const matchH2TrafficConnect = () => false;
     const matchH2TrafficBlack = () => false;
 
@@ -5548,36 +5303,6 @@
             tooltipParts.push(`<strong>站點名稱:</strong> ${stationName}`);
           }
 
-          if (activeLayerTab.value === 'taipei_c5') {
-            const c5Layer = dataStore.findLayerById('taipei_c5');
-            const resolvedJunctionName =
-              (stationName !== undefined &&
-              stationName !== null &&
-              String(stationName).trim() !== ''
-                ? String(stationName).trim()
-                : '') ||
-              (props.station_name !== undefined &&
-              props.station_name !== null &&
-              String(props.station_name).trim() !== ''
-                ? String(props.station_name).trim()
-                : '') ||
-              (tags.station_name !== undefined &&
-              tags.station_name !== null &&
-              String(tags.station_name).trim() !== ''
-                ? String(tags.station_name).trim()
-                : '') ||
-              (tags.name !== undefined && tags.name !== null && String(tags.name).trim() !== ''
-                ? String(tags.name).trim()
-                : '');
-            if (resolvedJunctionName) {
-              const junctionRows = findTaipeiK3JunctionDataTableRowsForStation(
-                c5Layer?.dataTableData,
-                resolvedJunctionName
-              );
-              const junctionBlock = formatTaipeiK3JunctionRowsForTooltip(junctionRows);
-              if (junctionBlock) tooltipParts.push(junctionBlock);
-            }
-          }
           if (activeLayerTab.value === 'taipei_c6') {
             const c6Layer = dataStore.findLayerById('taipei_c6');
             const resolvedJunctionName =
@@ -6600,9 +6325,6 @@
             skipConnectMove: true,
             skipCrossing: true,
             useRectangleOtherRouteCheck: true,
-            ...(activeLayer?.layerId === 'taipei_a2'
-              ? { forbidFlipIfLCornerHasConnect: true }
-              : {}),
           };
           const { flipColor } = computeFlipAnalysis(
             straightSegments,
@@ -7076,7 +6798,6 @@
       dataStore.showWeightLabels,
       dataStore.showRouteThickness,
       dataStore.taipeiFSpaceNetworkGridScaling,
-      dataStore.findLayerById('taipei_i2')?.taipeiFSpaceNetworkGridScaling,
       dataStore.taipeiFSpaceNetworkMouseZoom,
     ],
     async () => {
@@ -7112,9 +6833,6 @@
     () => dataStore.k3JsonOverlapDistancePx,
     async () => {
       if (
-        activeLayerTab.value !== 'taipei_a5' &&
-        activeLayerTab.value !== 'taipei_b5' &&
-        activeLayerTab.value !== 'taipei_c5' &&
         activeLayerTab.value !== 'taipei_a6' &&
         activeLayerTab.value !== 'taipei_b6' &&
         activeLayerTab.value !== 'taipei_c6'
@@ -7215,39 +6933,7 @@
     }
   );
 
-  /** taipei_h2 路線導航：起迄／路徑樣式更新時重繪 */
-  watch(
-    () => dataStore.taipeiH2TrafficHighlightRedrawTrigger,
-    async (n) => {
-      if (n < 1) return;
-      const hasData = gridData.value || mapGeoJsonData.value;
-      if (hasData && activeLayerTab.value === 'taipei_h2') {
-        const containerId = getContainerId();
-        d3.select(`#${containerId}`).selectAll('svg').remove();
-        d3.select('body').selectAll('.d3js-map-tooltip').remove();
-        await nextTick();
-        drawSchematic();
-      }
-    }
-  );
-
-  /** taipei_c5 路線導航：起迄／路徑樣式更新時重繪 */
-  watch(
-    () => dataStore.taipeiC5TrafficHighlightRedrawTrigger,
-    async (n) => {
-      if (n < 1) return;
-      const hasData = gridData.value || mapGeoJsonData.value;
-      if (hasData && activeLayerTab.value === 'taipei_c5') {
-        const containerId = getContainerId();
-        d3.select(`#${containerId}`).selectAll('svg').remove();
-        d3.select('body').selectAll('.d3js-map-tooltip').remove();
-        await nextTick();
-        drawSchematic();
-      }
-    }
-  );
-
-  /** taipei_c6 路線導航：起迄／路徑樣式更新時重繪（與 c5 分 watch 複製） */
+  /** taipei_c6 路線導航：起迄／路徑樣式更新時重繪 */
   watch(
     () => dataStore.taipeiC6TrafficHighlightRedrawTrigger,
     async (n) => {

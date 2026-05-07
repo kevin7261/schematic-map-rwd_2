@@ -201,7 +201,7 @@ export function applyTaipeiH2C5NavigationStationWeights10Zero(layer, keys) {
     }
   }
 
-  // ── 處理 spaceNetworkGridJsonDataK3Tab（taipei_c5 等 K3 層專用） ──
+  // ── 處理 spaceNetworkGridJsonDataK3Tab（版面網格 K3 層，例 taipei_c6） ──
   const dataK3 = layer?.spaceNetworkGridJsonDataK3Tab;
   if (Array.isArray(dataK3)) {
     if (!k0 || !k1 || k0 === k1) {
@@ -434,21 +434,7 @@ export function refreshTaipeiH2NavigationTableAndWeights(layer, keys) {
 }
 
 /**
- * 同步導航 station_weights（最短路徑 10／其餘 1），並重建 taipei_c5 的 dataTableData
- */
-export function refreshTaipeiC5NavigationTableAndWeights(layer, keys) {
-  if (!layer || layer.layerId !== 'taipei_c5') return;
-  applyTaipeiH2C5NavigationStationWeights10Zero(layer, keys);
-  // taipei_c5 的 dataTableData 格式為 K3 junction 表（buildTaipeiK3JunctionDataTableRows 建立），
-  // 讀取來源為 spaceNetworkGridJsonDataK3Tab（已被上方函式修改 station_weights）。
-  if (Array.isArray(layer.spaceNetworkGridJsonDataK3Tab)) {
-    layer.dataTableData = buildTaipeiK3JunctionDataTableRows(layer.spaceNetworkGridJsonDataK3Tab);
-  }
-}
-
-/**
  * 同步導航 station_weights（最短路徑 10／其餘 1），並重建 taipei_c6 的 dataTableData
- * （與 refreshTaipeiC5NavigationTableAndWeights 分函式複製，版面網格測試_2／版面網格測試_3 不共用本體。）
  */
 export function refreshTaipeiC6NavigationTableAndWeights(layer, keys) {
   if (!layer || layer.layerId !== 'taipei_c6') return;

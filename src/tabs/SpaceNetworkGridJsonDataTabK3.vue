@@ -138,9 +138,6 @@
   const kTabLayerUsesK3JsonFields = (layerId) =>
     layerId === 'taipei_k3' ||
     layerId === 'taipei_sn4_k' ||
-    layerId === 'taipei_a5' ||
-    layerId === 'taipei_b5' ||
-    layerId === 'taipei_c5' ||
     layerId === 'taipei_a6' ||
     layerId === 'taipei_b6' ||
     layerId === 'taipei_c6';
@@ -191,9 +188,6 @@
     try {
       let payload = currentLayerJsonData.value;
       if (
-        activeLayerTab.value === 'taipei_a5' ||
-        activeLayerTab.value === 'taipei_b5' ||
-        activeLayerTab.value === 'taipei_c5' ||
         activeLayerTab.value === 'taipei_a6' ||
         activeLayerTab.value === 'taipei_b6' ||
         activeLayerTab.value === 'taipei_c6'

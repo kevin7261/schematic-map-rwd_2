@@ -122,7 +122,7 @@
     const layer = visibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
     if (!layer) return null;
     if (
-      (layer.layerId === 'taipei_a5' || layer.layerId === 'taipei_a6') &&
+      layer.layerId === 'taipei_a6' &&
       layer.processedJsonData != null
     ) {
       return layer.processedJsonData;
