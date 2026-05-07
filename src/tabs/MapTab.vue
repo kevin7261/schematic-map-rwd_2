@@ -9,6 +9,10 @@
     isGeoJsonNodePointFeature,
     isGeoJsonWayLineFeature,
   } from '@/utils/geojsonRouteHelpers.js';
+  import {
+    expandLonLatChainFromRouteCoordinates,
+    isMapDrawnRoutesExportArray,
+  } from '@/utils/mapDrawnRoutesImport.js';
 
   export default {
     name: 'MapTab',
@@ -238,6 +242,91 @@
         if (has) map.fitBounds(bounds, { padding: [40, 40] });
       };
 
+      /** 與路段 JSON segment.start／end.type 一致：terminal 藍、intersection 紅、其餘黑 */
+      const circleStyleForJsonEndpointType = (type, hover) => {
+        const h = !!hover;
+        if (type === 'terminal') {
+          return h
+            ? {
+                radius: 7,
+                color: '#052c65',
+                weight: 3,
+                fillColor: '#6ea8fe',
+                fillOpacity: 1,
+                pane: 'markerPane',
+              }
+            : {
+                radius: 4,
+                color: '#0d6efd',
+                weight: 2,
+                fillColor: '#9ec5fe',
+                fillOpacity: 1,
+                pane: 'markerPane',
+              };
+        }
+        if (type === 'intersection') {
+          return h
+            ? {
+                radius: 7,
+                color: '#58151c',
+                weight: 3,
+                fillColor: '#f5c2c7',
+                fillOpacity: 1,
+                pane: 'markerPane',
+              }
+            : {
+                radius: 4,
+                color: '#dc3545',
+                weight: 2,
+                fillColor: '#f1aeb5',
+                fillOpacity: 1,
+                pane: 'markerPane',
+              };
+        }
+        return h
+          ? {
+              radius: 6,
+              color: '#000000',
+              weight: 2,
+              fillColor: '#555555',
+              fillOpacity: 1,
+              pane: 'markerPane',
+            }
+          : {
+              radius: 3,
+              color: '#000000',
+              weight: 1,
+              fillColor: '#1a1a1a',
+              fillOpacity: 1,
+              pane: 'markerPane',
+            };
+      };
+
+      const midStationCircleStyle = (hover) =>
+        hover
+          ? {
+              radius: 5,
+              color: '#000000',
+              weight: 2,
+              fillColor: '#333333',
+              fillOpacity: 1,
+              pane: 'markerPane',
+            }
+          : {
+              radius: 2,
+              color: '#000000',
+              weight: 1,
+              fillColor: '#000000',
+              fillOpacity: 1,
+              pane: 'markerPane',
+            };
+
+      const escapeHtmlAttr = (s) =>
+        String(s ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/"/g, '&quot;');
+
       const loadOrSyncLayers = async (retryAttempt = 0) => {
         if (!mapEl.value) return;
 
@@ -328,6 +417,117 @@
               return;
             }
 
+            /** 有路段匯出 jsonData 時：只畫 segment 的 routeCoordinates（起–中–迄折線），端點依 type 上色 */
+            const exportRows = currentLayer.jsonData;
+            if (Array.isArray(exportRows) && isMapDrawnRoutesExportArray(exportRows)) {
+              const routeLayerGroup = L.layerGroup();
+              routeLayerGroup.options.layerId = currentLayer.layerId;
+              const stationLayerGroup = L.layerGroup();
+              stationLayerGroup.options.layerId = currentLayer.layerId;
+
+              for (const row of exportRows) {
+                const chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
+                if (!chain || chain.length < 2) continue;
+                const latlngs = chain.map(([lon, lat]) => [lat, lon]);
+                const lineColor =
+                  typeof row.color === 'string' && row.color.trim() !== ''
+                    ? row.color.trim()
+                    : '#666666';
+                const baseLine = { color: lineColor, weight: 3, opacity: 0.9, pane: 'overlayPane' };
+                const hoverLine = { color: lineColor, weight: 8, opacity: 1, pane: 'overlayPane' };
+                const seg = row.segment || {};
+                const popupHtml = `<div style="max-width: 320px;"><strong>路線</strong> ${escapeHtmlAttr(
+                  row.routeName
+                )}<br><strong>起</strong> ${escapeHtmlAttr(seg.start?.station_name)}（<code>${escapeHtmlAttr(
+                  seg.start?.type
+                )}</code>）<br><strong>迄</strong> ${escapeHtmlAttr(seg.end?.station_name)}（<code>${escapeHtmlAttr(
+                  seg.end?.type
+                )}</code>）</div>`;
+                const poly = L.polyline(latlngs, baseLine);
+                if (poly.setPane) poly.setPane('overlayPane');
+                poly.bindPopup(popupHtml, { closeButton: true });
+                poly.on('mouseover', function () {
+                  this.setStyle(hoverLine);
+                  if (this.bringToFront) this.bringToFront();
+                  this.openPopup();
+                });
+                poly.on('mouseout', function () {
+                  this.setStyle(baseLine);
+                  this.closePopup();
+                });
+                routeLayerGroup.addLayer(poly);
+
+                const bindEndpoint = (node) => {
+                  if (
+                    !node ||
+                    !Number.isFinite(Number(node.x_grid)) ||
+                    !Number.isFinite(Number(node.y_grid))
+                  ) {
+                    return;
+                  }
+                  const latlng = [Number(node.y_grid), Number(node.x_grid)];
+                  const base = circleStyleForJsonEndpointType(node.type, false);
+                  const hoverSt = circleStyleForJsonEndpointType(node.type, true);
+                  const m = L.circleMarker(latlng, base);
+                  if (m.setPane) m.setPane('markerPane');
+                  const phtml = `<div style="max-width: 300px;"><strong>站名</strong> ${escapeHtmlAttr(
+                    node.station_name
+                  )}<br><strong>ID</strong> ${escapeHtmlAttr(node.station_id)}<br><strong>type</strong> <code>${escapeHtmlAttr(
+                    node.type
+                  )}</code></div>`;
+                  m.bindPopup(phtml, { closeButton: true });
+                  m.on('mouseover', function () {
+                    this.setStyle(hoverSt);
+                    if (this.bringToFront) this.bringToFront();
+                    this.openPopup();
+                  });
+                  m.on('mouseout', function () {
+                    this.setStyle(base);
+                    this.closePopup();
+                  });
+                  stationLayerGroup.addLayer(m);
+                };
+                bindEndpoint(seg.start);
+                bindEndpoint(seg.end);
+                for (const st of seg.stations || []) {
+                  if (
+                    !st ||
+                    !Number.isFinite(Number(st.x_grid)) ||
+                    !Number.isFinite(Number(st.y_grid))
+                  ) {
+                    continue;
+                  }
+                  const latlng = [Number(st.y_grid), Number(st.x_grid)];
+                  const base = midStationCircleStyle(false);
+                  const hoverSt = midStationCircleStyle(true);
+                  const m = L.circleMarker(latlng, base);
+                  if (m.setPane) m.setPane('markerPane');
+                  m.bindPopup(
+                    `<div style="max-width: 300px;"><strong>中間站</strong> ${escapeHtmlAttr(
+                      st.station_name
+                    )}<br><strong>ID</strong> ${escapeHtmlAttr(st.station_id)}</div>`,
+                    { closeButton: true }
+                  );
+                  m.on('mouseover', function () {
+                    this.setStyle(hoverSt);
+                    if (this.bringToFront) this.bringToFront();
+                    this.openPopup();
+                  });
+                  m.on('mouseout', function () {
+                    this.setStyle(base);
+                    this.closePopup();
+                  });
+                  stationLayerGroup.addLayer(m);
+                }
+              }
+
+              routeLayerGroup.addTo(map);
+              stationLayerGroup.addTo(map);
+              await nextTick();
+              fitBoundsIfAny();
+              return;
+            }
+
             const routeFeatures = geojson.features.filter(isGeoJsonWayLineFeature);
             const stationFeatures = geojson.features.filter(isGeoJsonNodePointFeature);
 
@@ -403,26 +603,12 @@
             const stationLayerGroup = L.layerGroup();
             stationLayerGroup.options.layerId = currentLayer.layerId;
 
-            // 繪製車站（黑點）
+            // 繪製車站（依 JSON／tags 之 type：terminal 藍、intersection 紅、其餘黑）
             stationFeatures.forEach((feature) => {
               const tags = getGeoJsonFeatureTagProps(feature);
-
-              const baseStationStyle = {
-                radius: 1.5,
-                color: '#000000',
-                weight: 1,
-                fillColor: '#000000',
-                fillOpacity: 1,
-                pane: 'markerPane',
-              };
-              const hoverStationStyle = {
-                radius: 6,
-                color: '#0d6efd',
-                weight: 2,
-                fillColor: '#6ea8fe',
-                fillOpacity: 1,
-                pane: 'markerPane',
-              };
+              const ptType = tags.type;
+              const baseStationStyle = circleStyleForJsonEndpointType(ptType, false);
+              const hoverStationStyle = circleStyleForJsonEndpointType(ptType, true);
 
               const stationLayer = L.geoJSON(feature, {
                 pointToLayer: (feature, latlng) =>
