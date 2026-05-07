@@ -108,19 +108,8 @@ export function isTaipeiTestFghiLayerId(id) {
   return id != null && TAIPEI_TEST_FGHI_LAYER_IDS.includes(id);
 }
 
-/** 空間網絡網格測試_3／測試_4（sn4_*）／版面網格測試_1：a3～m3 路網層（含版面網格測試_1 之 k4；末端 connect 藍、交叉 connect 紅、沿線站黑；j3／k3／k4 為 CSV 流量權重語意） */
+/** 測試_4（sn4_*）／版面網格測試_3（a6／b6／c6）／網格繪製_2（*_dp_nd_2）：路網層（末端 connect 藍、交叉 connect 紅；j／k 為 CSV 流量權重語意） */
 export const TAIPEI_TEST3_BCDEFG_LAYER_IDS = [
-  'taipei_a3',
-  'taipei_b3',
-  'taipei_c3',
-  'taipei_d3',
-  'taipei_e3',
-  'taipei_f3',
-  'taipei_g3',
-  'taipei_h3',
-  'taipei_i3',
-  'taipei_j3',
-  'taipei_k3',
   'taipei_sn4_a',
   'taipei_sn4_b',
   'taipei_sn4_c',
@@ -136,23 +125,8 @@ export const TAIPEI_TEST3_BCDEFG_LAYER_IDS = [
   'taipei_a6',
   'taipei_b6',
   'taipei_c6',
-  'taipei_l3',
-  'taipei_m3',
   'taipei_sn4_l',
   'taipei_sn4_m',
-  /** 資料處理_2：分群與 execute 模組複製，圖層 id 尾碼 _2 */
-  'taipei_b3_dp_2',
-  'taipei_c3_dp_2',
-  'taipei_d3_dp_2',
-  'taipei_e3_dp_2',
-  'taipei_f3_dp_2',
-  'taipei_g3_dp_2',
-  'taipei_h3_dp_2',
-  'taipei_i3_dp_2',
-  'taipei_j3_dp_2',
-  'taipei_k3_dp_2',
-  'taipei_l3_dp_2',
-  'taipei_m3_dp_2',
   /** 網格繪製_2：手繪 network_draw_sketch_2 → taipei_*_dp_nd_2 */
   'network_draw_sketch_2',
   'taipei_b3_dp_nd_2',
@@ -178,24 +152,14 @@ export const TAIPEI_TEST3_BCDE_LAYER_IDS = TAIPEI_TEST3_BCDEFG_LAYER_IDS;
 /** i3／j3／k3：站點勿用匯出列強制起迄為 connect（改依 nodes，黑點維持黑）；connect 藍／紅依 taipei_h3 全路網度數，勿用切段後子折線度數 */
 export function isTaipeiTest3I3OrJ3LayerTab(tab) {
   return (
-    tab === 'taipei_i3' ||
-    tab === 'taipei_j3' ||
-    tab === 'taipei_k3' ||
     tab === 'taipei_a6' ||
     tab === 'taipei_b6' ||
     tab === 'taipei_c6' ||
-    tab === 'taipei_l3' ||
-    tab === 'taipei_m3' ||
     tab === 'taipei_sn4_i' ||
     tab === 'taipei_sn4_j' ||
     tab === 'taipei_sn4_k' ||
     tab === 'taipei_sn4_l' ||
     tab === 'taipei_sn4_m' ||
-    tab === 'taipei_i3_dp_2' ||
-    tab === 'taipei_j3_dp_2' ||
-    tab === 'taipei_k3_dp_2' ||
-    tab === 'taipei_l3_dp_2' ||
-    tab === 'taipei_m3_dp_2' ||
     tab === 'taipei_i3_dp_nd_2' ||
     tab === 'taipei_j3_dp_nd_2' ||
     tab === 'taipei_k3_dp_nd_2' ||
@@ -204,14 +168,9 @@ export function isTaipeiTest3I3OrJ3LayerTab(tab) {
   );
 }
 
-/** j3／j3_dp／j3_dp_2／j3_dp_nd：路段流量（CSV）；ControlTab 匯出 JSON 與 taipei_j3 相同語意 */
+/** j：路段流量（CSV）；ControlTab 匯出 JSON */
 export function isTaipeiTest3J3TrafficExportLayerTab(tab) {
-  return (
-    tab === 'taipei_j3' ||
-    tab === 'taipei_sn4_j' ||
-    tab === 'taipei_j3_dp_2' ||
-    tab === 'taipei_j3_dp_nd_2'
-  );
+  return tab === 'taipei_sn4_j' || tab === 'taipei_j3_dp_nd_2';
 }
 
 export function isTaipeiTest3BcdeLayerTab(tab) {
@@ -235,16 +194,6 @@ export function isLayoutGridTest3LayerTab(tab) {
 
 /** 與 SpaceNetworkGridTab 車站配置專區一致：測試路網圖層 */
 export const TAIPEI_TEST_SPACE_NETWORK_STATION_TAB_IDS = [
-  'taipei_a3',
-  'taipei_b3',
-  'taipei_c3',
-  'taipei_d3',
-  'taipei_e3',
-  'taipei_f3',
-  'taipei_h3',
-  'taipei_i3',
-  'taipei_j3',
-  'taipei_k3',
   'taipei_sn4_a',
   'taipei_sn4_b',
   'taipei_sn4_c',
@@ -258,22 +207,8 @@ export const TAIPEI_TEST_SPACE_NETWORK_STATION_TAB_IDS = [
   'taipei_a6',
   'taipei_b6',
   'taipei_c6',
-  'taipei_l3',
-  'taipei_m3',
   'taipei_sn4_l',
   'taipei_sn4_m',
-  'taipei_b3_dp_2',
-  'taipei_c3_dp_2',
-  'taipei_d3_dp_2',
-  'taipei_e3_dp_2',
-  'taipei_f3_dp_2',
-  'taipei_g3_dp_2',
-  'taipei_h3_dp_2',
-  'taipei_i3_dp_2',
-  'taipei_j3_dp_2',
-  'taipei_k3_dp_2',
-  'taipei_l3_dp_2',
-  'taipei_m3_dp_2',
   'network_draw_sketch_2',
   'taipei_b3_dp_nd_2',
   'taipei_c3_dp_nd_2',

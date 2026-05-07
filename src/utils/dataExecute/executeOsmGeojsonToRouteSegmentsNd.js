@@ -1,6 +1,6 @@
 /**
  * 網絡／網格繪製群組：手繪 sketch 之 GeoJSON → 路段 JSON → 對應 b 層。
- * 與「空間網絡網格測試_3」executeTaipeiTest3_A3_To_B3 相同之 buildTaipeiB3ExecuteLayerFieldsFromGeojson（@/utils/taipeiTest3）。
+ * 使用 buildTaipeiB3ExecuteLayerFieldsFromGeojson（@/utils/taipeiTest3）。
  */
 
 /* eslint-disable no-console */

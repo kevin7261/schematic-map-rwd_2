@@ -238,9 +238,7 @@
     // 檢查圖層是否屬於可執行「下一步」之群組
     const groupName = dataStore.findGroupNameByLayerId(currentLayer.value.layerId);
     if (
-      groupName !== '資料處理_2' &&
       groupName !== '網格繪製_2' &&
-      groupName !== '空間網絡網格測試_3' &&
       groupName !== '空間網絡網格測試_4' &&
       groupName !== '版面網格測試_3'
     )
@@ -1648,7 +1646,7 @@
     dataStore.setTaipeiFSpaceNetworkGridScaling(checked);
   };
 
-  /** 空間網絡網格測試_3：各圖層 Control 分頁可獨立選「正方形網格」或預設（充滿繪區） */
+  /** 路網測試圖層：Control 分頁可獨立選「正方形網格」或預設（充滿繪區） */
   const setSquareGridCellsTaipeiTest3 = (layer, on) => {
     const lyr = dataStore.findLayerById(layer?.layerId);
     if (!lyr || !isTaipeiTest3BcdeLayerTab(layer.layerId)) return;
@@ -2484,9 +2482,7 @@
     const layer = currentLayer.value;
     if (!layer) return false;
     if (
-      layer.layerId === 'taipei_k3' ||
       layer.layerId === 'taipei_sn4_k' ||
-      layer.layerId === 'taipei_k3_dp_nd' ||
       layer.layerId === 'taipei_k3_dp_nd_2' ||
       layer.layerId === 'taipei_a4' ||
       layer.layerId === 'taipei_b4' ||
@@ -2502,7 +2498,7 @@
         Array.isArray(layer.spaceNetworkGridJsonData) && layer.spaceNetworkGridJsonData.length > 0;
       return !!(layer.geojsonData || layer.layoutGridJsonData || hasSn || hasK3Tab);
     }
-    if (layer.layerId === 'taipei_l3' || layer.layerId === 'taipei_sn4_l') {
+    if (layer.layerId === 'taipei_sn4_l' || layer.layerId === 'taipei_l3_dp_nd_2') {
       const hasL3Tab =
         Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) &&
         layer.spaceNetworkGridJsonDataL3Tab.length > 0;
@@ -2510,7 +2506,7 @@
         Array.isArray(layer.spaceNetworkGridJsonData) && layer.spaceNetworkGridJsonData.length > 0;
       return !!(layer.geojsonData || layer.layoutGridJsonData || hasSn || hasL3Tab);
     }
-    if (layer.layerId === 'taipei_m3' || layer.layerId === 'taipei_sn4_m') {
+    if (layer.layerId === 'taipei_sn4_m' || layer.layerId === 'taipei_m3_dp_nd_2') {
       const hasM3Tab =
         Array.isArray(layer.spaceNetworkGridJsonDataM3Tab) &&
         layer.spaceNetworkGridJsonDataM3Tab.length > 0;
@@ -2831,9 +2827,9 @@
   const layerSegmentStationNodesReport = computed(() => {
     const layer = currentLayer.value;
     if (!layer) return null;
-    /** taipei_k3／taipei_k4／taipei_l3：黑點相銜權重改見 Data 分頁 dataTableData，此處不列節點清單 */
+    /** k／k4／l／m：黑點相銜權重改見 Data 分頁 dataTableData，此處不列節點清單 */
     if (
-      layer.layerId === 'taipei_k3' ||
+      layer.layerId === 'taipei_k3_dp_nd_2' ||
       layer.layerId === 'taipei_sn4_k' ||
       layer.layerId === 'taipei_a4' ||
       layer.layerId === 'taipei_b4' ||
@@ -2841,9 +2837,9 @@
       layer.layerId === 'taipei_a6' ||
       layer.layerId === 'taipei_b6' ||
       layer.layerId === 'taipei_c6' ||
-      layer.layerId === 'taipei_l3' ||
+      layer.layerId === 'taipei_l3_dp_nd_2' ||
       layer.layerId === 'taipei_sn4_l' ||
-      layer.layerId === 'taipei_m3' ||
+      layer.layerId === 'taipei_m3_dp_nd_2' ||
       layer.layerId === 'taipei_sn4_m'
     ) {
       return null;
@@ -2880,9 +2876,12 @@
       };
     }
 
-    const isH3 = layer.layerId === 'taipei_h3' || layer.layerId === 'taipei_sn4_h';
+    const isH3 =
+      layer.layerId === 'taipei_sn4_h' || layer.layerId === 'taipei_h3_dp_nd_2';
     const a3Layer = isH3
-      ? dataStore.findLayerById(layer.layerId === 'taipei_sn4_h' ? 'taipei_sn4_a' : 'taipei_a3')
+      ? dataStore.findLayerById(
+          layer.layerId === 'taipei_sn4_h' ? 'taipei_sn4_a' : 'taipei_b3_dp_nd_2',
+        )
       : null;
     const a3Rows = a3Layer?.processedJsonData;
     const a3Ok = isH3 && isMapDrawnRoutesExportArray(a3Rows);
@@ -3595,7 +3594,7 @@
       : L.geojsonData || L.layoutGridJsonData || L.spaceNetworkGridJsonData || L.jsonData;
     if (
       !jsonData &&
-      (L.layerId === 'taipei_l3' || L.layerId === 'taipei_sn4_l') &&
+      (L.layerId === 'taipei_sn4_l' || L.layerId === 'taipei_l3_dp_nd_2') &&
       Array.isArray(L.spaceNetworkGridJsonDataL3Tab) &&
       L.spaceNetworkGridJsonDataL3Tab.length > 0
     ) {
@@ -3603,7 +3602,7 @@
     }
     if (
       !jsonData &&
-      (L.layerId === 'taipei_m3' || L.layerId === 'taipei_sn4_m') &&
+      (L.layerId === 'taipei_sn4_m' || L.layerId === 'taipei_m3_dp_nd_2') &&
       Array.isArray(L.spaceNetworkGridJsonDataM3Tab) &&
       L.spaceNetworkGridJsonDataM3Tab.length > 0
     ) {
@@ -6147,13 +6146,9 @@
     downloadMapDrawnExportJson(id, taipeiFNetworkExportFilename());
   };
 
-  /** taipei_j3／j3_dp／j3_dp_2／j3_dp_nd／j3_dp_nd_2：路段匯出（與 e／f 相同語意）＋ dataTableData／layerInfo／dashboard */
+  /** j：路段匯出（與 e／f 相同語意）＋ dataTableData／layerInfo／dashboard */
   const taipeiJ3TrafficExportFilename = (layerId) => {
-    if (layerId === 'taipei_j3') return 'j3_routes_traffic_taipei_test3.json';
     if (layerId === 'taipei_sn4_j') return 'j3_routes_traffic_taipei_test3_sn4.json';
-    if (layerId === 'taipei_j3_dp') return 'j3_routes_traffic_taipei_test3_dp.json';
-    if (layerId === 'taipei_j3_dp_2') return 'j3_routes_traffic_taipei_test3_dp_2.json';
-    if (layerId === 'taipei_j3_dp_nd') return 'j3_routes_traffic_taipei_test3_dp_nd.json';
     if (layerId === 'taipei_j3_dp_nd_2') return 'j3_routes_traffic_taipei_test3_dp_nd_2.json';
     return 'j3_routes_traffic_taipei_test3.json';
   };
@@ -6188,7 +6183,7 @@
   const onTaipeiL3BlackDotReductionStep = () => {
     stopTaipeiL3ReductionAuto();
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
     const r = applyTaipeiL3BlackDotReductionOneStep(layer);
     if (!r.changed && r.reason) {
       console.warn('[縮減黑點]', r.reason);
@@ -6214,7 +6209,7 @@
       return;
     }
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
     if (
       !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
       layer.spaceNetworkGridJsonDataL3Tab.length === 0
@@ -6227,7 +6222,7 @@
       const lyr = currentLayer.value;
       if (
         !lyr ||
-        (lyr.layerId !== 'taipei_l3' && lyr.layerId !== 'taipei_sn4_l') ||
+        (lyr.layerId !== 'taipei_sn4_l' && lyr.layerId !== 'taipei_l3_dp_nd_2') ||
         !Array.isArray(lyr.spaceNetworkGridJsonDataL3Tab) ||
         lyr.spaceNetworkGridJsonDataL3Tab.length === 0
       ) {
@@ -6248,7 +6243,7 @@
   const runTaipeiL3ReductionAll = async () => {
     stopTaipeiL3ReductionAuto();
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
     if (
       !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
       layer.spaceNetworkGridJsonDataL3Tab.length === 0
@@ -6257,7 +6252,7 @@
     }
     for (let i = 0; i < TAIPEI_L3_REDUCTION_ALL_MAX_STEPS; i++) {
       const lyr = currentLayer.value;
-      if (!lyr || (lyr.layerId !== 'taipei_l3' && lyr.layerId !== 'taipei_sn4_l')) break;
+      if (!lyr || (lyr.layerId !== 'taipei_sn4_l' && lyr.layerId !== 'taipei_l3_dp_nd_2')) break;
       const r = applyTaipeiL3BlackDotReductionOneStep(lyr);
       if (!r.changed) break;
       if (i % 25 === 24) await nextTick();
@@ -6268,7 +6263,7 @@
   const runTaipeiL3ReductionUntilWeightDiffN = async () => {
     stopTaipeiL3ReductionAuto();
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_l3' && layer.layerId !== 'taipei_sn4_l')) return;
+    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
     if (
       !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
       layer.spaceNetworkGridJsonDataL3Tab.length === 0
@@ -6560,7 +6555,7 @@
 
         <!-- taipei_l3／taipei_sn4_l：縮減黑點（與 Data 分頁 dataTableData 候選一致，逐步合併） -->
         <div
-          v-if="layer.layerId === 'taipei_l3' || layer.layerId === 'taipei_sn4_l'"
+          v-if="layer.layerId === 'taipei_sn4_l' || layer.layerId === 'taipei_l3_dp_nd_2'"
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">縮減黑點（l3）</div>
@@ -6638,7 +6633,7 @@
           </div>
         </div>
 
-        <!-- 空間網絡網格測試_3／測試_4：各圖層分頁獨立 — 正方形網格（開關樣式同圖層／taipei_g） -->
+        <!-- 路網測試圖層：各圖層分頁獨立 — 正方形網格（開關樣式同圖層／taipei_g） -->
         <div v-if="isTaipeiTest3BcdeLayerTab(layer.layerId)" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">網格比例（版面／路網）</div>
           <div class="d-flex align-items-center justify-content-between mb-2">
@@ -8851,7 +8846,7 @@
                 </span>
                 <span
                   v-if="
-                    currentLayer?.layerId === 'taipei_k3' ||
+                    currentLayer?.layerId === 'taipei_k3_dp_nd_2' ||
                     currentLayer?.layerId === 'taipei_sn4_k' ||
                     currentLayer?.layerId === 'taipei_a4' ||
                     currentLayer?.layerId === 'taipei_b4' ||
@@ -8987,9 +8982,9 @@
         <!-- taipei_l3／sn4_l／m3／sn4_m：json-data-l3／網格分頁動態示意之欄列與最小格寬／高（pt） -->
         <div
           v-if="
-            currentLayer?.layerId === 'taipei_l3' ||
+            currentLayer?.layerId === 'taipei_l3_dp_nd_2' ||
             currentLayer?.layerId === 'taipei_sn4_l' ||
-            currentLayer?.layerId === 'taipei_m3' ||
+            currentLayer?.layerId === 'taipei_m3_dp_nd_2' ||
             currentLayer?.layerId === 'taipei_sn4_m'
           "
           class="pb-3 mb-3 border-bottom"

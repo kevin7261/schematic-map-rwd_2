@@ -509,18 +509,6 @@ export async function loadGeoJsonForRoutes(layer) {
 
     const geojson = await response.json();
 
-    /** taipei_a3：與 executeTaipeiTest3_A3_To_B3 同一建構函式，JSON 欄位形狀一致 */
-    if (layer?.layerId === 'taipei_a3') {
-      const { buildTaipeiA3LoadLayerFieldsFromGeojson } = await import(
-        '@/utils/taipeiTest3/buildTaipeiA3StyleLayerFieldsFromGeojson.js'
-      );
-      return {
-        jsonData: null,
-        geojsonData: geojson,
-        ...buildTaipeiA3LoadLayerFieldsFromGeojson(geojson),
-      };
-    }
-
     /** 空間網絡網格測試_4 taipei_sn4_a：與 executeTaipeiTest4_A3_To_B3 同一建構來源（@/utils/taipeiTest4，不共用 taipeiTest3） */
     if (layer?.layerId === 'taipei_sn4_a') {
       const { buildTaipeiA3LoadLayerFieldsFromGeojson } = await import(

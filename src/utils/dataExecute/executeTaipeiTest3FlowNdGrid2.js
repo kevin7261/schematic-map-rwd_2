@@ -1,5 +1,5 @@
 /** 網格繪製_2：nd 管線複製（圖層 id 尾碼 _dp_nd_2）
- * 網絡繪製群組（taipei_*_dp_nd）：空間網絡網格測試_3 之分檔複製，import 與邏輯對齊 executeTaipeiTest3Flow／@/utils/taipeiTest3（非 taipeiDataProcTest3）。
+ * import 與邏輯對齊 taipeiTest3／網格繪製 execute 系列。
  * b3…→m3 圖層 id 尾碼 _dp_nd；入口為 network_draw_sketch「執行下一步」→ taipei_b3_dp_nd_2（同測試_3 之 b3 建構函式）。
  */
 

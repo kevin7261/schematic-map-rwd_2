@@ -1,6 +1,6 @@
 /**
  * 空間網絡網格測試_4：taipei_osm_geojson_sn4（geojsonData）→ 寫入 taipei_sn4_a.geojsonData，
- * 作為「a 讀取 GeoJSON 檔案」之輸入（與 executeOsmGeojsonToRouteSegmentsProc2 分檔複製；此處只複製 GeoJSON，不寫入 b 之路網欄位）。
+ * 作為「a 讀取 GeoJSON 檔案」之輸入（此處只複製 GeoJSON，不寫入 b 之路網欄位）。
  */
 
 /* eslint-disable no-console */

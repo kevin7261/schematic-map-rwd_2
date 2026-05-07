@@ -631,13 +631,10 @@
         }
       }
 
-      if (layerId === 'taipei_l3') {
-        refreshTaipeiL3BlackDotHighlightFromLayer(dataStore.findLayerById('taipei_l3'));
-      }
       if (layerId === 'taipei_sn4_l') {
         refreshTaipeiL3BlackDotHighlightFromLayer(dataStore.findLayerById('taipei_sn4_l'));
       }
-      if (layerId === 'taipei_l3_dp' || layerId === 'taipei_l3_dp_2') {
+      if (layerId === 'taipei_l3_dp_nd_2') {
         refreshTaipeiL3BlackDotHighlightFromLayer(dataStore.findLayerById(layerId));
       }
     } catch (error) {
@@ -3974,14 +3971,10 @@
             if (refCoords.length >= 2) {
               const stationDists = refCoords.map((pt) => getStationDistOnPolyline(pt, coords));
               const useL3MergedWeightGreenFill =
-                (layerTab === 'taipei_l3' ||
+                (layerTab === 'taipei_l3_dp_nd_2' ||
                   layerTab === 'taipei_sn4_l' ||
-                  layerTab === 'taipei_m3' ||
-                  layerTab === 'taipei_sn4_m' ||
-                  layerTab === 'taipei_l3_dp' ||
-                  layerTab === 'taipei_m3_dp' ||
-                  layerTab === 'taipei_l3_dp_2' ||
-                  layerTab === 'taipei_m3_dp_2') &&
+                  layerTab === 'taipei_m3_dp_nd_2' ||
+                  layerTab === 'taipei_sn4_m') &&
                 l3BlackDotReducedWeightGreen;
 
               const appendWeightLabel = (px, py) => {
