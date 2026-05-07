@@ -38,5 +38,6 @@
   "scm.diffDecorations": "all",
   "scm.defaultViewMode": "tree",
   "diffEditor.maxComputationTime": 0,
-  "diffEditor.diffAlgorithm": "legacy"
+  "diffEditor.diffAlgorithm": "legacy",
+  "files.useExperimentalFileWatcher": true
 }
