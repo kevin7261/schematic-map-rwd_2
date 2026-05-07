@@ -30,5 +30,10 @@
   },
   "[markdown]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
-  }
+  },
+  "git.enabled": true,
+  "git.autorefresh": true,
+  "scm.alwaysShowRepositories": true,
+  "scm.diffDecorations": "all",
+  "scm.defaultViewMode": "tree"
 }
