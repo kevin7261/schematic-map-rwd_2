@@ -158,8 +158,12 @@ import {
   execute_A6_To_B6,
   execute_B6_To_C6,
   executeOsmGeojsonToTaipeiSn4A,
-  executeOsmGeojsonToTaipeiSn4ASpaceGrid,
 } from '../utils/dataExecute/index.js';
+import {
+  executeOsmGeojsonToTaipeiSn4ASpaceGrid,
+  LAYER_ID as OSM_2_GEOJSON_LAYER_ID,
+  setOsm2GeojsonSessionOsmXml,
+} from '../utils/layers/osm_2_geojson/index.js';
 import {
   getAllNetworkDrawSketchLayerIds,
   networkDrawPipelineB3LayerIdForSketch,
@@ -303,12 +307,7 @@ export const useDataStore = defineStore(
             display: true,
             highlightedSegmentIndex: null,
             squareGridCellsTaipeiTest3: false,
-            upperViewTabs: [
-              'map',
-              'space-network-grid',
-              'dashboard',
-              'space-network-grid-json-data',
-            ],
+            upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
           },
           {
             /** 上半部 NetworkDrawTab：繪線／Hover／加站點（線上點擊插入頂點，不拆成兩條線）／切開（拆成兩條）／刪除；「切分並連線」＝交叉點切分後二路節點合併，執行完進 Hover */
@@ -2179,6 +2178,12 @@ export const useDataStore = defineStore(
           layer.dataTableData = result.dataTableData;
           layer.dashboardData = result.dashboardData;
           layer.layerInfoData = result.layerInfoData;
+          if (
+            layer.layerId === OSM_2_GEOJSON_LAYER_ID &&
+            typeof result.sourceOsmXmlText === 'string'
+          ) {
+            setOsm2GeojsonSessionOsmXml(result.sourceOsmXmlText);
+          }
           if (Object.prototype.hasOwnProperty.call(result, 'trafficData')) {
             layer.trafficData = result.trafficData;
           }

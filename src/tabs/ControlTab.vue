@@ -20,6 +20,13 @@
   import { storeToRefs } from 'pinia';
   import { useDataStore } from '@/stores/dataStore.js';
   import { parseOsmXmlStringToRouteGeoJsonLoadResult } from '@/utils/dataProcessor.js';
+  import {
+    LAYER_ID as OSM_2_GEOJSON_LAYER_ID,
+    mergeOsm2GeojsonLoaderResultIntoLayer,
+    osmXmlToOsm2GeojsonLoaderResult,
+    getOsm2GeojsonPersistPatchAfterLoaderMerge,
+    setOsm2GeojsonSessionOsmXml,
+  } from '@/utils/layers/osm_2_geojson/index.js';
   import { getIcon } from '@/utils/utils.js';
 
   /**
@@ -2838,6 +2845,8 @@
   const layerSegmentStationNodesReport = computed(() => {
     const layer = currentLayer.value;
     if (!layer) return null;
+    /** 僅 OSM/XML→GeoJSON 與衍生 JSON，無空間網格路段資料 */
+    if (layer.layerId === OSM_2_GEOJSON_LAYER_ID) return null;
     /** k／k4／l／m：黑點相銜權重改見 Data 分頁 dataTableData，此處不列節點清單 */
     if (
       layer.layerId === 'taipei_k3_dp_nd_2' ||
@@ -3660,8 +3669,6 @@
   };
 
   const TAIPEI_OSM_GEOJSON_SN4_LAYER_ID = 'taipei_osm_geojson_sn4';
-  const OSM_2_GEOJSON_LAYER_ID = 'osm_2_geojson';
-
   const mergeTaipeiOsmSn4LoaderResultIntoLayer = (layer, result) => {
     layer.jsonData = result.jsonData ?? null;
     layer.processedJsonData = result.processedJsonData ?? null;
@@ -3718,17 +3725,6 @@
     }
   };
 
-  const mergeTaipeiOsmSpaceGridLoaderResultIntoLayer = (layer, result) => {
-    layer.jsonData = result.jsonData ?? null;
-    layer.processedJsonData = result.processedJsonData ?? null;
-    layer.geojsonData = result.geojsonData ?? null;
-    layer.dashboardData = result.dashboardData ?? null;
-    layer.dataTableData = result.dataTableData ?? null;
-    layer.layerInfoData = result.layerInfoData ?? null;
-    layer.isLoaded = true;
-    layer.isLoading = false;
-  };
-
   const onTaipeiOsmSpaceGridOsmPathCommit = (layer, raw) => {
     const v = typeof raw === 'string' ? raw.trim() : '';
     layer.osmFileName = v || null;
@@ -3748,20 +3744,11 @@
     try {
       layer.isLoading = true;
       const text = await file.text();
-      const result = parseOsmXmlStringToRouteGeoJsonLoadResult(text);
+      setOsm2GeojsonSessionOsmXml(text);
+      const result = osmXmlToOsm2GeojsonLoaderResult(text);
       layer.osmFileName = file.name;
-      mergeTaipeiOsmSpaceGridLoaderResultIntoLayer(layer, result);
-      dataStore.saveLayerState(layer.layerId, {
-        osmFileName: layer.osmFileName,
-        jsonData: layer.jsonData,
-        processedJsonData: layer.processedJsonData,
-        geojsonData: layer.geojsonData,
-        dashboardData: layer.dashboardData,
-        dataTableData: layer.dataTableData,
-        layerInfoData: layer.layerInfoData,
-        isLoaded: layer.isLoaded,
-        isLoading: layer.isLoading,
-      });
+      mergeOsm2GeojsonLoaderResultIntoLayer(layer, result);
+      dataStore.saveLayerState(layer.layerId, getOsm2GeojsonPersistPatchAfterLoaderMerge(layer));
     } catch (err) {
       console.error('本機 OSM 讀取失敗:', err);
       layer.isLoading = false;
@@ -6457,6 +6444,27 @@
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">OSM 來源</div>
+          <div class="my-font-size-xs text-muted mb-2" style="line-height: 1.45">
+            <span class="d-block mb-1"
+              ><code class="small">geojsonLoader</code>：<code class="small"
+                >loadOsmXmlAsGeoJsonForRoutes</code
+              >（公開 data 載入）</span
+            >
+            <span class="d-block mb-1 text-break"
+              >模組：<code class="small">@/utils/layers/osm_2_geojson</code></span
+            >
+            <span class="d-block mb-1"
+              >載入流程（自動）：<code class="small">osm_2_geojson</code> →
+              <code class="small">geojson_2_json</code>（由
+              <code class="small">osmXmlToOsm2GeojsonLoaderResult</code> 串接）· 本機選檔與開圖層載入皆同</span
+            >
+            <span class="d-block mb-1"
+              >載入合併：<code class="small">mergeOsm2GeojsonLoaderResultIntoLayer</code></span
+            >
+            <span class="d-block"
+              >執行下一步：<code class="small">executeOsmGeojsonToTaipeiSn4ASpaceGrid</code></span
+            >
+          </div>
           <label class="my-font-size-xs text-muted d-block mb-1"
             >相對於網站 data 目錄的路徑（例：taipei/taipei.osm）</label
           >
@@ -6476,7 +6484,12 @@
             選擇本機 .osm 並讀入
           </button>
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.45">
-            本機選檔會將檔名寫入 osmFileName 並直接解析。
+            開圖層或選檔後會自動：<code class="small">osm_2_geojson</code> →
+            <code class="small">geojson_2_json</code>。<code class="small"
+              >geojson-viewer</code
+            >
+            /
+            <code class="small">json-viewer</code> Upper 分頁可檢視。
           </div>
         </div>
 

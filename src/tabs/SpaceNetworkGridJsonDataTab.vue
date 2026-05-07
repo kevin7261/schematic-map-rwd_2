@@ -71,6 +71,7 @@
    */
   import { useDataStore } from '@/stores/dataStore.js';
   import { copyToClipboard } from '@/utils/utils.js';
+  import { LAYER_ID as OSM_2_LAYER_ID, getOsm2GeojsonSessionOsmXml } from '@/utils/layers/osm_2_geojson/sessionOsmXml.js';
 
   // ==================== 🏪 狀態管理初始化 (State Management Initialization) ====================
 
@@ -100,11 +101,69 @@
       type: Array,
       default: () => [],
     },
+    /**
+     * osm_2_geojson 專用上分頁：`osm-xml` | `osm-geojson` | `osm-derived-json`；空字串＝原本的 space-network-grid-json-data 邏輯
+     */
+    osmViewerMode: {
+      type: String,
+      default: '',
+      validator: (v) =>
+        typeof v === 'string' &&
+        (!v || ['osm-xml', 'osm-geojson', 'osm-derived-json'].includes(v)),
+    },
   });
 
-  // 獲取所有開啟且有空間網絡網格數據的圖層
+  /** 目前選中分頁對應的圖層（osm／一般皆用） */
+  const activeResolvedLayer = computed(() => {
+    if (!activeLayerTab.value) return null;
+    return visibleLayers.value.find((l) => l.layerId === activeLayerTab.value) ?? null;
+  });
+
+  const osmFetched = ref('');
+  const osmError = ref('');
+
+  watch(
+    () => [
+      props.osmViewerMode,
+      activeResolvedLayer.value?.osmFileName,
+      activeResolvedLayer.value?.visible,
+      activeResolvedLayer.value?.isLoaded,
+    ],
+    async () => {
+      if (props.osmViewerMode !== 'osm-xml') return;
+      osmError.value = '';
+      const session = getOsm2GeojsonSessionOsmXml();
+      if (session?.length > 0) {
+        osmFetched.value = session;
+        return;
+      }
+      const fn = activeResolvedLayer.value?.osmFileName;
+      if (!fn || !String(fn).trim()) {
+        osmFetched.value = '';
+        osmError.value = '';
+        return;
+      }
+      try {
+        const baseUrl = process.env.BASE_URL || '/';
+        let res = await fetch(`${baseUrl}data/${fn}`);
+        if (!res.ok) res = await fetch(`/data/${fn}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        osmFetched.value = await res.text();
+      } catch {
+        osmFetched.value = '';
+        osmError.value =
+          `無法從 /data/ 讀取「${fn}」。若以本機檔載入，session 於本次運行期間保留原文。`;
+      }
+    },
+    { immediate: true }
+  );
+
+  // 獲取所有開啟且有可顯示 JSON 之相關圖層
   const visibleLayers = computed(() => {
     const allLayers = dataStore.getAllLayers();
+    if (props.osmViewerMode) {
+      return allLayers.filter((layer) => layer.visible && layer.layerId === OSM_2_LAYER_ID);
+    }
     return allLayers.filter(
       (layer) =>
         layer.visible && (layer.spaceNetworkGridJsonData || layer.processedJsonData != null)
@@ -121,34 +180,107 @@
   };
 
   /**
-   * 📊 當前圖層的空間網絡網格 JSON 數據 (Current Layer Space Network Grid JSON Data)
+   * 📊 當前圖層的「預設分頁」JSON 資料（processedJsonData 優先）（非 osm 專用分頁時使用）
    */
   const currentLayerJsonData = computed(() => {
-    if (!activeLayerTab.value) return null;
+    if (!activeLayerTab.value || props.osmViewerMode) return null;
     const layer = visibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
     if (!layer) return null;
-    /** 路段匯出陣列（與 taipei_city_2026.json 同格式）優先於繪圖用 flat segments */
     if (layer.processedJsonData != null) return layer.processedJsonData;
     return layer.spaceNetworkGridJsonData || null;
   });
 
-  /**
-   * 📊 格式化後的 JSON 字符串 (Formatted JSON String)
-   */
-  const formattedJsonString = computed(() => {
-    if (!currentLayerJsonData.value) return null;
-    try {
-      return JSON.stringify(currentLayerJsonData.value, null, 2);
-    } catch (error) {
-      console.error('格式化 JSON 數據時發生錯誤:', error);
-      return String(currentLayerJsonData.value);
+  const dataSubtitle = computed(() => {
+    if (!props.osmViewerMode) {
+      return '空間網絡網格 JSON 數據 (spaceNetworkGridJsonData)';
     }
+    if (props.osmViewerMode === 'osm-xml') return 'OSM XML 來源（session／public/data）';
+    if (props.osmViewerMode === 'osm-geojson') return 'geojsonData（FeatureCollection）';
+    return '衍生路網欄位（processedJsonData／jsonData／dataTable／儀表等）';
+  });
+
+  /** 空白狀態主文案（內容區） */
+  const emptyContentMessage = computed(() => {
+    if (!props.osmViewerMode)
+      return '此圖層沒有可用的空間網絡網格 JSON 數據';
+    if (props.osmViewerMode === 'osm-xml') return '此圖層沒有可顯示的 OSM XML 文字';
+    if (props.osmViewerMode === 'osm-geojson')
+      return '此圖層沒有可用的 geojsonData';
+    return '此圖層尚無衍生路網欄位（請先載入 OSM）';
+  });
+
+  /** 無可見圖層時外層空狀態 */
+  const emptyLayersMessage = computed(() => {
+    if (!props.osmViewerMode) {
+      return '沒有開啟的圖層或沒有空間網絡網格 JSON 數據';
+    }
+    return '請先開啟「OSM → GeoJSON」圖層';
+  });
+
+  /**
+   * 📊 當前要顯示的字串（JSON 或非 JSON 皆以 pre 呈現）
+   */
+  const formattedDisplayString = computed(() => {
+    const layer = activeResolvedLayer.value;
+    if (!props.osmViewerMode) {
+      if (!currentLayerJsonData.value) return null;
+      try {
+        return JSON.stringify(currentLayerJsonData.value, null, 2);
+      } catch (error) {
+        console.error('格式化 JSON 數據時發生錯誤:', error);
+        return String(currentLayerJsonData.value);
+      }
+    }
+    if (!layer) return null;
+
+    if (props.osmViewerMode === 'osm-xml') {
+      if (osmError.value) return osmError.value;
+      const t = osmFetched.value;
+      return t && String(t).length > 0 ? t : null;
+    }
+    if (props.osmViewerMode === 'osm-geojson') {
+      const g = layer.geojsonData;
+      if (!g || !Array.isArray(g.features) || !g.features.length) return null;
+      try {
+        return JSON.stringify(g, null, 2);
+      } catch (e) {
+        return String(e);
+      }
+    }
+    const bundle = {
+      processedJsonData: layer.processedJsonData ?? undefined,
+      jsonData: layer.jsonData ?? undefined,
+      dataTableData: layer.dataTableData ?? undefined,
+      dashboardData: layer.dashboardData ?? undefined,
+      layerInfoData: layer.layerInfoData ?? undefined,
+    };
+    Object.keys(bundle).forEach((k) => {
+      if (bundle[k] === undefined) delete bundle[k];
+    });
+    if (Object.keys(bundle).length === 0) return null;
+    try {
+      return JSON.stringify(bundle, null, 2);
+    } catch (e) {
+      return String(e);
+    }
+  });
+
+  /** 保留舊名供複製鍵沿用 */
+  const formattedJsonString = formattedDisplayString;
+
+  /** 與 UpperView 分頁 id 一致（osm 三視窗用此取代圖層 layerName，避免三處都顯示「OSM → GeoJSON」） */
+  const viewerUpperTabId = computed(() => {
+    if (!props.osmViewerMode) return '';
+    if (props.osmViewerMode === 'osm-xml') return 'osm-viewer';
+    if (props.osmViewerMode === 'osm-geojson') return 'geojson-viewer';
+    return 'json-viewer';
   });
 
   /**
    * 📊 取得當前選中圖層名稱 (Get Current Selected Layer Name)
    */
   const currentLayerName = computed(() => {
+    if (viewerUpperTabId.value) return viewerUpperTabId.value;
     if (!activeLayerTab.value) return '無開啟圖層';
     const layer = visibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
     return layer ? layer.layerName || '未知圖層' : '無開啟圖層';
@@ -300,7 +432,9 @@
               <span v-if="getLayerFullTitle(layer).groupName" class="my-title-xs-gray"
                 >{{ getLayerFullTitle(layer).groupName }} -
               </span>
-              <span class="my-title-sm-black">{{ getLayerFullTitle(layer).layerName }}</span>
+              <span class="my-title-sm-black">{{
+                viewerUpperTabId || getLayerFullTitle(layer).layerName
+              }}</span>
             </span>
           </div>
           <div class="w-100" :class="`my-bgcolor-${layer.colorName}`" style="min-height: 4px"></div>
@@ -314,14 +448,14 @@
       <div class="p-3 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div>
           <h5 class="my-title-md-black mb-0">{{ currentLayerName }}</h5>
-          <div class="my-title-xs-gray">空間網絡網格 JSON 數據 (spaceNetworkGridJsonData)</div>
+          <div class="my-title-xs-gray">{{ dataSubtitle }}</div>
         </div>
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
           <span v-if="copyFeedback" class="my-title-xs-gray text-nowrap">{{ copyFeedback }}</span>
           <button
             type="button"
             class="btn btn-sm btn-outline-primary"
-            :disabled="!formattedJsonString"
+            :disabled="!formattedJsonString || !String(formattedJsonString).trim()"
             @click="copyJsonOneClick"
           >
             一鍵複製
@@ -330,18 +464,21 @@
       </div>
 
       <!-- 📄 JSON 數據顯示區域 -->
-      <div v-if="formattedJsonString" class="p-3 json-data-container">
+      <div
+        v-if="formattedJsonString && String(formattedJsonString).trim()"
+        class="p-3 json-data-container"
+      >
         <pre class="json-data-pre">{{ formattedJsonString }}</pre>
       </div>
-      <div v-else-if="currentLayerJsonData === null" class="p-3 text-center">
-        <div class="my-title-md-gray py-5">此圖層沒有可用的空間網絡網格 JSON 數據</div>
+      <div v-else class="p-3 text-center">
+        <div class="my-title-md-gray py-5">{{ emptyContentMessage }}</div>
       </div>
     </div>
 
     <!-- 沒有開啟圖層時的空狀態 -->
     <div v-else class="flex-grow-1 d-flex align-items-center justify-content-center">
       <div class="text-center">
-        <div class="my-title-md-gray p-3">沒有開啟的圖層或沒有空間網絡網格 JSON 數據</div>
+        <div class="my-title-md-gray p-3">{{ emptyLayersMessage }}</div>
       </div>
     </div>
   </div>

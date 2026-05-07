@@ -435,7 +435,7 @@ export async function loadDataLayerJson(layer) {
  * @param {Object} geojson
  * @returns {Object}
  */
-function buildStandardRouteGeoJsonLoadResult(geojson) {
+export function buildStandardRouteGeoJsonLoadResult(geojson) {
   const routeFeatures = geojson.features.filter(isGeoJsonWayLineFeature);
 
   const routeMap = new Map();
@@ -567,8 +567,17 @@ export async function loadOsmXmlAsGeoJsonForRoutes(layer) {
     }
 
     const xmlText = await response.text();
+    if (layer?.layerId === 'osm_2_geojson') {
+      const { osmXmlToOsm2GeojsonLoaderResult } = await import(
+        '@/utils/layers/osm_2_geojson/index.js'
+      );
+      return osmXmlToOsm2GeojsonLoaderResult(xmlText);
+    }
     const geojson = osmXmlStringToGeoJsonFeatureCollection(xmlText);
-    return buildStandardRouteGeoJsonLoadResult(geojson);
+    return {
+      ...buildStandardRouteGeoJsonLoadResult(geojson),
+      sourceOsmXmlText: xmlText,
+    };
   } catch (error) {
     console.error('❌ OSM XML 載入或轉 GeoJSON 失敗:', error);
     throw error;
