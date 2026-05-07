@@ -127,7 +127,7 @@ export const TAIPEI_TEST3_BCDEFG_LAYER_IDS = [
   'taipei_c6',
   'taipei_sn4_l',
   'taipei_sn4_m',
-  /** 網格繪製_2：手繪 network_draw_sketch_2 → taipei_*_dp_nd_2 */
+  /** 手繪 network_draw_sketch_2（圖層群組：空間網絡網格）→ taipei_*_dp_nd_2（網格繪製_2） */
   'network_draw_sketch_2',
   'taipei_b3_dp_nd_2',
   'taipei_c3_dp_nd_2',

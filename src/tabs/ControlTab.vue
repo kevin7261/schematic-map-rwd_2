@@ -52,7 +52,6 @@
     towardCenterMoveLabel,
   } from '../utils/gridNormalizationMinDistance.js';
   import { buildMapDrawnRoutesExport } from '@/utils/exportMapDrawnRoutesFromLayer.js';
-  import { sketchPolylinesWgs84ToGeoJsonFeatureCollection } from '@/utils/networkDrawSketchToSpaceNetworkSegments.js';
   import { isRegisteredNetworkDrawSketchLayerId } from '@/utils/networkDrawSketchPipelineLayers.js';
   import { isRegisteredNetworkDrawSketchSn4LayerId } from '@/utils/networkDrawSketchSn4PipelineLayers.js';
   import {
@@ -2558,18 +2557,30 @@
     return Array.isArray(s) ? s.length : 0;
   });
 
-  const networkDrawSketchWgs84GeoJsonDownloadableForLayerId = (layerId) => {
-    if (!isRegisteredNetworkDrawSketchLayerId(layerId)) return false;
-    if (!dataStore.getNetworkDrawSketchUseGeoForLayer(layerId)) return false;
-    const lines = dataStore.getNetworkDrawSketchPolylinesForLayer(layerId);
-    if (Array.isArray(lines) && lines.some((pl) => pl && pl.length >= 2)) return true;
-    const fc = dataStore.findLayerById(layerId)?.networkDrawSketchExportWgs84GeoJson;
-    return !!(
-      fc &&
-      fc.type === 'FeatureCollection' &&
-      Array.isArray(fc.features) &&
-      fc.features.length > 0
-    );
+  const networkDrawSketchImportTargetLayerId = ref(null);
+
+  const openNetworkDrawSketchRoutesJsonPicker = (layerId) => {
+    networkDrawSketchImportTargetLayerId.value = layerId;
+    nextTick(() => {
+      document.getElementById('network-draw-sketch-routes-json-input')?.click();
+    });
+  };
+
+  const onNetworkDrawSketchRoutesJsonFileSelected = async (ev) => {
+    const layerId = networkDrawSketchImportTargetLayerId.value;
+    networkDrawSketchImportTargetLayerId.value = null;
+    const input = ev.target;
+    const file = input?.files?.[0];
+    if (input) input.value = '';
+    if (!file || !layerId) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      dataStore.applyNetworkDrawSketchRoutesExportJsonImport(layerId, parsed);
+    } catch (e) {
+      console.error('[匯入路段 JSON]', e);
+      window.alert(`匯入失敗：${e?.message || String(e)}`);
+    }
   };
 
   const networkDrawSketchSn4Wgs84GeoJsonDownloadableForLayerId = (layerId) => {
@@ -6054,49 +6065,7 @@
     URL.revokeObjectURL(url);
   };
 
-  /** 手繪網絡線圖層：下載 WGS84（EPSG:4326）GeoJSON，與 Leaflet 底圖一致 */
-  const downloadNetworkDrawSketchGeoJson = (sketchLayerId) => {
-    const lid =
-      typeof sketchLayerId === 'string' && isRegisteredNetworkDrawSketchLayerId(sketchLayerId)
-        ? sketchLayerId
-        : currentLayer.value?.layerId;
-    if (!isRegisteredNetworkDrawSketchLayerId(lid)) return;
-    if (!dataStore.getNetworkDrawSketchUseGeoForLayer(lid)) return;
-
-    let fc = null;
-    const lines = dataStore.getNetworkDrawSketchPolylinesForLayer(lid);
-    if (Array.isArray(lines) && lines.some((pl) => pl && pl.length >= 2)) {
-      fc = sketchPolylinesWgs84ToGeoJsonFeatureCollection(lines, {
-        markersWgs84: dataStore.getNetworkDrawSketchMarkersForLayer(lid),
-      });
-    }
-    if (!fc?.features?.length) {
-      fc = dataStore.findLayerById(lid)?.networkDrawSketchExportWgs84GeoJson;
-    }
-    if (
-      !fc ||
-      fc.type !== 'FeatureCollection' ||
-      !Array.isArray(fc.features) ||
-      fc.features.length === 0
-    )
-      return;
-
-    const json = JSON.stringify(fc, null, 2);
-    const blob = new Blob([json], { type: 'application/geo+json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download =
-      lid === 'network_draw_sketch_2'
-        ? 'network_draw_sketch_2_routes_wgs84.geojson'
-        : 'network_draw_sketch_routes_wgs84.geojson';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  /** 測試_4 taipei_sn4_a：下載 WGS84 GeoJSON（與 downloadNetworkDrawSketchGeoJson 分檔複製） */
+  /** 測試_4 taipei_sn4_a：下載 WGS84 GeoJSON */
   const downloadNetworkDrawSketchSn4GeoJson = (sketchLayerId) => {
     const lid =
       typeof sketchLayerId === 'string' && isRegisteredNetworkDrawSketchSn4LayerId(sketchLayerId)
@@ -6316,18 +6285,20 @@
                 <span>{{ getLayerFullTitle(layer).layerName }}</span>
               </span>
             </div>
-            <!-- 與上半部圓鈕同版型：有 map / hand-draw 之上半分頁時顯示捷徑 -->
-            <button
-              v-for="s in layerUpperTabShortcuts(layer)"
-              :key="layer.layerId + '-up-' + s.tab"
-              type="button"
-              class="btn rounded-circle border-0 d-flex align-items-center justify-content-center my-btn-transparent my-font-size-xs flex-shrink-0"
-              :title="s.title"
-              style="width: 30px; min-width: 30px; height: 30px"
-              @click.stop="openHomeUpperTab(s.tab)"
-            >
-              <i :class="getIcon(s.iconKey).icon"></i>
-            </button>
+            <!-- 手繪主圖層僅保留下方匯入區，不顯示上半分頁捷徑 -->
+            <template v-if="!isRegisteredNetworkDrawSketchLayerId(layer.layerId)">
+              <button
+                v-for="s in layerUpperTabShortcuts(layer)"
+                :key="layer.layerId + '-up-' + s.tab"
+                type="button"
+                class="btn rounded-circle border-0 d-flex align-items-center justify-content-center my-btn-transparent my-font-size-xs flex-shrink-0"
+                :title="s.title"
+                style="width: 30px; min-width: 30px; height: 30px"
+                @click.stop="openHomeUpperTab(s.tab)"
+              >
+                <i :class="getIcon(s.iconKey).icon"></i>
+              </button>
+            </template>
           </div>
           <div class="w-100" :class="`my-bgcolor-${layer.colorName}`" style="min-height: 4px"></div>
         </li>
@@ -6336,29 +6307,38 @@
 
     <!-- 📋 圖層操作內容區域 -->
     <div v-if="visibleLayers.length > 0" class="flex-grow-1 overflow-auto p-3 my-bgcolor-white">
+      <input
+        id="network-draw-sketch-routes-json-input"
+        type="file"
+        accept=".json,application/json"
+        class="d-none"
+        @change="onNetworkDrawSketchRoutesJsonFileSelected"
+      />
       <div
         v-for="layer in validVisibleLayers"
         :key="layer.layerId"
         v-show="activeLayerTab === layer.layerId"
       >
-        <!-- 手繪網絡線圖層：地圖模式可下載與底圖相同之 WGS84 GeoJSON -->
+        <!-- 手繪網絡線：匯入路段匯出 JSON（頂層陣列） -->
         <div
-          v-if="
-            isRegisteredNetworkDrawSketchLayerId(layer.layerId) &&
-            networkDrawSketchWgs84GeoJsonDownloadableForLayerId(layer.layerId)
-          "
+          v-if="isRegisteredNetworkDrawSketchLayerId(layer.layerId)"
           class="pb-3 mb-3 border-bottom"
         >
-          <div class="my-title-xs-gray pb-2">匯出</div>
+          <div class="my-title-xs-gray pb-2">匯入</div>
           <button
             type="button"
             class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
-            @click="downloadNetworkDrawSketchGeoJson(layer.layerId)"
+            @click="openNetworkDrawSketchRoutesJsonPicker(layer.layerId)"
           >
-            下載 GeoJSON（WGS84 經緯度）
+            匯入路段 JSON
           </button>
+          <div class="my-font-size-xs text-muted mt-2">
+            頂層為陣列；每筆含 routeName、segment；routeCoordinates 可為程式匯出的 [起點,[轉折],迄點]，或連續
+            [[lon,lat],…] 折線（至少兩點）。
+          </div>
         </div>
 
+        <template v-if="!isRegisteredNetworkDrawSketchLayerId(layer.layerId)">
         <!-- 測試_4 taipei_sn4_a：手繪匯出 GeoJSON -->
         <div
           v-if="
@@ -9168,6 +9148,7 @@
             合併黑點路段 (權重差&lt;=3)
           </button>
         </div>
+        </template>
       </div>
     </div>
 

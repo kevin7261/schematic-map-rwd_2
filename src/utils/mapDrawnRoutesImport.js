@@ -174,11 +174,34 @@ export function expandHVChainFromRouteCoordinates(routeCoordinates) {
   return out;
 }
 
+/** 單一 [lon,lat] 或相容格式 */
+function isLonLatPair(p) {
+  return (
+    Array.isArray(p) &&
+    p.length >= 2 &&
+    Number.isFinite(Number(p[0])) &&
+    Number.isFinite(Number(p[1]))
+  );
+}
+
 /**
  * routeCoordinates: [ start, bends[], end ] → 僅串接頂點（經緯度折線，不做 HV 格點展開）
+ * 另支援：頂層即折線頂點陣列 [[lon,lat], ...]（長度 ≥ 2），與程式匯出之三元組相容
  */
 export function expandLonLatChainFromRouteCoordinates(routeCoordinates) {
-  if (!Array.isArray(routeCoordinates) || routeCoordinates.length !== 3) return [];
+  if (!Array.isArray(routeCoordinates)) return [];
+  if (routeCoordinates.length >= 2 && routeCoordinates.every(isLonLatPair)) {
+    const out = [];
+    for (const p of routeCoordinates) {
+      const nx = num(p[0]);
+      const ny = num(p[1]);
+      const last = out[out.length - 1];
+      if (last && last[0] === nx && last[1] === ny) continue;
+      out.push([nx, ny]);
+    }
+    return out.length >= 2 ? out : [];
+  }
+  if (routeCoordinates.length !== 3) return [];
   const [pStart, bends, pEnd] = routeCoordinates;
   const out = [];
   const pushPt = (p) => {
@@ -344,6 +367,44 @@ export function isMapDrawnRoutesExportArray(jsonData) {
       Array.isArray(row.routeCoordinates) &&
       row.routeCoordinates.length === 3
   );
+}
+
+/**
+ * 手繪圖層 JSON 匯入：含既有 [起點, bends, 迄點] 三元組，或頂層為 [[lon,lat],…] 之折線（≥2 點）
+ */
+function rowIsClassicMapDrawnExport(row) {
+  return (
+    row &&
+    typeof row === 'object' &&
+    typeof row.routeName === 'string' &&
+    row.segment &&
+    typeof row.segment === 'object' &&
+    row.segment.start != null &&
+    row.segment.end != null &&
+    Array.isArray(row.routeCoordinates) &&
+    row.routeCoordinates.length === 3
+  );
+}
+
+function rowIsLonLatPolylineMapDrawnExport(row) {
+  return (
+    row &&
+    typeof row === 'object' &&
+    typeof row.routeName === 'string' &&
+    row.segment &&
+    typeof row.segment === 'object' &&
+    row.segment.start != null &&
+    row.segment.end != null &&
+    Array.isArray(row.routeCoordinates) &&
+    row.routeCoordinates.length >= 2 &&
+    row.routeCoordinates.every(isLonLatPair)
+  );
+}
+
+/** @param {*} jsonData - 解析後 JSON 根 */
+export function isNetworkDrawSketchRoutesExportJsonArray(jsonData) {
+  if (!Array.isArray(jsonData) || jsonData.length === 0) return false;
+  return jsonData.every((row) => rowIsClassicMapDrawnExport(row) || rowIsLonLatPolylineMapDrawnExport(row));
 }
 
 /**

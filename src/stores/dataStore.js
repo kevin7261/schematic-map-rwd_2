@@ -127,6 +127,7 @@ import {
   buildPlotMarkersFromSketchMarkersPx,
   sketchPolylinesWgs84ToGeoJsonFeatureCollection,
 } from '../utils/networkDrawSketchToSpaceNetworkSegments.js';
+import { buildTaipeiB3ExecuteLayerFieldsFromGeojson } from '../utils/taipeiTest3/buildTaipeiA3StyleLayerFieldsFromGeojson.js';
 
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
@@ -172,6 +173,10 @@ import {
   readSn4SketchPolylinesFromLayerGeojson,
   readSn4SketchStationMarkersFromLayerGeojson,
 } from '../utils/mergeSn4SketchIntoLayerGeojson.js';
+import {
+  isNetworkDrawSketchRoutesExportJsonArray,
+  mapDrawnExportRowsToFlatSegmentsLonLat,
+} from '../utils/mapDrawnRoutesImport.js';
 
 // ==================== 📦 主要數據存儲定義 (Main Data Store Definition) ====================
 
@@ -262,6 +267,70 @@ export const useDataStore = defineStore(
      * @since 1.0.0
      */
     const layers = ref([
+      {
+        groupName: '空間網絡網格',
+        groupLayers: [
+          {
+            /** 上半部 NetworkDrawTab：繪線／Hover／加站點（線上點擊插入頂點，不拆成兩條線）／切開（拆成兩條）／刪除；「切分並連線」＝交叉點切分後二路節點合併，執行完進 Hover */
+            layerId: 'network_draw_sketch_2',
+            layerName: '手繪網絡線',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'cyan',
+            jsonData: null,
+            trafficData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            spaceNetworkGridJsonDataK3Tab: null,
+            spaceNetworkGridJsonDataK3Tab_SectionData: null,
+            spaceNetworkGridJsonDataK3Tab_ConnectData: null,
+            spaceNetworkGridJsonDataK3Tab_StationData: null,
+            processedJsonDataK3Tab: null,
+            showStationPlacement: false,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            /** GeoJSON FeatureCollection（node＝Point、way＝LineString，properties 扁平；與 thesis `data/taipei/taipei.geojson`／專案 `public/data/taipei/taipei.geojson` 同構）；首次開啟圖層時載入該檔 */
+            geojsonData: { type: 'FeatureCollection', features: [] },
+            /** 上次「執行下一步」匯出之 WGS84 GeoJSON（供離線下載；即時下載以 store 折線為準） */
+            networkDrawSketchExportWgs84GeoJson: null,
+            /** 由手繪同步：匯出列（與 execute 寫入 b 層同源）；底圖載入不寫入此欄 */
+            processedJsonData: null,
+            /** 已從檔案匯入路段 JSON／GeoJSON 且手繪尚無折線時，避免 refresh 清空欄位 */
+            networkDrawSketchPreserveImportedRoutesJson: false,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            csvLoader_Traffic: null,
+            geojsonLoader: loadGeoJsonForRoutes,
+            processToDrawData: null,
+            geojsonFileName: 'taipei/taipei.geojson',
+            jsonFileName: null,
+            csvFileName_traffic: null,
+            /** 手繪輸出 GeoJSON → taipei_b3_dp_nd_2（與 taipeiTest3 建構 b3 同源） */
+            executeFunction: executeOsmGeojsonToRouteSegmentsNdSketch2,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            /** UpperView 分頁聯集：手繪、WGS84 底圖、路網示意、JSON 數據（見 UpperView isTabEnabled） */
+            upperViewTabs: [
+              'network-draw-lines',
+              'map',
+              'space-network-grid',
+              'space-network-grid-json-data',
+            ],
+          },
+        ],
+      },
       {
         groupName: '空間網絡網格測試_4',
         groupLayers: [
@@ -996,57 +1065,6 @@ export const useDataStore = defineStore(
       {
         groupName: '網格繪製_2',
         groupLayers: [
-          {
-            /** 上半部 NetworkDrawTab：繪線／Hover／加站點（線上點擊插入頂點，不拆成兩條線）／切開（拆成兩條）／刪除；「切分並連線」＝交叉點切分後二路節點合併，執行完進 Hover */
-            layerId: 'network_draw_sketch_2',
-            layerName: '手繪網絡線',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'cyan',
-            jsonData: null,
-            trafficData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            spaceNetworkGridJsonDataK3Tab: null,
-            spaceNetworkGridJsonDataK3Tab_SectionData: null,
-            spaceNetworkGridJsonDataK3Tab_ConnectData: null,
-            spaceNetworkGridJsonDataK3Tab_StationData: null,
-            processedJsonDataK3Tab: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            /** GeoJSON FeatureCollection（node＝Point、way＝LineString，properties 扁平；與 thesis `data/taipei/taipei.geojson`／專案 `public/data/taipei/taipei.geojson` 同構）；首次開啟圖層時載入該檔 */
-            geojsonData: { type: 'FeatureCollection', features: [] },
-            /** 上次「執行下一步」匯出之 WGS84 GeoJSON（供離線下載；即時下載以 store 折線為準） */
-            networkDrawSketchExportWgs84GeoJson: null,
-            processedJsonData: { type: 'FeatureCollection', features: [] },
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            csvLoader_Traffic: null,
-            geojsonLoader: loadGeoJsonForRoutes,
-            processToDrawData: null,
-            geojsonFileName: 'taipei/taipei.geojson',
-            jsonFileName: null,
-            csvFileName_traffic: null,
-            /** 手繪輸出 GeoJSON → taipei_b3_dp_nd_2（與 taipeiTest3 建構 b3 同源） */
-            executeFunction: executeOsmGeojsonToRouteSegmentsNdSketch2,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            squareGridCellsTaipeiTest3: false,
-            /** 含手繪分頁與空間網格；不含地圖分頁 */
-            upperViewTabs: ['network-draw-lines', 'space-network-grid'],
-          },
           {
             layerId: 'taipei_b3_dp_nd_2',
             layerName: 'b 站點直線化',
@@ -2944,6 +2962,99 @@ export const useDataStore = defineStore(
       }
     };
 
+    /** 手繪 WGS84 → 與 execute 相同之匯出列／flat segments，供「空間網絡網格 JSON 數據」分頁顯示 */
+    const refreshNetworkDrawSketchLayerExportJsonFields = (sketchLayerId) => {
+      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
+      const sketchLayer = findLayerById(sketchLayerId);
+      const lines = getNetworkDrawSketchPolylinesForLayer(sketchLayerId);
+      const markers = getNetworkDrawSketchMarkersForLayer(sketchLayerId);
+      const useGeo = getNetworkDrawSketchUseGeoForLayer(sketchLayerId);
+      const hasLines = Array.isArray(lines) && lines.some((pl) => pl && pl.length >= 2);
+      const importedRoutesPending =
+        sketchLayer?.networkDrawSketchPreserveImportedRoutesJson &&
+        Array.isArray(sketchLayer.processedJsonData) &&
+        sketchLayer.processedJsonData.length > 0;
+
+      const clearDerived = () => {
+        if (!sketchLayer) return;
+        sketchLayer.processedJsonData = null;
+        sketchLayer.spaceNetworkGridJsonData = null;
+        sketchLayer.spaceNetworkGridJsonData_SectionData = null;
+        sketchLayer.spaceNetworkGridJsonData_ConnectData = null;
+        sketchLayer.spaceNetworkGridJsonData_StationData = null;
+        sketchLayer.networkDrawSketchExportWgs84GeoJson = null;
+        sketchLayer.showStationPlacement = false;
+        sketchLayer.dashboardData = null;
+        sketchLayer.networkDrawSketchPreserveImportedRoutesJson = false;
+      };
+
+      if (!sketchLayer) return;
+
+      if (!hasLines || !useGeo) {
+        if (importedRoutesPending) return;
+        clearDerived();
+        return;
+      }
+
+      sketchLayer.networkDrawSketchPreserveImportedRoutesJson = false;
+
+      try {
+        const fc = sketchPolylinesWgs84ToGeoJsonFeatureCollection(lines, { markersWgs84: markers });
+        const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(fc);
+        sketchLayer.processedJsonData = derived.processedJsonData;
+        sketchLayer.spaceNetworkGridJsonData = derived.spaceNetworkGridJsonData;
+        sketchLayer.spaceNetworkGridJsonData_SectionData = derived.spaceNetworkGridJsonData_SectionData;
+        sketchLayer.spaceNetworkGridJsonData_ConnectData = derived.spaceNetworkGridJsonData_ConnectData;
+        sketchLayer.spaceNetworkGridJsonData_StationData = derived.spaceNetworkGridJsonData_StationData;
+        sketchLayer.showStationPlacement = derived.showStationPlacement;
+        sketchLayer.dashboardData = {
+          ...derived.dashboardData,
+          sourceLayerId: sketchLayerId,
+          segmentExportSource: 'network_draw_sketch_wgs84',
+        };
+        sketchLayer.networkDrawSketchExportWgs84GeoJson = JSON.parse(JSON.stringify(fc));
+      } catch {
+        clearDerived();
+      }
+    };
+
+    /**
+     * 手繪圖層：自檔案匯入「路段匯出」JSON 陣列 → 寫入手繪折線（network-draw-lines 讀 store 折線）
+     * 並 refresh 衍生欄位。僅接受頂層陣列，不接受 GeoJSON。
+     */
+    const applyNetworkDrawSketchRoutesExportJsonImport = (sketchLayerId, parsedRoot) => {
+      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
+      const sketchLayer = findLayerById(sketchLayerId);
+      if (!sketchLayer) return;
+
+      if (!isNetworkDrawSketchRoutesExportJsonArray(parsedRoot)) {
+        throw new Error(
+          '頂層須為路段匯出陣列：每筆須含 routeName、segment、routeCoordinates（[起點,[轉折],迄點] 或 [[lon,lat],…]）'
+        );
+      }
+
+      const flatSegs = mapDrawnExportRowsToFlatSegmentsLonLat(parsedRoot);
+      if (!flatSegs.length) {
+        throw new Error('無法還原為路段（routeCoordinates 須至少兩點）');
+      }
+
+      const polylines = flatSegs.map((seg) => {
+        const pts = Array.isArray(seg.points) ? seg.points : [];
+        return pts
+          .filter((p) => Array.isArray(p) && p.length >= 2)
+          .map((p) => ({ x: Number(p[0]), y: Number(p[1]) }));
+      }).filter((pl) => pl.length >= 2);
+
+      if (!polylines.length) {
+        throw new Error('無有效折線頂點');
+      }
+
+      setNetworkDrawSketchUseGeo(true, sketchLayerId);
+      setNetworkDrawSketchMarkers(defaultNdSketchMarkers(), sketchLayerId);
+      setNetworkDrawSketchPolylines(polylines, sketchLayerId);
+      refreshNetworkDrawSketchLayerExportJsonFields(sketchLayerId);
+    };
+
     /** 測試_4 taipei_sn4_a：僅保留 useGeo 旗標；折線／標記一律由 layer.geojsonData 解析 */
     const buildDefaultNetworkDrawSketchSn4Bundle = () => {
       const o = {};
@@ -3594,6 +3705,8 @@ export const useDataStore = defineStore(
       getNetworkDrawSketchMarkersForLayer,
       getNetworkDrawSketchUseGeoForLayer,
       setNetworkDrawSketchPolylines,
+      refreshNetworkDrawSketchLayerExportJsonFields,
+      applyNetworkDrawSketchRoutesExportJsonImport,
       networkDrawSketchUseGeo,
       setNetworkDrawSketchUseGeo,
       networkDrawSketchMarkers,

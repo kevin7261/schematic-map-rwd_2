@@ -80,7 +80,7 @@ function executeOsmGeojsonToRouteSegmentsNdWithPair(sketchLayerId, targetB3Layer
   console.log(`executeOsmGeojsonToRouteSegmentsNd：已由 ${sketchLayerId} 寫入 ${targetB3LayerId}`);
 }
 
-/** 網格繪製_2 群組：手繪 sketch → taipei_b3_dp_nd_2 */
+/** 空間網絡網格群組 `network_draw_sketch_2`：手繪 sketch → taipei_b3_dp_nd_2（管線圖層仍於「網格繪製_2」） */
 export function executeOsmGeojsonToRouteSegmentsNdSketch2() {
   executeOsmGeojsonToRouteSegmentsNdWithPair('network_draw_sketch_2', 'taipei_b3_dp_nd_2');
 }

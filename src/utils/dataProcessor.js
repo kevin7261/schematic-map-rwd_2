@@ -509,6 +509,18 @@ export async function loadGeoJsonForRoutes(layer) {
 
     const geojson = await response.json();
 
+    /** 手繪網絡線：底圖僅供 Leaflet 參考；JSON 分頁只顯示手繪同步之匯出列／segments（見 refreshNetworkDrawSketchLayerExportJsonFields） */
+    if (layer?.layerId === 'network_draw_sketch_2') {
+      return {
+        jsonData: null,
+        processedJsonData: null,
+        geojsonData: geojson,
+        dashboardData: { totalRoutes: 0, routeNames: [] },
+        dataTableData: [],
+        layerInfoData: { totalRoutes: 0, routeNames: [] },
+      };
+    }
+
     /** 空間網絡網格測試_4 taipei_sn4_a：與 executeTaipeiTest4_A3_To_B3 同一建構來源（@/utils/taipeiTest4，不共用 taipeiTest3） */
     if (layer?.layerId === 'taipei_sn4_a') {
       const { buildTaipeiA3LoadLayerFieldsFromGeojson } = await import(

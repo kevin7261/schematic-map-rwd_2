@@ -500,6 +500,14 @@
     });
   });
 
+  /** 與 store 回填比對用（避免繪製→persist→watch 無限來回） */
+  const stringifySketchLinesForCompare = (lines) =>
+    JSON.stringify(
+      (Array.isArray(lines) ? lines : []).map((pl) =>
+        Array.isArray(pl) ? pl.map((p) => [Number(p.x), Number(p.y)]) : []
+      )
+    );
+
   const loadLocalSketchFromStore = (layerId) => {
     if (!isRegisteredNetworkDrawSketchLayerId(layerId)) return;
     const lines = dataStore.getNetworkDrawSketchPolylinesForLayer(layerId);
@@ -527,6 +535,7 @@
       },
       layerId
     );
+    dataStore.refreshNetworkDrawSketchLayerExportJsonFields(layerId);
   };
 
   const setActiveLayerTab = (layerId) => {
@@ -558,10 +567,8 @@
   /** 與 dataStore 同步折線＋紅／藍／綠點（供 Control「執行下一步」與 store 對齊） */
   const syncNetworkDrawSketchToStore = () => {
     const lid = activeLayerTab.value;
-    if (!sketchLayerReady.value) {
-      dataStore.setNetworkDrawSketchPolylines([], lid);
-      return;
-    }
+    // 左欄未開啟圖層時僅不落筆到此分頁，勿清空 store（否則 JSON 匯入會被擦掉）
+    if (!sketchLayerReady.value) return;
     persistLocalSketchToStore(lid);
   };
 
@@ -734,6 +741,8 @@
     if (layerId !== activeLayerTab.value) {
       setActiveLayerTab(layerId);
     } else {
+      /** 同上層 tab 不切分頁時仍須反映 store（例：下半 Control 匯入 JSON → 此地圖讀 bundle） */
+      if (isRegisteredNetworkDrawSketchLayerId(layerId)) loadLocalSketchFromStore(layerId);
       emit('active-layer-change', layerId);
     }
   };
@@ -768,6 +777,29 @@
       }
     }
   );
+
+  /** Control 側匯入 JSON 等非本視圖寫 store 後，將 bundle 拉回本地繪區（無此則地圖仍顯示舊 finishedPolylines） */
+  watch(
+    () => dataStore.getNetworkDrawSketchPolylinesForLayer(activeLayerTab.value),
+    () => {
+      if (!props.isActive) return;
+      const lid = activeLayerTab.value;
+      if (!isRegisteredNetworkDrawSketchLayerId(lid)) return;
+      const fromStore = stringifySketchLinesForCompare(dataStore.getNetworkDrawSketchPolylinesForLayer(lid));
+      const local = stringifySketchLinesForCompare(finishedPolylines.value);
+      if (fromStore === local) return;
+      loadLocalSketchFromStore(lid);
+    },
+    { deep: true }
+  );
+
+  /** 上次因圖層未開啟而跳過繪製時不清 store；開啟可見後與 Pinia 對齊 */
+  watch(sketchLayerReady, (ready) => {
+    if (!ready || !props.isActive) return;
+    const lid = activeLayerTab.value;
+    if (!isRegisteredNetworkDrawSketchLayerId(lid)) return;
+    loadLocalSketchFromStore(lid);
+  });
 
   watch(
     () => props.containerHeight,
