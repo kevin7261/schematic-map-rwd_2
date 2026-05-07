@@ -66,7 +66,6 @@ const routes = [
     name: 'Home', // 路由名稱，用於程式化導航
     component: HomeView, // 對應的 Vue 組件
     meta: {
-      title: '首頁', // 頁面標題
       description: 'Schematic Map 2 響應式示意圖展示平台', // 頁面描述
       requiresAuth: false, // 是否需要身份驗證
     },
@@ -152,12 +151,7 @@ const router = createRouter({
  * @param {Function} next - 路由控制函數
  */
 router.beforeEach((to, from, next) => {
-  // 設定頁面標題
-  if (to.meta.title) {
-    document.title = `${to.meta.title} - Schematic Map 2`;
-  } else {
-    document.title = 'Schematic Map 2';
-  }
+  document.title = '示意圖響應式網站 2';
 
   // 記錄路由切換日誌（開發環境）
   // 繼續路由導航
