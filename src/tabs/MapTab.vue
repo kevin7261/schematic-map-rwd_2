@@ -340,20 +340,34 @@
               const tags = getGeoJsonFeatureTagProps(feature);
               const routeColor = tags.color || '#666666';
 
+              const baseRouteStyle = {
+                color: routeColor,
+                weight: 3,
+                opacity: 0.9,
+                fillColor: routeColor,
+                fillOpacity: 0.8,
+              };
+              const hoverRouteStyle = {
+                color: routeColor,
+                weight: 8,
+                opacity: 1,
+                fillColor: routeColor,
+                fillOpacity: 0.95,
+              };
+
               const routeLayer = L.geoJSON(feature, {
-                style: {
-                  color: routeColor,
-                  weight: 3, // 細一點的路線
-                  opacity: 0.9,
-                  fillColor: routeColor,
-                  fillOpacity: 0.8,
-                },
+                style: baseRouteStyle,
                 pane: 'overlayPane', // 確保路線在 overlayPane
               });
 
-              // 添加 hover 事件顯示 tags
+              const applyRouteStyle = (style) => {
+                routeLayer.eachLayer((ly) => {
+                  if (ly && typeof ly.setStyle === 'function') ly.setStyle(style);
+                });
+              };
+
+              // 添加 hover：整條線（同一 feature 內所有 path，含 MultiLineString）一併加粗高亮
               routeLayer.eachLayer((layer) => {
-                // 確保每個子圖層都在 overlayPane
                 if (layer.setPane) {
                   layer.setPane('overlayPane');
                 }
@@ -370,7 +384,15 @@
                 );
 
                 layer.on('mouseover', function () {
+                  applyRouteStyle(hoverRouteStyle);
+                  routeLayer.eachLayer((ly) => {
+                    if (ly && typeof ly.bringToFront === 'function') ly.bringToFront();
+                  });
                   this.openPopup();
+                });
+                layer.on('mouseout', function () {
+                  applyRouteStyle(baseRouteStyle);
+                  this.closePopup();
                 });
               });
 
@@ -385,21 +407,36 @@
             stationFeatures.forEach((feature) => {
               const tags = getGeoJsonFeatureTagProps(feature);
 
+              const baseStationStyle = {
+                radius: 1.5,
+                color: '#000000',
+                weight: 1,
+                fillColor: '#000000',
+                fillOpacity: 1,
+                pane: 'markerPane',
+              };
+              const hoverStationStyle = {
+                radius: 6,
+                color: '#0d6efd',
+                weight: 2,
+                fillColor: '#6ea8fe',
+                fillOpacity: 1,
+                pane: 'markerPane',
+              };
+
               const stationLayer = L.geoJSON(feature, {
                 pointToLayer: (feature, latlng) =>
-                  L.circleMarker(latlng, {
-                    radius: 1.5, // 直徑等於路線寬度（weight: 3）
-                    color: '#000000',
-                    weight: 1,
-                    fillColor: '#000000',
-                    fillOpacity: 1,
-                    pane: 'markerPane', // 使用 markerPane 確保在路線上方
-                  }),
+                  L.circleMarker(latlng, { ...baseStationStyle }),
               });
 
-              // 添加 hover 事件顯示 tags
+              const applyStationStyle = (style) => {
+                stationLayer.eachLayer((ly) => {
+                  if (ly && typeof ly.setStyle === 'function') ly.setStyle(style);
+                });
+              };
+
+              // hover：整個點（同一 feature 之 circleMarker）放大並變色
               stationLayer.eachLayer((layer) => {
-                // 確保車站在 markerPane（在路線上方）
                 if (layer.setPane) {
                   layer.setPane('markerPane');
                 }
@@ -416,7 +453,13 @@
                 );
 
                 layer.on('mouseover', function () {
+                  applyStationStyle(hoverStationStyle);
+                  if (typeof this.bringToFront === 'function') this.bringToFront();
                   this.openPopup();
+                });
+                layer.on('mouseout', function () {
+                  applyStationStyle(baseStationStyle);
+                  this.closePopup();
                 });
               });
 
