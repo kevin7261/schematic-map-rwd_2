@@ -8,6 +8,7 @@
     getGeoJsonFeatureTagProps,
     isGeoJsonNodePointFeature,
     isGeoJsonWayLineFeature,
+    normalizeRouteSegmentEndpointType,
   } from '@/utils/geojsonRouteHelpers.js';
   import {
     expandLonLatChainFromRouteCoordinates,
@@ -242,10 +243,11 @@
         if (has) map.fitBounds(bounds, { padding: [40, 40] });
       };
 
-      /** 與路段 JSON segment.start／end.type 一致：terminal 藍、intersection 紅、其餘黑 */
+      /** 與路段 JSON segment.start／end.type 一致：terminal 藍、intersection 紅、normal／其餘黑 */
       const circleStyleForJsonEndpointType = (type, hover) => {
+        const t = normalizeRouteSegmentEndpointType(type);
         const h = !!hover;
-        if (type === 'terminal') {
+        if (t === 'terminal') {
           return h
             ? {
                 radius: 7,
@@ -264,7 +266,7 @@
                 pane: 'markerPane',
               };
         }
-        if (type === 'intersection') {
+        if (t === 'intersection') {
           return h
             ? {
                 radius: 7,
@@ -606,7 +608,7 @@
             // 繪製車站（依 JSON／tags 之 type：terminal 藍、intersection 紅、其餘黑）
             stationFeatures.forEach((feature) => {
               const tags = getGeoJsonFeatureTagProps(feature);
-              const ptType = tags.type;
+              const ptType = normalizeRouteSegmentEndpointType(tags.type);
               const baseStationStyle = circleStyleForJsonEndpointType(ptType, false);
               const hoverStationStyle = circleStyleForJsonEndpointType(ptType, true);
 

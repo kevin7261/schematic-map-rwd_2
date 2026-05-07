@@ -28,3 +28,13 @@ export function getGeoJsonRouteStableId(feature) {
   const idFallback = feature.properties?.id ?? feature.properties?.osm_id ?? 'unknown';
   return tags.route_id || tags.route_name || `route_${idFallback}`;
 }
+
+/**
+ * 路段 JSON segment 端點之 type：僅允許 terminal／intersection，其餘一律 normal（含缺省、未知字串）
+ * @param {string|undefined|null} type
+ * @returns {'terminal'|'intersection'|'normal'}
+ */
+export function normalizeRouteSegmentEndpointType(type) {
+  if (type === 'terminal' || type === 'intersection') return type;
+  return 'normal';
+}

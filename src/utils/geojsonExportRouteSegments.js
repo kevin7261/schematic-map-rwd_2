@@ -3,7 +3,7 @@
  * 輸出：{ routeName, color, segment: { start, stations, end }, routeCoordinates }[]
  */
 
-import { getGeoJsonFeatureTagProps } from './geojsonRouteHelpers.js';
+import { getGeoJsonFeatureTagProps, normalizeRouteSegmentEndpointType } from './geojsonRouteHelpers.js';
 
 function num(v) {
   return Number(v);
@@ -105,7 +105,7 @@ function snapStation(s) {
     route_name_list: [...(s.route_name_list || [])],
     x_grid: s.x_grid,
     y_grid: s.y_grid,
-    type: s.type,
+    type: normalizeRouteSegmentEndpointType(s.type),
     connect_number: s.connect_number,
   };
 }
@@ -224,6 +224,7 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
             station_name: ms.station_name,
             x_grid: ms.x_grid,
             y_grid: ms.y_grid,
+            type: 'normal',
           }));
           const midCoords = currentMidStations.map((ms) => [ms.x_grid, ms.y_grid]);
 

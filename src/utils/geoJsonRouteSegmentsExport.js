@@ -3,6 +3,8 @@
  * 並轉成 SpaceNetworkGridTab 可繪製的 Normalize segments（points + properties_start/end + way_properties）。
  */
 
+import { normalizeRouteSegmentEndpointType } from './geojsonRouteHelpers.js';
+
 /** GeoJSON feature.properties 可能為 { tags } 或已扁平 */
 function flatFeatureProps(feature) {
   const p = feature?.properties;
@@ -120,6 +122,7 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
               station_name: ms.station_name,
               x_grid: ms.x_grid,
               y_grid: ms.y_grid,
+              type: 'normal',
             });
             midCoords.push([ms.x_grid, ms.y_grid]);
           }
@@ -134,7 +137,7 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
                 route_name_list: currentSegmentStart.route_name_list,
                 x_grid: currentSegmentStart.x_grid,
                 y_grid: currentSegmentStart.y_grid,
-                type: currentSegmentStart.type,
+                type: normalizeRouteSegmentEndpointType(currentSegmentStart.type),
                 connect_number: currentSegmentStart.connect_number,
               },
               stations: midStationsFormatted,
@@ -144,7 +147,7 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
                 route_name_list: endNode.route_name_list,
                 x_grid: endNode.x_grid,
                 y_grid: endNode.y_grid,
-                type: endNode.type,
+                type: normalizeRouteSegmentEndpointType(endNode.type),
                 connect_number: endNode.connect_number,
               },
             },
