@@ -151,7 +151,7 @@ const router = createRouter({
  * @param {Function} next - 路由控制函數
  */
 router.beforeEach((to, from, next) => {
-  document.title = '示意圖響應式網站 2';
+  document.title = 'Schematic Map 2';
 
   // 記錄路由切換日誌（開發環境）
   // 繼續路由導航

@@ -33,7 +33,10 @@
   },
   "git.enabled": true,
   "git.autorefresh": true,
+  "git.autoRepositoryDetection": true,
   "scm.alwaysShowRepositories": true,
   "scm.diffDecorations": "all",
-  "scm.defaultViewMode": "tree"
+  "scm.defaultViewMode": "tree",
+  "diffEditor.maxComputationTime": 0,
+  "diffEditor.diffAlgorithm": "legacy"
 }
