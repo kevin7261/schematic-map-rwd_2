@@ -3619,7 +3619,7 @@
     ) {
       jsonData = L.spaceNetworkGridJsonDataM3Tab;
     }
-    // taipei_osm_geojson_2／taipei_osm_geojson_sn4：executeFunction 不依賴此參數；僅須非空以便通過檢查
+    // taipei_osm_geojson_2／taipei_osm_geojson_sn4／osm_2_geojson：executeFunction 不依賴此參數；僅須非空以便通過檢查
     if (!jsonData && isRegisteredNetworkDrawSketchSn4LayerId(L.layerId)) {
       jsonData = L.networkDrawSketchExportWgs84GeoJson ||
         L.geojsonData || { type: 'FeatureCollection', features: [] };
@@ -3660,6 +3660,7 @@
   };
 
   const TAIPEI_OSM_GEOJSON_SN4_LAYER_ID = 'taipei_osm_geojson_sn4';
+  const OSM_2_GEOJSON_LAYER_ID = 'osm_2_geojson';
 
   const mergeTaipeiOsmSn4LoaderResultIntoLayer = (layer, result) => {
     layer.jsonData = result.jsonData ?? null;
@@ -3699,6 +3700,57 @@
       const result = parseOsmXmlStringToRouteGeoJsonLoadResult(text);
       layer.osmFileName = file.name;
       mergeTaipeiOsmSn4LoaderResultIntoLayer(layer, result);
+      dataStore.saveLayerState(layer.layerId, {
+        osmFileName: layer.osmFileName,
+        jsonData: layer.jsonData,
+        processedJsonData: layer.processedJsonData,
+        geojsonData: layer.geojsonData,
+        dashboardData: layer.dashboardData,
+        dataTableData: layer.dataTableData,
+        layerInfoData: layer.layerInfoData,
+        isLoaded: layer.isLoaded,
+        isLoading: layer.isLoading,
+      });
+    } catch (err) {
+      console.error('本機 OSM 讀取失敗:', err);
+      layer.isLoading = false;
+      dataStore.saveLayerState(layer.layerId, { isLoading: false });
+    }
+  };
+
+  const mergeTaipeiOsmSpaceGridLoaderResultIntoLayer = (layer, result) => {
+    layer.jsonData = result.jsonData ?? null;
+    layer.processedJsonData = result.processedJsonData ?? null;
+    layer.geojsonData = result.geojsonData ?? null;
+    layer.dashboardData = result.dashboardData ?? null;
+    layer.dataTableData = result.dataTableData ?? null;
+    layer.layerInfoData = result.layerInfoData ?? null;
+    layer.isLoaded = true;
+    layer.isLoading = false;
+  };
+
+  const onTaipeiOsmSpaceGridOsmPathCommit = (layer, raw) => {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    layer.osmFileName = v || null;
+    dataStore.saveLayerState(layer.layerId, { osmFileName: layer.osmFileName });
+  };
+
+  const onTaipeiOsmSpaceGridPickLocalFileClick = () => {
+    document.getElementById('taipei-osm-space-grid-local-file-input')?.click();
+  };
+
+  const onTaipeiOsmSpaceGridLocalFileInputChange = async (event) => {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    const layer = dataStore.findLayerById(OSM_2_GEOJSON_LAYER_ID);
+    if (!file || !layer) return;
+    try {
+      layer.isLoading = true;
+      const text = await file.text();
+      const result = parseOsmXmlStringToRouteGeoJsonLoadResult(text);
+      layer.osmFileName = file.name;
+      mergeTaipeiOsmSpaceGridLoaderResultIntoLayer(layer, result);
       dataStore.saveLayerState(layer.layerId, {
         osmFileName: layer.osmFileName,
         jsonData: layer.jsonData,
@@ -6396,6 +6448,35 @@
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.45">
             本機選檔會將檔名寫入 osmFileName 並直接解析；「依路徑載入」需先開啟本圖層開關，且檔案須存在於
             public/data 對應路徑。
+          </div>
+        </div>
+
+        <!-- osm_2_geojson：指定 osmFileName／本機選檔（不依 public/data 路徑重新載入） -->
+        <div
+          v-if="layer.layerId === 'osm_2_geojson'"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">OSM 來源</div>
+          <label class="my-font-size-xs text-muted d-block mb-1"
+            >相對於網站 data 目錄的路徑（例：taipei/taipei.osm）</label
+          >
+          <input
+            type="text"
+            class="form-control form-control-sm mb-2"
+            :value="layer.osmFileName || ''"
+            placeholder="taipei/taipei.osm"
+            @change="onTaipeiOsmSpaceGridOsmPathCommit(layer, $event.target.value)"
+          />
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+            :disabled="layer.isLoading"
+            @click="onTaipeiOsmSpaceGridPickLocalFileClick"
+          >
+            選擇本機 .osm 並讀入
+          </button>
+          <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.45">
+            本機選檔會將檔名寫入 osmFileName 並直接解析。
           </div>
         </div>
 
@@ -9163,6 +9244,13 @@
       class="d-none"
       accept=".osm,.xml,application/xml,text/xml,*/*"
       @change="onTaipeiOsmSn4LocalFileInputChange"
+    />
+    <input
+      id="taipei-osm-space-grid-local-file-input"
+      type="file"
+      class="d-none"
+      accept=".osm,.xml,application/xml,text/xml,*/*"
+      @change="onTaipeiOsmSpaceGridLocalFileInputChange"
     />
   </div>
 </template>

@@ -30,7 +30,6 @@
   const ptKey = (p) =>
     `${Math.round(p.x * SKEY) / SKEY},${Math.round(p.y * SKEY) / SKEY}`;
 
-  const DEDUP_DEG = 1e-7;
   const ENDPOINT_DEG = 0.0001;
   const ENDPOINT_DEG2 = ENDPOINT_DEG * ENDPOINT_DEG;
   const ENDPOINT_LINK_DEG2 = ENDPOINT_DEG2;
@@ -59,204 +58,6 @@
       u,
       pt: { x: a.x + t * rx, y: a.y + t * ry },
     };
-  };
-
-  /**
-   * @param {Array<{ x: number; y: number }>} pts
-   * @param {number} tol
-   */
-  const dedupeConsecutive = (pts, tol) => {
-    if (pts.length === 0) return [];
-    const out = [pts[0]];
-    const tol2 = tol * tol;
-    for (let i = 1; i < pts.length; i++) {
-      const p = pts[i];
-      const q = out[out.length - 1];
-      const dx = p.x - q.x;
-      const dy = p.y - q.y;
-      if (dx * dx + dy * dy >= tol2) out.push(p);
-    }
-    return out;
-  };
-
-  /**
-   * 在交叉點插入頂點後，**僅在交叉點**切斷（不把筆畫中間的密集中間點當結點切斷）。
-   * @param {Array<Array<{ x: number; y: number }>>} strokes
-   * @returns {Array<Array<{ x: number; y: number }>>}
-   */
-  const splitStrokesAtIntersections = (strokes) => {
-    const valid = strokes.filter((pl) => pl && pl.length >= 2);
-    if (valid.length === 0) return [];
-
-    const list = valid.map((pl) => pl.map((p) => ({ x: p.x, y: p.y })));
-
-    const segs = [];
-    for (let pi = 0; pi < list.length; pi++) {
-      const pts = list[pi];
-      for (let si = 0; si < pts.length - 1; si++) {
-        segs.push({ pi, si, a: pts[si], b: pts[si + 1] });
-      }
-    }
-
-    /** @type Map<string, Array<{ t: number; pt: { x: number; y: number } }>> */
-    const inserts = new Map();
-    const hitPoints = [];
-
-    const addInsert = (pi, si, t, pt) => {
-      const k = `${pi},${si}`;
-      if (!inserts.has(k)) inserts.set(k, []);
-      inserts.get(k).push({ t, pt: { x: pt.x, y: pt.y } });
-    };
-
-    for (let i = 0; i < segs.length; i++) {
-      for (let j = i + 1; j < segs.length; j++) {
-        const A = segs[i];
-        const B = segs[j];
-        if (A.pi === B.pi && Math.abs(A.si - B.si) <= 1) continue;
-        const hit = segIntersect(A.a, A.b, B.a, B.b);
-        if (!hit) continue;
-        hitPoints.push({ x: hit.pt.x, y: hit.pt.y });
-        addInsert(A.pi, A.si, hit.t, hit.pt);
-        addInsert(B.pi, B.si, hit.u, hit.pt);
-      }
-    }
-
-    for (const arr of inserts.values()) {
-      arr.sort((p, q) => p.t - q.t);
-      const deduped = [];
-      for (const item of arr) {
-        const last = deduped[deduped.length - 1];
-        if (last && Math.abs(last.t - item.t) < 1e-5) continue;
-        deduped.push(item);
-      }
-      arr.length = 0;
-      arr.push(...deduped);
-    }
-
-    const refined = [];
-    for (let pi = 0; pi < list.length; pi++) {
-      const pts = list[pi];
-      const next = [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        next.push({ ...pts[i] });
-        const extra = inserts.get(`${pi},${i}`);
-        if (extra) {
-          for (const { pt } of extra) {
-            next.push({ x: pt.x, y: pt.y });
-          }
-        }
-      }
-      next.push({ ...pts[pts.length - 1] });
-      refined.push(dedupeConsecutive(next, DEDUP_DEG));
-    }
-
-    /** 只把「線段相交」當分割點；筆畫端點／中間取樣點不加入，避免無交點時被切成一節一節 */
-    const junctionKeys = new Set();
-    for (const p of hitPoints) {
-      junctionKeys.add(ptKey(p));
-    }
-
-    const chunks = [];
-    for (const R of refined) {
-      if (R.length < 2) continue;
-      let a = 0;
-      for (let b = 1; b < R.length; b++) {
-        const atEnd = b === R.length - 1;
-        if (junctionKeys.has(ptKey(R[b])) || atEnd) {
-          const slice = R.slice(a, b + 1).map((p) => ({ x: p.x, y: p.y }));
-          if (slice.length >= 2) chunks.push(slice);
-          a = b;
-        }
-      }
-    }
-
-    return chunks.length > 0 ? chunks : valid.map((pl) => pl.map((p) => ({ x: p.x, y: p.y })));
-  };
-
-  /**
-   * 將端點以距離聚類：只有叢內「恰好 2 個端點」且來自「2 條不同折線」時才合併。
-   * 十字路口切分後會有 4 條臂、4 個端點落在同一叢 → 叢大小≠2 → 不會合併。
-   * @param {Array<Array<{ x: number; y: number }>>} polylines
-   * @returns {Array<Array<{ x: number; y: number }>>}
-   */
-  const mergePolylinesWhereOnlyTwoRoutesMeet = (polylines) => {
-    let list = polylines
-      .filter((pl) => pl && pl.length >= 2)
-      .map((pl) => pl.map((p) => ({ x: p.x, y: p.y })));
-
-    const mergeOneRound = () => {
-      /** @type {Array<{ x: number; y: number; polyIdx: number; isStart: boolean }>} */
-      const ends = [];
-      list.forEach((pl, idx) => {
-        ends.push({ x: pl[0].x, y: pl[0].y, polyIdx: idx, isStart: true });
-        ends.push({
-          x: pl[pl.length - 1].x,
-          y: pl[pl.length - 1].y,
-          polyIdx: idx,
-          isStart: false,
-        });
-      });
-
-      const n = ends.length;
-      const parent = Array.from({ length: n }, (_, i) => i);
-      const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-      const unite = (a, b) => {
-        const pa = find(a);
-        const pb = find(b);
-        if (pa !== pb) parent[pb] = pa;
-      };
-
-      for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-          const dx = ends[i].x - ends[j].x;
-          const dy = ends[i].y - ends[j].y;
-          if (dx * dx + dy * dy <= ENDPOINT_DEG2) unite(i, j);
-        }
-      }
-
-      const byRoot = new Map();
-      for (let i = 0; i < n; i++) {
-        const r = find(i);
-        if (!byRoot.has(r)) byRoot.set(r, []);
-        byRoot.get(r).push(i);
-      }
-
-      for (const idxList of byRoot.values()) {
-        if (idxList.length !== 2) continue;
-        const e0 = ends[idxList[0]];
-        const e1 = ends[idxList[1]];
-        if (e0.polyIdx === e1.polyIdx) continue;
-
-        let A = list[e0.polyIdx].map((p) => ({ x: p.x, y: p.y }));
-        let B = list[e1.polyIdx].map((p) => ({ x: p.x, y: p.y }));
-
-        if (e0.isStart) A.reverse();
-        if (!e1.isStart) B.reverse();
-
-        const jax = A[A.length - 1].x;
-        const jay = A[A.length - 1].y;
-        const jbx = B[0].x;
-        const jby = B[0].y;
-        const jdx = jax - jbx;
-        const jdy = jay - jby;
-        if (jdx * jdx + jdy * jdy > ENDPOINT_DEG2 * 4) continue;
-
-        const merged = dedupeConsecutive([...A, ...B.slice(1)], DEDUP_DEG);
-        if (merged.length < 2) continue;
-
-        const hi = Math.max(e0.polyIdx, e1.polyIdx);
-        const lo = Math.min(e0.polyIdx, e1.polyIdx);
-        list = list.filter((_, i) => i !== hi && i !== lo);
-        list.push(merged);
-        return true;
-      }
-      return false;
-    };
-
-    while (mergeOneRound()) {
-      /* 合併後可能產生新的二路節點 */
-    }
-    return list;
   };
 
   const routeColor = (i) => getNetworkDrawRouteColor(i);
@@ -291,19 +92,21 @@
 
   const svgRef = ref(null);
   /**
-   * 'hover'：檢視；'draw'：開路折線；'draw-close'：手繪結束自動接回起點成封閉線；
-   * 'add-station'：點線上插入頂點（站），折線仍為一條；'cut'：點線上切開成兩條；'delete'：刪整條
+   * 'hover'：檢視（含線／頂點 hover）；'draw'：手繪折線；'delete'：點擊靠近之路線予以刪除
    */
-  const interactionMode = ref('draw');
+  const interactionMode = ref('hover');
 
-  const isDrawLikeMode = (m) => m === 'draw' || m === 'draw-close';
+  const isDrawLikeMode = (m) => m === 'draw';
   const isDrawing = ref(false);
-  /** @type {import('vue').Ref<{ routeIndex: number } | null>} 整條路線 hover，非單一細線段 */
+  /** 線／頂點 hover；檢視時由 map-stack capture 更新（見 updateSketchHoverFromEvent） */
   const hoverHit = ref(null);
   /** @type {import('vue').Ref<Array<{ x: number; y: number }>>} */
   const draftPoints = ref([]);
   /** @type {import('vue').Ref<Array<Array<{ x: number; y: number }>>>} */
   const finishedPolylines = ref([]);
+  /** 與 finishedPolylines 同索引：路段匯入列（routeName、segment…）；手繪新增者為 null */
+  /** @type {import('vue').Ref<Array<object | null>>} */
+  const finishedRouteExportRows = ref([]);
   /** 「加站點」成功插入之頂點（經緯度），供紫色圓點與 Control 統計 */
   const sketchStationVertices = ref([]);
   const activeLayerTab = ref(PRIMARY_SKETCH_FALLBACK);
@@ -333,14 +136,124 @@
     };
   };
 
+  /** 路段匯入列之 x_grid／y_grid 與手繪頂點比對門檻（約 2m） */
+  const GRID_LONLAT_TOL = 2e-5;
+
+  const nodeLonLatFromExportNode = (node) => {
+    if (!node || typeof node !== 'object') return null;
+    const x = Number(node.x_grid ?? node.tags?.x_grid);
+    const y = Number(node.y_grid ?? node.tags?.y_grid);
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+    return null;
+  };
+
+  const exportNodeNearVertex = (node, lng, lat) => {
+    const c = nodeLonLatFromExportNode(node);
+    if (!c) return false;
+    return Math.abs(c.x - lng) < GRID_LONLAT_TOL && Math.abs(c.y - lat) < GRID_LONLAT_TOL;
+  };
+
+  /**
+   * 檢視模式 hover：顯示用 JSON（整列匯出屬性，或頂點對應之起迄／中間站）
+   */
+  const sketchHoverTooltipPayload = computed(() => {
+    const hit = hoverHit.value;
+    if (!hit || interactionMode.value !== 'hover') return null;
+    const ri = hit.routeIndex;
+    if (ri == null || !finishedPolylines.value[ri]) return null;
+    const row = finishedRouteExportRows.value[ri];
+    const vi = hit.vertexIndex;
+    const pl = finishedPolylines.value[ri];
+
+    if (row && typeof row === 'object') {
+      const base = {
+        routeName: row.routeName,
+        color: row.color,
+        segment: row.segment,
+        routeCoordinates: row.routeCoordinates,
+      };
+      if (vi != null && pl[vi]) {
+        const { x: lng, y: lat } = pl[vi];
+        const seg = row.segment;
+        if (seg && exportNodeNearVertex(seg.start, lng, lat)) {
+          return { ...base, hoverTarget: 'point', matched: 'segment.start', point: seg.start };
+        }
+        if (seg && exportNodeNearVertex(seg.end, lng, lat)) {
+          return { ...base, hoverTarget: 'point', matched: 'segment.end', point: seg.end };
+        }
+        const stations = Array.isArray(seg?.stations) ? seg.stations : [];
+        for (let si = 0; si < stations.length; si++) {
+          if (exportNodeNearVertex(stations[si], lng, lat)) {
+            return {
+              ...base,
+              hoverTarget: 'point',
+              matched: 'segment.stations',
+              stationIndex: si,
+              point: stations[si],
+            };
+          }
+        }
+        return {
+          ...base,
+          hoverTarget: 'vertex',
+          polylineVertexIndex: vi,
+          lon: lng,
+          lat,
+        };
+      }
+      return { ...base, hoverTarget: 'polyline' };
+    }
+
+    if (vi != null && pl[vi]) {
+      const { x: lng, y: lat } = pl[vi];
+      return {
+        hoverTarget: 'vertex',
+        routeIndex: ri,
+        routeName: `路線_${ri + 1}`,
+        color: routeColor(ri),
+        polylineVertexIndex: vi,
+        lon: lng,
+        lat,
+        note: '此折線無匯入路段屬性（僅手繪座標）',
+      };
+    }
+    return {
+      hoverTarget: 'polyline',
+      routeIndex: ri,
+      routeName: `路線_${ri + 1}`,
+      color: routeColor(ri),
+      note: '此折線無匯入路段屬性（僅手繪座標）',
+    };
+  });
+
+  const sketchHoverTooltipJson = computed(() => {
+    const p = sketchHoverTooltipPayload.value;
+    if (!p) return '';
+    try {
+      return JSON.stringify(p, null, 2);
+    } catch {
+      return '';
+    }
+  });
+
+  const sketchHoverTooltipVisible = computed(
+    () =>
+      sketchLayerReady.value &&
+      interactionMode.value === 'hover' &&
+      !isDrawing.value &&
+      !!hoverHit.value &&
+      hoverHit.value.routeIndex != null &&
+      sketchHoverTooltipJson.value.length > 0
+  );
+
+  const hoverTipOffset = 14;
+  const hoverTipLeftPx = computed(() => (hoverHit.value?.clientX ?? 0) + hoverTipOffset);
+  const hoverTipTopPx = computed(() => (hoverHit.value?.clientY ?? 0) + hoverTipOffset);
+
   const MIN_SAMPLE_DIST = 2;
   const HOVER_SEG_PX = 12;
-  /** 加站點：線段命中較寬，避免細線難點中 */
-  const ADD_STATION_HIT_PX = 22;
-  /** 切開時切點須離線段兩端頂點至少此距離（px），避免無效或重複切分 */
-  const SPLIT_VERT_MIN_DIST_PX = 5;
-  /** 加站點時允許較靠近端點仍可插入（px） */
-  const ADD_STATION_VERT_MIN_DIST_PX = 2;
+  /** 檢視／刪除：頂點與標記（紅／藍／綠／站點）之 hover 半徑 */
+  const VERTEX_HOVER_HIT_PX = 12;
 
   const finishedPolylinesPx = computed(() => {
     void mapViewEpoch.value;
@@ -516,6 +429,13 @@
           Array.isArray(pl) ? pl.map((p) => ({ x: Number(p.x), y: Number(p.y) })) : []
         )
       : [];
+    const n = finishedPolylines.value.length;
+    const rows = dataStore.getNetworkDrawSketchRouteExportRowsForLayer(layerId);
+    finishedRouteExportRows.value = Array.from({ length: n }, (_, i) =>
+      Array.isArray(rows) && i < rows.length && rows[i] != null
+        ? JSON.parse(JSON.stringify(rows[i]))
+        : null
+    );
     const m = dataStore.getNetworkDrawSketchMarkersForLayer(layerId);
     sketchStationVertices.value = Array.isArray(m.station)
       ? m.station.map((p) => ({ x: Number(p.x), y: Number(p.y) }))
@@ -525,7 +445,11 @@
   const persistLocalSketchToStore = (layerId) => {
     if (!isRegisteredNetworkDrawSketchLayerId(layerId)) return;
     dataStore.setNetworkDrawSketchUseGeo(true, layerId);
-    dataStore.setNetworkDrawSketchPolylines(finishedPolylines.value, layerId);
+    dataStore.setNetworkDrawSketchPolylines(
+      finishedPolylines.value,
+      layerId,
+      finishedRouteExportRows.value
+    );
     dataStore.setNetworkDrawSketchMarkers(
       {
         red: drawIntersectionPoints.value.map((p) => ({ x: p.x, y: p.y })),
@@ -848,29 +772,11 @@
     return dx * dx + dy * dy >= MIN_SAMPLE_DIST * MIN_SAMPLE_DIST;
   };
 
-  /**
-   * 封閉：若最後一點與起點未重合，則複製起點到末尾（形成閉合折線，供幾合／叉點使用）。
-   * @param {Array<{ x: number; y: number }>} pts
-   */
-  const closePolylineToRing = (pts) => {
-    if (pts.length < 2) return pts;
-    const a = pts[0];
-    const b = pts[pts.length - 1];
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    if (dx * dx + dy * dy < DEDUP_DEG * DEDUP_DEG) {
-      return pts;
-    }
-    return [...pts, { x: a.x, y: a.y }];
-  };
-
   const endStrokeIfAny = () => {
     if (draftPoints.value.length >= 2) {
-      let line = draftPoints.value.map((p) => ({ x: p.x, y: p.y }));
-      if (interactionMode.value === 'draw-close') {
-        line = closePolylineToRing(line);
-      }
+      const line = draftPoints.value.map((p) => ({ x: p.x, y: p.y }));
       finishedPolylines.value = [...finishedPolylines.value, line];
+      finishedRouteExportRows.value = [...finishedRouteExportRows.value, null];
     }
     draftPoints.value = [];
     isDrawing.value = false;
@@ -951,118 +857,89 @@
   };
 
   /**
-   * 在路線 ri 上找投影點；p 為螢幕 px；回傳切點為經緯度。
-   * @param {{ x: number; y: number }} p
-   * @param {number} ri
-   * @param {{ maxSegPx?: number; minVertDistPx?: number } | undefined} [opts]
-   * @returns {{ segIndex: number; pt: { x: number; y: number } } | null}
+   * 檢視模式時 SVG 為 pointer-events:none（地圖可拖曳），改在父層 capture 做線／點 hover。
    */
-  const findNearestSplitOnRoute = (p, ri, opts) => {
-    const ptsGeo = finishedPolylines.value[ri];
-    const pts = finishedPolylinesPx.value[ri];
-    if (!ptsGeo || !pts || pts.length < 2) return null;
-    const segPx = opts?.maxSegPx ?? HOVER_SEG_PX;
-    const max2 = segPx * segPx;
-    const minVert2 = (opts?.minVertDistPx ?? SPLIT_VERT_MIN_DIST_PX) ** 2;
-    let best = null;
-    let bestD2 = Infinity;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const ax = pts[i].x;
-      const ay = pts[i].y;
-      const bx = pts[i + 1].x;
-      const by = pts[i + 1].y;
-      const abx = bx - ax;
-      const aby = by - ay;
-      const len2 = abx * abx + aby * aby;
-      if (len2 < 1e-12) continue;
-      const t = Math.max(0, Math.min(1, ((p.x - ax) * abx + (p.y - ay) * aby) / len2));
-      const qx = ax + t * abx;
-      const qy = ay + t * aby;
-      const dx = p.x - qx;
-      const dy = p.y - qy;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < bestD2) {
-        bestD2 = d2;
-        const ag = ptsGeo[i];
-        const bg = ptsGeo[i + 1];
-        const gx = ag.x + t * (bg.x - ag.x);
-        const gy = ag.y + t * (bg.y - ag.y);
-        best = { segIndex: i, t, pt: { x: gx, y: gy } };
-      }
-    }
-    if (!best || bestD2 > max2) return null;
-    const i = best.segIndex;
-    const t = best.t;
-    const aPx = pts[i];
-    const bPx = pts[i + 1];
-    const qx = aPx.x + t * (bPx.x - aPx.x);
-    const qy = aPx.y + t * (bPx.y - aPx.y);
-    const dAs = (qx - aPx.x) ** 2 + (qy - aPx.y) ** 2;
-    const dBs = (qx - bPx.x) ** 2 + (qy - bPx.y) ** 2;
-    if (dAs < minVert2 || dBs < minVert2) return null;
-    return { segIndex: i, pt: best.pt };
-  };
-
-  /**
-   * 將第 ri 條折線在 segIndex～segIndex+1 之間插入 splitPt，拆成兩條。
-   */
-  const splitPolylineAt = (ri, segIndex, splitPt) => {
-    const pl = finishedPolylines.value[ri];
-    if (!pl || pl.length < 2) return;
-    const left = [
-      ...pl.slice(0, segIndex + 1).map((p) => ({ x: p.x, y: p.y })),
-      { x: splitPt.x, y: splitPt.y },
-    ];
-    const right = [
-      { x: splitPt.x, y: splitPt.y },
-      ...pl.slice(segIndex + 1).map((p) => ({ x: p.x, y: p.y })),
-    ];
-    const L = dedupeConsecutive(left, DEDUP_DEG);
-    const R = dedupeConsecutive(right, DEDUP_DEG);
-    if (L.length < 2 || R.length < 2) return;
-    const copy = finishedPolylines.value.map((line) => line.map((p) => ({ x: p.x, y: p.y })));
-    copy.splice(ri, 1, L, R);
-    finishedPolylines.value = copy;
-  };
-
-  /**
-   * 將第 ri 條折線在 segIndex～segIndex+1 之間插入一站點頂點，仍為單一折線（與切開不同）。
-   * @returns {boolean} 是否成功插入（與鄰點過近去重時為 false）
-   */
-  const insertStationVertexOnPolylineAt = (ri, segIndex, splitPt) => {
-    const pl = finishedPolylines.value[ri];
-    if (!pl || pl.length < 2) return false;
-    const merged = dedupeConsecutive(
-      [
-        ...pl.slice(0, segIndex + 1).map((p) => ({ x: p.x, y: p.y })),
-        { x: splitPt.x, y: splitPt.y },
-        ...pl.slice(segIndex + 1).map((p) => ({ x: p.x, y: p.y })),
-      ],
-      DEDUP_DEG
-    );
-    if (merged.length <= pl.length) return false;
-    const copy = finishedPolylines.value.map((line) => line.map((p) => ({ x: p.x, y: p.y })));
-    copy[ri] = merged;
-    finishedPolylines.value = copy;
-    return true;
-  };
-
-  const onSvgPointerMove = (evt) => {
-    if (!sketchLayerReady.value) return;
-    const mode = interactionMode.value;
-    if (
-      (mode !== 'hover' && mode !== 'delete' && mode !== 'cut' && mode !== 'add-station') ||
-      isDrawing.value
-    )
+  const updateSketchHoverFromEvent = (evt) => {
+    if (!sketchLayerReady.value) {
+      hoverHit.value = null;
       return;
+    }
+    const mode = interactionMode.value;
+    if ((mode !== 'hover' && mode !== 'delete') || isDrawing.value) {
+      hoverHit.value = null;
+      return;
+    }
     const ev = eventToLatLngClamped(evt);
     if (!ev) return;
-    const segPx = mode === 'add-station' ? ADD_STATION_HIT_PX : HOVER_SEG_PX;
-    const ri = findRouteIndexNearPoint({ x: ev.px, y: ev.py }, segPx);
-    hoverHit.value = ri !== null ? { routeIndex: ri } : null;
+    const px = ev.px;
+    const py = ev.py;
+
+    const maxV2 = VERTEX_HOVER_HIT_PX * VERTEX_HOVER_HIT_PX;
+    let bestD2 = Infinity;
+    /** @type {{ x: number, y: number, ri: number | null, vi: number | null } | null} */
+    let bestVtx = null;
+
+    const tryVtx = (x, y, ri, vi = null) => {
+      const d2 = (px - x) ** 2 + (py - y) ** 2;
+      if (d2 <= maxV2 && d2 < bestD2) {
+        bestD2 = d2;
+        bestVtx = { x, y, ri, vi };
+      }
+    };
+
+    finishedPolylinesPx.value.forEach((pts, ri) => {
+      for (let vi = 0; vi < pts.length; vi += 1) {
+        tryVtx(pts[vi].x, pts[vi].y, ri, vi);
+      }
+    });
+    for (const p of drawIntersectionPointsPx.value) tryVtx(p.x, p.y, null, null);
+    for (const p of drawEndpointMarkersBluePx.value) tryVtx(p.x, p.y, null, null);
+    for (const p of drawEndpointMarkersGreenPx.value) tryVtx(p.x, p.y, null, null);
+    for (const p of sketchStationVerticesPx.value) tryVtx(p.x, p.y, null, null);
+
+    let focusPx = null;
+    let routeIndex = null;
+
+    /** 僅折線頂點帶 vertexIndex（紅／藍／綠／紫標記上不設，避免錯對 station） */
+    let vertexIndex =
+      bestVtx != null &&
+      bestVtx.ri != null &&
+      typeof bestVtx.vi === 'number' &&
+      Number.isFinite(bestVtx.vi)
+        ? bestVtx.vi
+        : undefined;
+
+    if (bestVtx) {
+      focusPx = { x: bestVtx.x, y: bestVtx.y };
+      routeIndex =
+        bestVtx.ri != null
+          ? bestVtx.ri
+          : findRouteIndexNearPoint(
+              { x: px, y: py },
+              Math.max(HOVER_SEG_PX, VERTEX_HOVER_HIT_PX * 1.2)
+            );
+      if (routeIndex == null) {
+        routeIndex = findRouteIndexNearPoint({ x: px, y: py }, HOVER_SEG_PX * 2);
+      }
+      if (bestVtx.ri == null) vertexIndex = undefined;
+    } else {
+      routeIndex = findRouteIndexNearPoint({ x: px, y: py }, HOVER_SEG_PX);
+      vertexIndex = undefined;
+    }
+
+    const next = {
+      clientX: evt.clientX,
+      clientY: evt.clientY,
+    };
+    if (routeIndex != null) next.routeIndex = routeIndex;
+    if (focusPx) next.focusPx = focusPx;
+    if (vertexIndex !== undefined) next.vertexIndex = vertexIndex;
+
+    if (routeIndex == null && focusPx == null) hoverHit.value = null;
+    else hoverHit.value = next;
   };
 
-  const onSvgPointerLeave = () => {
+  const onMapStackPointerLeave = () => {
     hoverHit.value = null;
   };
 
@@ -1077,42 +954,7 @@
       const ri = findRouteIndexNearPoint({ x: ev.px, y: ev.py }, HOVER_SEG_PX);
       if (ri === null) return;
       finishedPolylines.value = finishedPolylines.value.filter((_, i) => i !== ri);
-      hoverHit.value = null;
-      return;
-    }
-
-    if (interactionMode.value === 'cut') {
-      if (props.isPanelDragging) return;
-      if (evt.button !== 0) return;
-      evt.preventDefault();
-      const ev = eventToLatLngClamped(evt);
-      if (!ev) return;
-      const ri = findRouteIndexNearPoint({ x: ev.px, y: ev.py }, HOVER_SEG_PX);
-      if (ri === null) return;
-      const hit = findNearestSplitOnRoute({ x: ev.px, y: ev.py }, ri);
-      if (!hit) return;
-      splitPolylineAt(ri, hit.segIndex, hit.pt);
-      hoverHit.value = null;
-      return;
-    }
-
-    if (interactionMode.value === 'add-station') {
-      if (props.isPanelDragging) return;
-      if (evt.button !== 0) return;
-      evt.preventDefault();
-      const ev = eventToLatLngClamped(evt);
-      if (!ev) return;
-      const ri = findRouteIndexNearPoint({ x: ev.px, y: ev.py }, ADD_STATION_HIT_PX);
-      if (ri === null) return;
-      const hit = findNearestSplitOnRoute({ x: ev.px, y: ev.py }, ri, {
-        maxSegPx: ADD_STATION_HIT_PX,
-        minVertDistPx: ADD_STATION_VERT_MIN_DIST_PX,
-      });
-      if (!hit) return;
-      const ok = insertStationVertexOnPolylineAt(ri, hit.segIndex, hit.pt);
-      if (ok) {
-        sketchStationVertices.value = [...sketchStationVertices.value, { x: hit.pt.x, y: hit.pt.y }];
-      }
+      finishedRouteExportRows.value = finishedRouteExportRows.value.filter((_, i) => i !== ri);
       hoverHit.value = null;
       return;
     }
@@ -1139,33 +981,6 @@
     window.addEventListener('pointercancel', onPointerUpWindow);
   };
 
-  const undoLastStroke = () => {
-    if (!sketchLayerReady.value || finishedPolylines.value.length === 0) return;
-    finishedPolylines.value = finishedPolylines.value.slice(0, -1);
-  };
-
-  /** 先依交叉點切分，再二路節點連線；完成後切到 Hover 方便檢視 */
-  const applySplitAndMergeJunctions = () => {
-    if (!sketchLayerReady.value) return;
-    const src = finishedPolylines.value;
-    if (!src.length) return;
-    const split = splitStrokesAtIntersections(src);
-    finishedPolylines.value =
-      split.length >= 2 ? mergePolylinesWhereOnlyTwoRoutesMeet(split) : split;
-    hoverHit.value = null;
-    interactionMode.value = 'hover';
-  };
-
-  const clearAll = () => {
-    if (!sketchLayerReady.value) return;
-    removeWindowListeners();
-    draftPoints.value = [];
-    finishedPolylines.value = [];
-    sketchStationVertices.value = [];
-    isDrawing.value = false;
-    hoverHit.value = null;
-  };
-
   onUnmounted(() => {
     removeWindowListeners();
     if (map.value) {
@@ -1183,6 +998,12 @@
     finishedPolylines,
     () => {
       pruneSketchStationVertices();
+      const n = finishedPolylines.value.length;
+      if (finishedRouteExportRows.value.length !== n) {
+        finishedRouteExportRows.value = finishedPolylines.value.map(
+          (_, i) => finishedRouteExportRows.value[i] ?? null
+        );
+      }
     },
     { deep: true, flush: 'sync' }
   );
@@ -1231,93 +1052,89 @@
     </div>
 
     <div class="network-draw-canvas flex-grow-1 position-relative" style="min-height: 0">
-      <div class="network-draw-map-stack w-100 h-100 position-absolute top-0 start-0 overflow-hidden">
+      <div
+        class="network-draw-map-stack w-100 h-100 position-absolute top-0 start-0 overflow-hidden"
+        @pointermove.capture="updateSketchHoverFromEvent"
+        @pointerleave.capture="onMapStackPointerLeave"
+      >
         <div v-if="!sketchLayerReady" class="canvas-blocker" aria-hidden="true"></div>
         <div ref="mapEl" class="network-draw-leaflet" />
         <svg
-        ref="svgRef"
-        class="network-draw-svg w-100 h-100"
-        :class="{
-          'network-draw-svg--dim': !sketchLayerReady,
-          'network-draw-svg--map-pan': interactionMode === 'hover',
-        }"
-        :style="{
-          cursor:
-            interactionMode === 'draw' || interactionMode === 'draw-close'
-              ? 'crosshair'
-              : interactionMode === 'delete' ||
-                  interactionMode === 'cut' ||
-                  interactionMode === 'add-station'
-                ? 'pointer'
-                : 'default',
-          touchAction:
-            interactionMode === 'draw' || interactionMode === 'draw-close' ? 'none' : 'auto',
-        }"
-        @pointerdown="onSvgPointerDown"
-        @pointermove="onSvgPointerMove"
-        @pointerleave="onSvgPointerLeave"
-        @wheel.prevent="onMapOverlayWheel"
-      >
+          ref="svgRef"
+          class="network-draw-svg w-100 h-100"
+          :class="{
+            'network-draw-svg--dim': !sketchLayerReady,
+            'network-draw-svg--map-pan': interactionMode === 'hover',
+          }"
+          :style="{
+            cursor:
+              interactionMode === 'draw' ? 'crosshair' : interactionMode === 'delete' ? 'pointer' : 'default',
+            touchAction: interactionMode === 'draw' ? 'none' : 'auto',
+          }"
+          @pointerdown="onSvgPointerDown"
+          @wheel.prevent="onMapOverlayWheel"
+        >
         <g
-          v-if="
-            hoverHit &&
-            finishedPolylinesPx[hoverHit.routeIndex] &&
-            (interactionMode === 'hover' ||
-              interactionMode === 'delete' ||
-              interactionMode === 'cut' ||
-              interactionMode === 'add-station')
-          "
+          v-if="hoverHit && (interactionMode === 'hover' || interactionMode === 'delete')"
           class="hover-highlight"
           pointer-events="none"
         >
-          <polyline
-            :points="
-              finishedPolylinesPx[hoverHit.routeIndex]
-                .map((pt) => `${pt.x},${pt.y}`)
-                .join(' ')
+          <template
+            v-if="
+              hoverHit.routeIndex != null &&
+              finishedPolylinesPx[hoverHit.routeIndex] &&
+              finishedPolylinesPx[hoverHit.routeIndex].length >= 2
             "
-            fill="none"
-            :stroke="
-              interactionMode === 'delete'
-                ? '#ffcdd2'
-                : interactionMode === 'cut'
-                  ? '#ffe0b2'
-                  : interactionMode === 'add-station'
-                    ? '#c8e6c9'
-                    : '#ffffff'
-            "
-            stroke-width="7"
-            stroke-linejoin="round"
-            stroke-linecap="round"
-            :opacity="
-              interactionMode === 'delete' ||
-              interactionMode === 'cut' ||
-              interactionMode === 'add-station'
-                ? 0.5
-                : 0.35
-            "
-          />
-          <polyline
-            :points="
-              finishedPolylinesPx[hoverHit.routeIndex]
-                .map((pt) => `${pt.x},${pt.y}`)
-                .join(' ')
-            "
-            fill="none"
-            :stroke="
-              interactionMode === 'delete'
-                ? '#ef5350'
-                : interactionMode === 'cut'
-                  ? '#fb8c00'
-                  : interactionMode === 'add-station'
-                    ? '#43a047'
-                    : routeColor(hoverHit.routeIndex)
-            "
-            stroke-width="4"
-            stroke-linejoin="round"
-            stroke-linecap="round"
-            opacity="0.95"
-          />
+          >
+            <polyline
+              :points="
+                finishedPolylinesPx[hoverHit.routeIndex]
+                  .map((pt) => `${pt.x},${pt.y}`)
+                  .join(' ')
+              "
+              fill="none"
+              :stroke="interactionMode === 'delete' ? '#ffcdd2' : '#ffffff'"
+              stroke-width="7"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+              :opacity="interactionMode === 'delete' ? 0.55 : 0.38"
+            />
+            <polyline
+              :points="
+                finishedPolylinesPx[hoverHit.routeIndex]
+                  .map((pt) => `${pt.x},${pt.y}`)
+                  .join(' ')
+              "
+              fill="none"
+              :stroke="
+                interactionMode === 'delete' ? '#ef5350' : routeColor(hoverHit.routeIndex)
+              "
+              stroke-width="4"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+              opacity="0.95"
+            />
+          </template>
+          <g v-if="hoverHit.focusPx">
+            <circle
+              :cx="hoverHit.focusPx.x"
+              :cy="hoverHit.focusPx.y"
+              r="10"
+              fill="none"
+              :stroke="interactionMode === 'delete' ? '#ffebee' : '#fafafa'"
+              stroke-width="3"
+              :opacity="interactionMode === 'delete' ? 0.95 : 0.75"
+            />
+            <circle
+              :cx="hoverHit.focusPx.x"
+              :cy="hoverHit.focusPx.y"
+              r="5.5"
+              fill="none"
+              :stroke="interactionMode === 'delete' ? '#c62828' : '#fbc02d'"
+              stroke-width="2.25"
+              opacity="0.95"
+            />
+          </g>
         </g>
         <g class="finished">
           <polyline
@@ -1382,23 +1199,6 @@
           stroke-linejoin="round"
           stroke-linecap="round"
         />
-        <line
-          v-if="
-            interactionMode === 'draw-close' &&
-            draftPoints.length >= 2 &&
-            draftPointsPx.length >= 2
-          "
-          :x1="draftPointsPx[draftPoints.length - 1].x"
-          :y1="draftPointsPx[draftPoints.length - 1].y"
-          :x2="draftPointsPx[0].x"
-          :y2="draftPointsPx[0].y"
-          stroke="#FFB74D"
-          stroke-width="2"
-          stroke-opacity="0.5"
-          stroke-dasharray="5 4"
-          stroke-linecap="round"
-          pointer-events="none"
-        />
         <circle
           v-if="draftPoints.length === 1 && draftPointsPx.length === 1"
           :cx="draftPointsPx[0].x"
@@ -1410,6 +1210,13 @@
           pointer-events="none"
         />
         </svg>
+        <div
+          v-if="sketchHoverTooltipVisible"
+          class="network-draw-sketch-hover-tip text-start"
+          :style="{ left: hoverTipLeftPx + 'px', top: hoverTipTopPx + 'px' }"
+        >
+          <pre class="network-draw-sketch-hover-tip__pre">{{ sketchHoverTooltipJson }}</pre>
+        </div>
       </div>
 
       <!--
@@ -1450,39 +1257,6 @@
         <button
           type="button"
           class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-          :class="interactionMode === 'draw-close' ? 'my-btn-white' : 'my-btn-transparent'"
-          :disabled="!sketchLayerReady"
-          title="畫完一筆時自動從最後一點連回起點，成為封閉線"
-          @click="interactionMode = 'draw-close'"
-        >
-          閉合
-        </button>
-        <button
-          type="button"
-          class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-          :class="
-            interactionMode === 'add-station' ? 'my-btn-white text-success' : 'my-btn-transparent'
-          "
-          :disabled="!sketchLayerReady"
-          title="在折線上點擊，於該處插入一站點（頂點），路線仍為一條"
-          @click="interactionMode = 'add-station'"
-        >
-          加站點
-        </button>
-        <button
-          type="button"
-          class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
-          :class="
-            interactionMode === 'cut' ? 'my-btn-white text-warning' : 'my-btn-transparent'
-          "
-          :disabled="!sketchLayerReady"
-          @click="interactionMode = 'cut'"
-        >
-          切開
-        </button>
-        <button
-          type="button"
-          class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
           :class="
             interactionMode === 'delete' ? 'my-btn-white text-danger' : 'my-btn-transparent'
           "
@@ -1490,30 +1264,6 @@
           @click="interactionMode = 'delete'"
         >
           刪除
-        </button>
-        <button
-          type="button"
-          class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
-          :disabled="!sketchLayerReady"
-          @click="undoLastStroke"
-        >
-          復原
-        </button>
-        <button
-          type="button"
-          class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
-          :disabled="!sketchLayerReady"
-          @click="applySplitAndMergeJunctions"
-        >
-          切分並連線
-        </button>
-        <button
-          type="button"
-          class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap my-cursor-pointer"
-          :disabled="!sketchLayerReady"
-          @click="clearAll"
-        >
-          清除
         </button>
         <div class="d-flex align-items-center">
           <div class="dropdown dropup">
@@ -1684,5 +1434,29 @@
   .network-draw-svg--dim {
     filter: brightness(0.62);
     pointer-events: none;
+  }
+
+  .network-draw-sketch-hover-tip {
+    position: fixed;
+    z-index: 3200;
+    max-width: min(440px, calc(100vw - 24px));
+    max-height: min(72vh, 520px);
+    overflow: auto;
+    pointer-events: none;
+    padding: 8px 10px;
+    background: rgba(32, 36, 42, 0.94);
+    color: #e3f2fd;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.38);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .network-draw-sketch-hover-tip__pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, Menlo, monospace;
   }
 </style>

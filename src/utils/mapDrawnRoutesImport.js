@@ -458,6 +458,35 @@ export function mapDrawnExportRowsToFlatSegments(rows) {
 }
 
 /**
+ * 手繪圖層匯入：與 {@link mapDrawnExportRowsToFlatSegmentsLonLat} 相同幾何篩選，另回傳每條折線對應之原始匯出列（供 hover 顯示屬性）。
+ * @param {Array} rows - isNetworkDrawSketchRoutesExportJsonArray 為 true 時的陣列
+ * @returns {{ polylines: Array<Array<{ x: number, y: number }>>, routeExportRows: Array<object> }}
+ */
+export function mapDrawnExportRowsToLonLatPolylinesWithMeta(rows) {
+  const polylines = [];
+  const routeExportRows = [];
+  for (const row of rows || []) {
+    if (!row || typeof row !== 'object') continue;
+    const points = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
+    if (!Array.isArray(points) || points.length < 2) continue;
+    const pl = [];
+    for (const p of points) {
+      if (!Array.isArray(p) || p.length < 2) continue;
+      const nx = Number(p[0]);
+      const ny = Number(p[1]);
+      if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
+      const last = pl[pl.length - 1];
+      if (last && last.x === nx && last.y === ny) continue;
+      pl.push({ x: nx, y: ny });
+    }
+    if (pl.length < 2) continue;
+    polylines.push(pl);
+    routeExportRows.push(cloneJson(row));
+  }
+  return { polylines, routeExportRows };
+}
+
+/**
  * 與 mapDrawnExportRowsToFlatSegments 相同輸出結構，但座標為經緯度時以頂點折線連接（供 GeoJSON 轉路段）
  * @param {Array} rows - exportRouteSegmentsFromGeoJson 或 Python 匯出之陣列
  * @returns {Array<Object>}
