@@ -21,6 +21,7 @@
   import {
     enumerateCrossingCandidates,
     applyCrossingToRows,
+    renumberAndRecomputeRouteExportRows,
   } from '@/utils/routeSegmentIntersections.js';
   import {
     LAYER_ID as OSM_PIPELINE_LAYER_ID,
@@ -448,11 +449,9 @@
 
         const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
         const existing = Array.isArray(currentLayer?.jsonData) ? currentLayer.jsonData : [];
-        /** 繪製順序：已存在之手繪列（含本次將寫入前）數量 + 1 */
+        /** 繪製順序：已存在之手繪列（含本次將寫入前）數量 + 1 — 僅用於 station_id 編號 */
         const drawnRoutesSoFar = existing.filter((r) => r && r._drawn).length;
         const routeSeq = drawnRoutesSoFar + 1;
-        const routeIdStr = String(routeSeq);
-        const routeNameNext = `手繪路線${routeSeq}`;
         /** 站點依折線順序 1…n：`station_id`=「路線序-站序」，`station_name`=「手繪站{路線序}-{站序}」 */
         const sid = (stationIdx) => `${routeSeq}-${stationIdx}`;
         const sname = (stationIdx) => `手繪站${routeSeq}-${stationIdx}`;
@@ -463,18 +462,15 @@
         const ts = Date.now();
         let idx = 1;
         const newRow = {
-          route_id: routeIdStr,
-          routeName: routeNameNext,
+          route_id: '',
+          routeName: '',
           color: '#e07000',
           segment: {
             start: {
               station_id: sid(idx),
               station_name: sname(idx),
-              route_name_list: [routeNameNext],
               lon: startPt[0],
               lat: startPt[1],
-              type: 'terminal',
-              connect_number: 1,
             },
             stations: bends.map((b) => {
               idx += 1;
@@ -482,20 +478,15 @@
               return {
                 station_id: sid(j),
                 station_name: sname(j),
-                route_name_list: [routeNameNext],
                 lon: b[0],
                 lat: b[1],
-                type: 'normal',
               };
             }),
             end: {
               station_id: sid(pts.length),
               station_name: sname(pts.length),
-              route_name_list: [routeNameNext],
               lon: endPt[0],
               lat: endPt[1],
-              type: 'terminal',
-              connect_number: 1,
             },
           },
           routeCoordinates: [startPt, bends, endPt],
@@ -504,7 +495,7 @@
         };
         // 寫入 layer.jsonData
         if (currentLayer) {
-          currentLayer.jsonData = [...existing, newRow];
+          currentLayer.jsonData = renumberAndRecomputeRouteExportRows([...existing, newRow]);
         }
         drawPoints.value = [];
         clearDrawPreview();
@@ -522,7 +513,7 @@
         if (idx.length === 0) return;
         const rows = [...currentLayer.jsonData];
         rows.splice(idx[idx.length - 1], 1);
-        currentLayer.jsonData = rows;
+        currentLayer.jsonData = renumberAndRecomputeRouteExportRows(rows);
         loadOrSyncLayers();
       };
 

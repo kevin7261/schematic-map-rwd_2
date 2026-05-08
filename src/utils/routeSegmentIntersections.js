@@ -2,10 +2,21 @@ import { expandLonLatChainFromRouteCoordinates } from '@/utils/mapDrawnRoutesImp
 import {
   fallbackStationIdFromLonLat,
   ensureSegmentStationStrings,
+  normalizeRouteSegmentEndpointType,
 } from '@/utils/geojsonRouteHelpers.js';
 
 const LON_LAT_VERTEX_TOL_SQ = (4e-6) ** 2; // ~0.4–0.45 m scale，用於判定「頂點已存在／重疊」
 const SAME_POINT_TOL_SQ = (8e-7) ** 2; // 合併重複交叉候選點
+
+/** 與 geojsonExportRouteSegments 協調鍵（七位小數） */
+const ROUTE_LIST_KEY_DECIMALS = 7;
+
+function coordKeyLonLat(lon, lat) {
+  const f = 10 ** ROUTE_LIST_KEY_DECIMALS;
+  const x = Math.round(Number(lon) * f) / f;
+  const y = Math.round(Number(lat) * f) / f;
+  return `${x},${y}`;
+}
 
 /**
  * @param {number} x1,y1,x2,y2 第一線段
@@ -49,7 +60,7 @@ export function makeIntersectionStation(lon, lat) {
     lon: lo,
     lat: la,
     type: 'intersection',
-    connect_number: 2,
+    connect_number: 0,
   };
 }
 
@@ -199,6 +210,103 @@ export function enumerateCrossingCandidates(rows) {
 }
 
 /**
+ * 依陣列順序重新指定 routeName（手繪_01…）與 route_id（S01…），並遍歷各路線折線頂點
+ * 聚合每座標之 route_name_list／connect_number／type（type=intersection 時 route_name_list 至少兩線）。
+ * 交叉點打斷後須呼叫此函式，避免新舊路段沿用相同名稱或遺漏轉乘列表。
+ *
+ * @param {Array<object>} rows - MapDrawn 路段列
+ * @param {{ emittedSegmentNamePrefix?: string }} [opts]
+ * @returns {Array<object>}
+ */
+export function renumberAndRecomputeRouteExportRows(rows, opts = {}) {
+  const prefix = opts.emittedSegmentNamePrefix ?? '手繪';
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const renamed = rows.map((row, idx) => {
+    const i = idx + 1;
+    return {
+      ...row,
+      routeName: `${prefix}_${String(i).padStart(2, '0')}`,
+      route_id: `S${String(i).padStart(2, '0')}`,
+    };
+  });
+
+  /** @type {Map<string, Set<string>>} */
+  const keyToNames = new Map();
+  const addName = (lon, lat, name) => {
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || !name) return;
+    const k = coordKeyLonLat(lon, lat);
+    if (!keyToNames.has(k)) keyToNames.set(k, new Set());
+    keyToNames.get(k).add(name);
+  };
+
+  for (const row of renamed) {
+    const chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
+    if (!chain || chain.length < 2) continue;
+    const n = row.routeName;
+    for (const c of chain) {
+      addName(c[0], c[1], n);
+    }
+  }
+
+  const listAt = (lon, lat) => {
+    const k = coordKeyLonLat(lon, lat);
+    return Array.from(keyToNames.get(k) ?? []).sort();
+  };
+
+  return renamed.map((row) => {
+    const chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
+    if (!chain || chain.length < 2) return row;
+    const seg = row.segment || {};
+
+    const startLon = Number(seg.start?.lon ?? seg.start?.x_grid ?? chain[0][0]);
+    const startLat = Number(seg.start?.lat ?? seg.start?.y_grid ?? chain[0][1]);
+    const endLon = Number(seg.end?.lon ?? seg.end?.x_grid ?? chain[chain.length - 1][0]);
+    const endLat = Number(seg.end?.lat ?? seg.end?.y_grid ?? chain[chain.length - 1][1]);
+
+    /**
+     * @param {'start'|'mid'|'end'} role
+     */
+    const fillNode = (node, lon, lat, role) => {
+      const rlist = listAt(lon, lat);
+      const cn = rlist.length;
+      let typ;
+      if (cn > 1) typ = 'intersection';
+      else if (role === 'mid') typ = 'normal';
+      else typ = 'terminal';
+      const base = ensureSegmentStationStrings(
+        { ...node, route_name_list: rlist, connect_number: cn },
+        lon,
+        lat
+      );
+      return {
+        ...base,
+        lon,
+        lat,
+        route_name_list: rlist,
+        connect_number: cn,
+        type: normalizeRouteSegmentEndpointType(typ),
+      };
+    };
+
+    const newStations = (Array.isArray(seg.stations) ? seg.stations : []).map((st) => {
+      const lon = Number(st.lon ?? st.x_grid);
+      const lat = Number(st.lat ?? st.y_grid);
+      return fillNode(st, lon, lat, 'mid');
+    });
+
+    return {
+      ...row,
+      segment: {
+        start: fillNode(seg.start || {}, startLon, startLat, 'start'),
+        stations: newStations,
+        end: fillNode(seg.end || {}, endLon, endLat, 'end'),
+      },
+    };
+  });
+}
+
+/**
  * 對候選做一次打斷：兩線各拆成兩段，共用交點 type=intersection
  * @returns {Array<object>|null} 新 rows 或失敗為 null
  */
@@ -219,5 +327,5 @@ export function applyCrossingToRows(rows, cand) {
     else if (k === ib) out.push(splitB[0], splitB[1]);
     else out.push(rows[k]);
   }
-  return out;
+  return renumberAndRecomputeRouteExportRows(out);
 }
