@@ -288,6 +288,16 @@
       type: Boolean,
       default: true,
     },
+    /** 若為函數，只顯示 visible 且 filter(layer)===true 的圖層（例如 space-layout-grid-viewer 專用分頁） */
+    layerFilter: {
+      type: Function,
+      default: null,
+    },
+    /** 區分同台掛載多個元件時之 SVG 容器 id（預設與先前相同；勿含空格） */
+    containerIdSuffix: {
+      type: String,
+      default: '',
+    },
   });
 
   const dataStore = useDataStore();
@@ -299,12 +309,15 @@
 
   /**
    * 🆔 獲取動態容器 ID (Get Dynamic Container ID)
-   * 基於當前活動圖層生成唯一的容器 ID，避免多圖層衝突
-   * @returns {string} 容器 ID
+   * 基於當前活動圖層生成唯一的容器 ID，避免多圖層衝突；
+   * 若 UpperView 同台掛兩個本元件（如 space-network-grid 與 space-layout-grid-viewer），須設定 containerIdSuffix 避免 getElementById 命中錯誤面板。
    */
   const getContainerId = () => {
     const layerId = activeLayerTab.value || 'default';
-    return `schematic-container-space-network-grid-${layerId}`;
+    const raw = typeof props.containerIdSuffix === 'string' ? props.containerIdSuffix.trim() : '';
+    const safe = /^[a-zA-Z0-9_-]+$/.test(raw) ? raw : '';
+    const suf = safe ? `-${safe}` : '';
+    return `schematic-container-space-network-grid-${layerId}${suf}`;
   };
 
   // ==================== 📊 示意圖繪製相關狀態 (Schematic Drawing State) ====================
@@ -353,10 +366,21 @@
   // ResizeObserver 實例
   let resizeObserver = null;
 
-  // 獲取所有開啟且有資料的圖層
+  // 獲取所有開啟的圖層（可選僅列出 layerFilter 通過者）
   const visibleLayers = computed(() => {
-    const allLayers = dataStore.getAllLayers();
-    return allLayers.filter((layer) => layer.visible);
+    const allLayers = dataStore.getAllLayers().filter((layer) => layer.visible);
+    const fn = props.layerFilter;
+    if (typeof fn === 'function') {
+      return allLayers.filter((layer) => {
+        try {
+          return Boolean(fn(layer));
+        } catch (e) {
+          void e;
+          return false;
+        }
+      });
+    }
+    return allLayers;
   });
 
   /**
@@ -410,9 +434,13 @@
     /** 資料處理 b3_dp→m3_dp 等：尚未執行「上一步」時尚無路網，仍應掛載繪圖容器以便有資料後重繪 */
     const hasSpaceNetworkGridTab =
       Array.isArray(layer.upperViewTabs) && layer.upperViewTabs.includes('space-network-grid');
+    const hasSpaceLayoutGridViewerTab =
+      Array.isArray(layer.upperViewTabs) && layer.upperViewTabs.includes('space-layout-grid-viewer');
 
     // 如果有數據，返回 dashboardData（如果存在）或一個標記物件
-    return hasData || hasSpaceNetworkGridTab ? layer.dashboardData || { hasData: true } : null;
+    return hasData || hasSpaceNetworkGridTab || hasSpaceLayoutGridViewerTab
+      ? layer.dashboardData || { hasData: true }
+      : null;
   });
 
   /**
@@ -597,7 +625,8 @@
         if (!d) {
           const mayShowEmptySpaceNetwork =
             Array.isArray(targetLayer.upperViewTabs) &&
-            targetLayer.upperViewTabs.includes('space-network-grid');
+            (targetLayer.upperViewTabs.includes('space-network-grid') ||
+              targetLayer.upperViewTabs.includes('space-layout-grid-viewer'));
           if (mayShowEmptySpaceNetwork) {
             gridData.value = null;
             nodeData.value = null;
