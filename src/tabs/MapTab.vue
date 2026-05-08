@@ -405,15 +405,39 @@
 <strong>lat</strong> ${escapeHtmlAttr(lat)}`;
       };
 
-      /** 路段折線 popup：routeName／route_id／color／起點 lon／lat */
+      /** 路段依序列表：segment.start→stations→end（站數與 station_id／station_name） */
+      const routeRowStationsOrderedPopupSection = (row) => {
+        const seg = row?.segment;
+        if (!seg || typeof seg !== 'object') return '';
+        const ordered = [];
+        if (seg.start) ordered.push(seg.start);
+        if (Array.isArray(seg.stations)) {
+          for (const st of seg.stations) ordered.push(st);
+        }
+        if (seg.end) ordered.push(seg.end);
+        if (!ordered.length) return '';
+        let html = `<strong>stations（依序）</strong> ${ordered.length}<br>`;
+        ordered.forEach((node, idx) => {
+          const sid = escapeHtmlAttr(node.station_id ?? node.tags?.station_id ?? '');
+          const snm = escapeHtmlAttr(
+            node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? ''
+          );
+          html += `<strong>#${idx + 1}</strong> station_id ${sid} · station_name ${snm}<br>`;
+        });
+        return html;
+      };
+
+      /** 路段折線 popup：routeName／route_id／color／起點 lon／lat／stations */
       const routeRowPolylinePopupHtml = (row, chain) => {
         if (!chain || chain.length < 1) return '';
         const [flon, flat] = chain[0];
-        return `<strong>routeName</strong> ${escapeHtmlAttr(row.routeName)}<br>
+        const head = `<strong>routeName</strong> ${escapeHtmlAttr(row.routeName)}<br>
 <strong>route_id</strong> ${escapeHtmlAttr(row.route_id ?? '')}<br>
 <strong>color</strong> ${escapeHtmlAttr(row.color)}<br>
 <strong>lon</strong> ${escapeHtmlAttr(flon)}<br>
 <strong>lat</strong> ${escapeHtmlAttr(flat)}`;
+        const stations = routeRowStationsOrderedPopupSection(row);
+        return stations ? `${head}<br>${stations}` : head;
       };
 
       // ==================== 畫線模式 (Draw Mode) ====================

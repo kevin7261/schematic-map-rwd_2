@@ -3971,6 +3971,30 @@
       ? buildRouteWeightStrokeScaleLinear(collectWeightsFromGeoRouteFeatures(routeFeatures))
       : null;
 
+    /** json 繪製路段 tooltip：segment.start→stations→end */
+    const tooltipHtmlSegmentStationsOrdered = (seg) => {
+      if (!seg || typeof seg !== 'object') return '';
+      const esc = (t) =>
+        String(t ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      const ordered = [];
+      if (seg.start) ordered.push(seg.start);
+      if (Array.isArray(seg.stations)) {
+        for (const s of seg.stations) ordered.push(s);
+      }
+      if (seg.end) ordered.push(seg.end);
+      if (!ordered.length) return '';
+      let h = `<br><strong>stations（依序）</strong> ${ordered.length}<br>`;
+      ordered.forEach((n, idx) => {
+        h += `<strong>#${idx + 1}</strong> station_id ${esc(
+          n.station_id ?? n.tags?.station_id ?? ''
+        )} · station_name ${esc(n.station_name ?? n.tags?.station_name ?? n.tags?.name ?? '')}<br>`;
+      });
+      return h;
+    };
+
     const drawRoutePath = (
       coords,
       tags,
@@ -3980,7 +4004,8 @@
       originalPoints,
       points,
       isHvZTest3E3F3Highlight = false,
-      l3BlackDotReducedWeightGreen = false
+      l3BlackDotReducedWeightGreen = false,
+      routeFeatureRouteId = ''
     ) => {
       // 與 MapTab 一致：tags.color／tags.colour，否則 feature.properties.color（如路段匯出列），預設 #666666
       const trimColour = (s) => (typeof s === 'string' && s.trim() !== '' ? s.trim() : '');
@@ -4074,6 +4099,26 @@
               const wt = w?.weight;
               tooltipContent += `  #${wi + 1} start_idx=${sw} → end_idx=${ew}，weight=${wt}<br>`;
             });
+          }
+
+          if (layerTab === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+            const jl = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+            const jr = jl?.jsonData ?? jl?.dataJson;
+            if (Array.isArray(jr)) {
+              const rid = routeFeatureRouteId != null ? String(routeFeatureRouteId) : '';
+              const rnm = name != null ? String(name) : '';
+              let segMatch = null;
+              if (rid !== '') {
+                const hit = jr.find((r) => r && String(r.route_id ?? '') === rid);
+                segMatch = hit?.segment;
+              }
+              if (!segMatch && rnm !== '') {
+                segMatch = jr.find((r) => r && String(r.routeName ?? '') === rnm)?.segment;
+              }
+              if (segMatch) {
+                tooltipContent += tooltipHtmlSegmentStationsOrdered(segMatch);
+              }
+            }
           }
 
           routeTooltipHtml = tooltipContent || '無標籤資訊';
@@ -4202,9 +4247,10 @@
         .attr('class', 'layout-uniform-station-grid-line')
         .attr('stroke', '#5c6b7a')
         .attr('fill', 'none')
-        .attr('stroke-width', '1pt')
+        .attr('vector-effect', 'non-scaling-stroke')
         .attr('opacity', 0.88)
         .attr('stroke-linecap', 'round')
+        .style('stroke-width', '1pt')
         .style('pointer-events', 'none');
     };
 
@@ -4225,6 +4271,9 @@
       const geom = feature.geometry;
       const isHvZHl = false;
 
+      const routeFeatId =
+        props.route_id != null && props.route_id !== '' ? String(props.route_id) : '';
+
       if (geom.type === 'LineString') {
         drawRoutePath(
           offsetPathToSchematicCellCenters(hvTransformPath(transformPathCoords(geom.coordinates))),
@@ -4235,7 +4284,8 @@
           props.original_points,
           props.points,
           isHvZHl,
-          Boolean(props.l3_black_dot_reduced_weight_green)
+          Boolean(props.l3_black_dot_reduced_weight_green),
+          routeFeatId
         );
       } else if (geom.type === 'MultiLineString') {
         geom.coordinates.forEach((coords) => {
@@ -4248,7 +4298,8 @@
             props.original_points,
             props.points,
             isHvZHl,
-            Boolean(props.l3_black_dot_reduced_weight_green)
+            Boolean(props.l3_black_dot_reduced_weight_green),
+            routeFeatId
           );
         });
       }
