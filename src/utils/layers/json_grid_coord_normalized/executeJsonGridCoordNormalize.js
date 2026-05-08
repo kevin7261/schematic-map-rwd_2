@@ -1,11 +1,8 @@
 /* eslint-disable no-console */
 
 /**
- * 「JSON·網格·座標正規化」圖層：單一入口 **b→c→d**
- *
+ * 「JSON·網格·座標正規化」圖層：單鍵 **b→c→d**（見 `layerId`：'json_grid_coord_normalized'）。
  * 開啟本圖層時已由 dataStore 自 `osm_2_geojson_2_json` 複製 `dataJson`／`geojsonData`。
- *
- * @returns {boolean} 成功為 true
  */
 
 import { useDataStore } from '@/stores/dataStore.js';
@@ -16,13 +13,12 @@ import {
   buildC3NetworkForCoordNormalize,
   writeLayoutNormalizedLayerDataOsmFromNetwork,
 } from './jsonGridCoordNormalizeHelpers.js';
-import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from './sessionJsonGridCoordNormalized.js';
 
 export function executeJsonGridCoordNormalize() {
   const dataStore = useDataStore();
-  const layer = dataStore.findLayerById(JSON_GRID_COORD_NORMALIZED_LAYER_ID);
+  const layer = dataStore.findLayerById('json_grid_coord_normalized');
   if (!layer) {
-    console.warn('executeJsonGridCoordNormalize：找不到圖層', JSON_GRID_COORD_NORMALIZED_LAYER_ID);
+    console.warn('executeJsonGridCoordNormalize：找不到圖層', 'json_grid_coord_normalized');
     return false;
   }
 
@@ -49,10 +45,8 @@ export function executeJsonGridCoordNormalize() {
   layer.dashboardData = {
     segmentCount: out.flatSegs.length,
     exportRowCount: Array.isArray(layer.processedJsonData) ? layer.processedJsonData.length : 0,
-    sourceLayerId: JSON_GRID_COORD_NORMALIZED_LAYER_ID,
-    routeSourceLayerId: resolved.fromExistingSn
-      ? JSON_GRID_COORD_NORMALIZED_LAYER_ID
-      : OSM_2_LAYER_ID,
+    sourceLayerId: 'json_grid_coord_normalized',
+    routeSourceLayerId: resolved.fromExistingSn ? 'json_grid_coord_normalized' : OSM_2_LAYER_ID,
     coordNormalize: true,
     straightened: true,
     ...out.meta,
@@ -60,7 +54,7 @@ export function executeJsonGridCoordNormalize() {
 
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, out.flatSegs);
 
-  dataStore.saveLayerState(JSON_GRID_COORD_NORMALIZED_LAYER_ID, {
+  dataStore.saveLayerState('json_grid_coord_normalized', {
     spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
     spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
     spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,

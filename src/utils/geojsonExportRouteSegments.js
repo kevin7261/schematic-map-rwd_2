@@ -180,12 +180,18 @@ function snapStation(s) {
  * @param {{
  *   renameEachEmittedSegment?: boolean,
  *   emittedSegmentNamePrefix?: string,
- * }} [options] — `renameEachEmittedSegment`：交叉點切段後每段為獨立路線名（預設 `路線_1`…）與數字 `route_id`，不再沿用輸入之 routeName
+ *   insertStationsOntoLinesByProximity?: boolean,
+ * }} [options] — `renameEachEmittedSegment`：交叉點切段後每段為獨立路線名（預設 `路線_1`…）與數字 `route_id`，不再沿用輸入之 routeName。
+ * `insertStationsOntoLinesByProximity`（預設 true）：將車站 Point 依垂距門檻插入鄰近折線段；OSM 讀入應設 false 以保持頂點與拓樸如實。
  * @returns {Array<Object>}
  */
 export function exportRouteSegmentsFromGeoJson(geojson, options = {}) {
   if (!geojson?.features || !Array.isArray(geojson.features)) return [];
-  const { renameEachEmittedSegment = false, emittedSegmentNamePrefix } = options;
+  const {
+    renameEachEmittedSegment = false,
+    emittedSegmentNamePrefix,
+    insertStationsOntoLinesByProximity = true,
+  } = options;
 
   /** @type {Map<string, object>} */
   const stations = new Map();
@@ -253,7 +259,9 @@ export function exportRouteSegmentsFromGeoJson(geojson, options = {}) {
     }
   }
 
-  const routeWalkCoords = routes.map((r) => expandRouteCoordsWithStationsOnLine(r.coords, stations));
+  const routeWalkCoords = insertStationsOntoLinesByProximity
+    ? routes.map((r) => expandRouteCoordsWithStationsOnLine(r.coords, stations))
+    : routes.map((r) => r.coords.map((c) => [num(c[0]), num(c[1])]));
 
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri];

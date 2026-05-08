@@ -542,7 +542,9 @@ export async function loadOsmXmlAsGeoJsonForRoutes(layer) {
       const emptyFc = { type: 'FeatureCollection', features: [] };
       if (layer?.layerId === 'osm_2_geojson_2_json') {
         const base = buildStandardRouteGeoJsonLoadResult(emptyFc);
-        const routeExportRows = exportRouteSegmentsFromGeoJson(emptyFc);
+        const routeExportRows = exportRouteSegmentsFromGeoJson(emptyFc, {
+          insertStationsOntoLinesByProximity: false,
+        });
         return {
           ...base,
           jsonData: routeExportRows,

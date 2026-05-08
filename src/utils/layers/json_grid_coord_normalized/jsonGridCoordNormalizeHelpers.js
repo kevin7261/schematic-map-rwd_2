@@ -109,13 +109,6 @@ export function buildC3NetworkForCoordNormalize(coordLayer) {
   const resolved = resolveB3InputSpaceNetwork(coordLayer);
   if (!resolved?.spaceNetwork?.length) return null;
 
-  if (
-    coordLayer?.dashboardData?.orthogonalLayout === true &&
-    coordLayer?.dashboardData?.orthogonalLayoutSafe === true
-  ) {
-    return { c3Network: resolved.spaceNetwork, resolved };
-  }
-
   const straightened = straightenSpaceNetworkAfterStrippingBlackStations(resolved.spaceNetwork);
   if (!straightened) {
     console.warn('executeJsonGridCoordNormalize：內部 B3→C3（路線整形）失敗');

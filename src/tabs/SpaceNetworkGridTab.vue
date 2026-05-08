@@ -92,7 +92,7 @@
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
     getOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
-  import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from '@/utils/layers/json_grid_coord_normalized/sessionJsonGridCoordNormalized.js';
+  import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
   import { uniformGridCellFromLayoutMeta } from '@/utils/stationUniformGridGeoJson.js';
 

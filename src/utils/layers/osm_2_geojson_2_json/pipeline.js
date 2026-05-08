@@ -17,7 +17,9 @@ export function osmXmlStringToGeojsonData(osmXmlString) {
  */
 export function geojson_2_json(geojsonData) {
   const base = buildStandardRouteGeoJsonLoadResult(geojsonData);
-  const routeExportRows = exportRouteSegmentsFromGeoJson(geojsonData);
+  const routeExportRows = exportRouteSegmentsFromGeoJson(geojsonData, {
+    insertStationsOntoLinesByProximity: false,
+  });
   return {
     ...base,
     jsonData: routeExportRows,

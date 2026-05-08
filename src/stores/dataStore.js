@@ -158,7 +158,6 @@ import {
   SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
-import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from '../utils/layers/json_grid_coord_normalized/sessionJsonGridCoordNormalized.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
@@ -303,7 +302,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
           },
           {
-            layerId: JSON_GRID_COORD_NORMALIZED_LAYER_ID,
+            layerId: 'json_grid_coord_normalized',
             layerName: '座標正規化',
             visible: false,
             isLoading: false,
@@ -2227,11 +2226,11 @@ export const useDataStore = defineStore(
         layer.visible &&
         (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ||
           layer.layerId === JSON_DRAW_LAYOUT_READ_LAYER_ID ||
-          layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID)
+          layer.layerId === 'json_grid_coord_normalized')
       ) {
         if (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
           applyOsm2DataJsonSyncedLayerFromParent(layer);
-        } else if (layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID) {
+        } else if (layer.layerId === 'json_grid_coord_normalized') {
           applyOsm2DataJsonSyncedLayerFromParent(layer);
           resetJsonGridCoordNormalizedPipelineFields(layer);
         } else {
@@ -2245,7 +2244,7 @@ export const useDataStore = defineStore(
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
           layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
         };
-        if (layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID) {
+        if (layer.layerId === 'json_grid_coord_normalized') {
           Object.assign(persist, {
             spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
             spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
@@ -3410,11 +3409,11 @@ export const useDataStore = defineStore(
       if (
         layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ||
         layerId === JSON_DRAW_LAYOUT_READ_LAYER_ID ||
-        layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID
+        layerId === 'json_grid_coord_normalized'
       ) {
         if (layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
           applyOsm2DataJsonSyncedLayerFromParent(layer);
-        } else if (layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID) {
+        } else if (layerId === 'json_grid_coord_normalized') {
           applyOsm2DataJsonSyncedLayerFromParent(layer);
           resetJsonGridCoordNormalizedPipelineFields(layer);
         } else {
@@ -3431,7 +3430,7 @@ export const useDataStore = defineStore(
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
           layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
         };
-        if (layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID) {
+        if (layerId === 'json_grid_coord_normalized') {
           Object.assign(persist, {
             spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
             spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
