@@ -2,7 +2,12 @@
  * 圖層 osm_2_geojson_2_json：OSM XML → GeoJSON → 路段 JSON（模組分檔於本資料夾）。
  */
 
-export { LAYER_ID, setOsm2GeojsonSessionOsmXml, getOsm2GeojsonSessionOsmXml } from './sessionOsmXml.js';
+export {
+  LAYER_ID,
+  SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
+  setOsm2GeojsonSessionOsmXml,
+  getOsm2GeojsonSessionOsmXml,
+} from './sessionOsmXml.js';
 export {
   osmXmlStringToGeojsonData,
   geojson_2_json,

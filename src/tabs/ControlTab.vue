@@ -3671,6 +3671,7 @@
         sourceOsmXmlText: text,
       });
       dataStore.saveLayerState(layer.layerId, getOsm2GeojsonPersistPatchAfterLoaderMerge(layer));
+      dataStore.syncOsm2DataJsonMirrorFromParent();
     } catch (err) {
       console.error('本機 OSM 讀取失敗:', err);
       layer.isLoading = false;

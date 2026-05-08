@@ -54,6 +54,7 @@
           dataGeojson: ly.dataGeojson,
           dataJson: ly.dataJson,
         });
+        dataStore.syncOsm2DataJsonMirrorFromParent();
       };
       // 為每個圖層存儲獨立的地圖狀態
       const layerStates = new Map(); // layerId -> { center, zoom, tileLayer, townshipLayer, isTownshipVisible, geojsonLayers }
@@ -462,7 +463,8 @@
         }
 
         const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
-        const existing = Array.isArray(currentLayer?.jsonData) ? currentLayer.jsonData : [];
+        const targetLayer = currentLayer;
+        const existing = Array.isArray(targetLayer?.jsonData) ? targetLayer.jsonData : [];
         /** 繪製順序：已存在之手繪列（含本次將寫入前）數量 + 1 — 僅用於 station_id 編號 */
         const drawnRoutesSoFar = existing.filter((r) => r && r._drawn).length;
         const routeSeq = drawnRoutesSoFar + 1;
@@ -507,10 +509,10 @@
           _drawn: true,
           _drawnAt: ts,
         };
-        // 寫入 layer.jsonData
-        if (currentLayer) {
-          currentLayer.jsonData = renumberAndRecomputeRouteExportRows([...existing, newRow]);
-          persistOsmPipelineLayerArtifactsIfApplicable(currentLayer);
+        // 寫入 layer.jsonData（dataJson 鏡像圖層時寫入父圖層）
+        if (targetLayer) {
+          targetLayer.jsonData = renumberAndRecomputeRouteExportRows([...existing, newRow]);
+          persistOsmPipelineLayerArtifactsIfApplicable(targetLayer);
         }
         drawPoints.value = [];
         clearDrawPreview();
@@ -521,15 +523,16 @@
       /** 撤銷最後一段手繪路線 */
       const undoLastDrawnLine = () => {
         const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
-        if (!currentLayer || !Array.isArray(currentLayer.jsonData)) return;
-        const idx = [...currentLayer.jsonData]
+        const targetLayer = currentLayer;
+        if (!targetLayer || !Array.isArray(targetLayer.jsonData)) return;
+        const idx = [...targetLayer.jsonData]
           .map((r, i) => (r._drawn ? i : -1))
           .filter((i) => i >= 0);
         if (idx.length === 0) return;
-        const rows = [...currentLayer.jsonData];
+        const rows = [...targetLayer.jsonData];
         rows.splice(idx[idx.length - 1], 1);
-        currentLayer.jsonData = renumberAndRecomputeRouteExportRows(rows);
-        persistOsmPipelineLayerArtifactsIfApplicable(currentLayer);
+        targetLayer.jsonData = renumberAndRecomputeRouteExportRows(rows);
+        persistOsmPipelineLayerArtifactsIfApplicable(targetLayer);
         loadOrSyncLayers();
       };
 
@@ -600,10 +603,11 @@
 
       const hasDrawnLines = computed(() => {
         const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const ly = currentLayer;
         return (
-          currentLayer &&
-          Array.isArray(currentLayer.jsonData) &&
-          currentLayer.jsonData.some((r) => r._drawn)
+          ly &&
+          Array.isArray(ly.jsonData) &&
+          ly.jsonData.some((r) => r._drawn)
         );
       });
 
@@ -620,7 +624,8 @@
       const SNAP_CROSSING_PX = 32;
 
       function refreshCrossingCandidatesCache() {
-        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const current = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const ly = current;
         if (
           !ly ||
           !Array.isArray(ly.jsonData) ||
@@ -634,7 +639,8 @@
       }
 
       const canUseCrossingTool = computed(() => {
-        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const current = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const ly = current;
         return Boolean(
           ly &&
             Array.isArray(ly.jsonData) &&
@@ -736,7 +742,8 @@
 
       const onIntersectCaptureClick = (ev) => {
         if (!intersectMode.value || !map || !activeSnapCrossingCandidate) return;
-        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const current = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const ly = current;
         if (
           !ly ||
           !Array.isArray(ly.jsonData) ||
@@ -810,7 +817,8 @@
       /** 目前圖層是否有可清空之地圖幾何（線／點／未完成的預覽） */
       const hasRenderableGeometryOnActiveLayer = computed(() => {
         if (drawPoints.value.length > 0) return true;
-        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const current = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        const ly = current;
         if (!ly) return false;
         if (Array.isArray(ly.jsonData) && ly.jsonData.length > 0) return true;
         const feats = ly.geojsonData?.features;
@@ -821,6 +829,7 @@
       const clearActiveLayerLinesAndPoints = () => {
         const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
         if (!ly) return;
+        const target = ly;
         if (
           !window.confirm(
             '確定清空目前圖層在地圖上的所有線段與站點？（含已載入／匯出的路段與 GeoJSON）'
@@ -833,16 +842,16 @@
         drawPoints.value = [];
         clearDrawPreview();
 
-        ly.jsonData = null;
-        ly.geojsonData = { type: 'FeatureCollection', features: [] };
-        ly.processedJsonData = null;
-        ly.dashboardData = null;
-        ly.dataTableData = null;
-        ly.layerInfoData = null;
+        target.jsonData = null;
+        target.geojsonData = { type: 'FeatureCollection', features: [] };
+        target.processedJsonData = null;
+        target.dashboardData = null;
+        target.dataTableData = null;
+        target.layerInfoData = null;
 
-        if (ly.layerId === OSM_PIPELINE_LAYER_ID) {
+        if (target.layerId === OSM_PIPELINE_LAYER_ID) {
           setOsm2GeojsonSessionOsmXml('');
-          persistOsmPipelineLayerArtifactsIfApplicable(ly);
+          persistOsmPipelineLayerArtifactsIfApplicable(target);
         }
 
         loadOrSyncLayers();

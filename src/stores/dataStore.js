@@ -153,12 +153,14 @@ import { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../utils/layers/osm_2_ge
 import { assignOsm2LayerViewerFields } from '../utils/layers/osm_2_geojson_2_json/layerMerge.js';
 import {
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
+  SPACE_LAYOUT_GRID_VIEWER_LAYER_ID as OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
 } from '../utils/networkDrawSketchPipelineLayers.js';
+import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../utils/mapDrawnRoutesImport.js';
 import {
   getAllNetworkDrawSketchSn4LayerIds,
   isRegisteredNetworkDrawSketchSn4LayerId,
@@ -296,6 +298,43 @@ export const useDataStore = defineStore(
             dataGeojson: null,
             dataJson: null,
             upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
+          },
+          {
+            layerId: OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
+            layerName: '路段 JSON 網格示意（dataJson／D3）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            upperViewTabs: ['space-layout-grid-viewer'],
           },
         ],
       },
@@ -1864,6 +1903,38 @@ export const useDataStore = defineStore(
       return allLayers;
     };
 
+    /** 自 OSM 管線父圖層複製路段 JSON（dataJson）至 D3 示意等衍生圖層 */
+    const applyOsm2DataJsonSyncedLayerFromParent = (derivedLayer) => {
+      const parent = findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
+      const raw =
+        parent && Array.isArray(parent.dataJson)
+          ? parent.dataJson
+          : parent && Array.isArray(parent.jsonData)
+            ? parent.jsonData
+            : null;
+      const arr = Array.isArray(raw) ? JSON.parse(JSON.stringify(raw)) : null;
+      derivedLayer.jsonData = arr;
+      derivedLayer.dataJson = arr;
+      derivedLayer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(
+        Array.isArray(raw) ? raw : []
+      );
+      derivedLayer.isLoaded = true;
+    };
+
+    const syncOsm2DataJsonMirrorFromParent = () => {
+      const layoutViewer = findLayerById(OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+      if (!layoutViewer) return;
+      applyOsm2DataJsonSyncedLayerFromParent(layoutViewer);
+      if (layoutViewer.visible) {
+        saveLayerState(OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
+          jsonData: layoutViewer.jsonData,
+          geojsonData: layoutViewer.geojsonData,
+          dataJson: layoutViewer.dataJson,
+          isLoaded: layoutViewer.isLoaded,
+        });
+      }
+    };
+
     // ==================== 🔄 主要圖層處理函數 (Main Layer Processing Functions) ====================
 
     /**
@@ -1966,6 +2037,16 @@ export const useDataStore = defineStore(
 
       // 保存圖層的可見性狀態
       saveLayerState(layerId, { visible: layer.visible });
+
+      if (layer.visible && layer.layerId === OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+        applyOsm2DataJsonSyncedLayerFromParent(layer);
+        saveLayerState(layerId, {
+          jsonData: layer.jsonData,
+          geojsonData: layer.geojsonData,
+          dataJson: layer.dataJson,
+          isLoaded: layer.isLoaded,
+        });
+      }
 
       // 🩹 修正：taipei_6_1_test2 的 dataTableData 欄位 schema 曾變更（改為 0-based，且由三連改為兩連，再改為單列/單行）
       // 若 Pinia persist 還留著舊資料（會出現 idx/idx1/idx2=203 之類的不存在座標，或舊的 pair/triplet schema），強制標記為未載入以觸發重新載入
@@ -2141,6 +2222,7 @@ export const useDataStore = defineStore(
               sourceOsmXmlText:
                 typeof result.sourceOsmXmlText === 'string' ? result.sourceOsmXmlText : '',
             });
+            syncOsm2DataJsonMirrorFromParent();
           }
 
           layer.isLoaded = true;
@@ -2198,6 +2280,7 @@ export const useDataStore = defineStore(
           /** OSM／可空載入圖層：維持使用者已開啟之可見狀態，不因無檔／請求失敗而自動關閉 */
           if (
             layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID &&
+            layerId !== OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID &&
             layerId !== 'taipei_osm_geojson_sn4'
           ) {
             layer.visible = false;
@@ -3107,6 +3190,20 @@ export const useDataStore = defineStore(
         return;
       }
 
+      if (layerId === OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+        applyOsm2DataJsonSyncedLayerFromParent(layer);
+        layer.isLoaded = true;
+        layer.isLoading = false;
+        saveLayerState(layerId, {
+          isLoaded: true,
+          isLoading: false,
+          jsonData: layer.jsonData,
+          geojsonData: layer.geojsonData,
+          dataJson: layer.dataJson,
+        });
+        return;
+      }
+
       // 清除載入狀態
       layer.isLoaded = false;
       layer.isLoading = false;
@@ -3225,6 +3322,7 @@ export const useDataStore = defineStore(
       getAllLayers, // 獲取所有圖層的扁平陣列
       findGroupNameByLayerId, // 根據圖層ID找到對應的群組名稱
       toggleLayerVisibility,
+      syncOsm2DataJsonMirrorFromParent,
       reloadLayer, // 強制重新載入圖層
       selectedFeature,
       setSelectedFeature,
