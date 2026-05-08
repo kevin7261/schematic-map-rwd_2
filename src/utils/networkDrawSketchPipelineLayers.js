@@ -4,20 +4,6 @@
  */
 export const NETWORK_DRAW_SKETCH_TO_B3_LAYER_ID = {};
 
-/** @returns {string[]} */
-export function getAllNetworkDrawSketchLayerIds() {
-  return Object.keys(NETWORK_DRAW_SKETCH_TO_B3_LAYER_ID);
-}
-
-/**
- * @param {string} sketchLayerId
- * @returns {string|null}
- */
-export function networkDrawPipelineB3LayerIdForSketch(sketchLayerId) {
-  if (sketchLayerId == null) return null;
-  return NETWORK_DRAW_SKETCH_TO_B3_LAYER_ID[sketchLayerId] ?? null;
-}
-
 /**
  * @param {string} layerId
  * @returns {boolean}

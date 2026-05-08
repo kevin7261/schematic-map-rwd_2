@@ -1,6 +1,13 @@
+import { schedulePersistOsm2GeojsonArtifacts } from './artifactPersist.js';
+import { LAYER_ID } from './sessionOsmXml.js';
 import { geojson_2_json } from './pipeline.js';
 
-export function mergeOsm2GeojsonLoaderResultIntoLayer(layer, result) {
+/**
+ * @param {object} layer
+ * @param {object} result
+ * @param {{ groupName?: string, sourceOsmXmlText?: string } | null} [persistence]
+ */
+export function mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, persistence = null) {
   layer.jsonData = result.jsonData ?? null;
   layer.processedJsonData = result.processedJsonData ?? null;
   layer.geojsonData = result.geojsonData ?? null;
@@ -9,6 +16,20 @@ export function mergeOsm2GeojsonLoaderResultIntoLayer(layer, result) {
   layer.layerInfoData = result.layerInfoData ?? null;
   layer.isLoaded = true;
   layer.isLoading = false;
+  if (
+    layer.layerId === LAYER_ID &&
+    persistence?.groupName &&
+    typeof persistence.groupName === 'string'
+  ) {
+    schedulePersistOsm2GeojsonArtifacts({
+      groupName: persistence.groupName,
+      layer,
+      sourceOsmXmlText:
+        typeof persistence.sourceOsmXmlText === 'string'
+          ? persistence.sourceOsmXmlText
+          : result?.sourceOsmXmlText,
+    });
+  }
 }
 
 /** 供本機載入後 saveLayerState 使用 */

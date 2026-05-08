@@ -100,6 +100,55 @@ module.exports = defineConfig({
           res.status(500).json({ ok: false, error: err.message });
         }
       });
+
+      /** osm_2_geojson_2_json：`public/data/layers/{groupName}/{layerId}/` → Upper 三分頁 fetch */
+      devServer.app.post('/api/save-osm2-geojson-2-json-artifacts', (req, res) => {
+        try {
+          const body = req.body || {};
+          const groupName = body.groupName;
+          const layerId = body.layerId;
+          if (typeof groupName !== 'string' || typeof layerId !== 'string') {
+            res.status(400).json({ ok: false, error: 'groupName and layerId required' });
+            return;
+          }
+          if (
+            !groupName.trim() ||
+            !layerId.trim() ||
+            groupName.includes('..') ||
+            layerId.includes('..') ||
+            groupName.includes('/') ||
+            groupName.includes('\\') ||
+            layerId.includes('/') ||
+            layerId.includes('\\')
+          ) {
+            res.status(400).json({ ok: false, error: 'invalid groupName or layerId' });
+            return;
+          }
+          const layerDir = path.join(__dirname, 'public', 'data', 'layers', groupName, layerId);
+          if (!fs.existsSync(layerDir)) fs.mkdirSync(layerDir, { recursive: true });
+          if (typeof body.osmXml === 'string' && body.osmXml.length > 0) {
+            fs.writeFileSync(path.join(layerDir, 'source.osm'), body.osmXml, 'utf8');
+          }
+          if (body.geojson != null && typeof body.geojson === 'object') {
+            fs.writeFileSync(
+              path.join(layerDir, 'routes.geojson'),
+              JSON.stringify(body.geojson, null, 2),
+              'utf8'
+            );
+          }
+          if (body.segments != null) {
+            fs.writeFileSync(
+              path.join(layerDir, 'segments.json'),
+              JSON.stringify(body.segments, null, 2),
+              'utf8'
+            );
+          }
+          res.json({ ok: true, dir: path.join('data', 'layers', groupName, layerId) });
+        } catch (err) {
+          console.error('[save-osm2-geojson-2-json-artifacts]', err);
+          res.status(500).json({ ok: false, error: err.message });
+        }
+      });
       return middlewares;
     },
   },

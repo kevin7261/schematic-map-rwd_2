@@ -72,6 +72,8 @@
   import { useDataStore } from '@/stores/dataStore.js';
   import { copyToClipboard } from '@/utils/utils.js';
   import { LAYER_ID as OSM_2_LAYER_ID, getOsm2GeojsonSessionOsmXml } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+  import { encodeOsm2ArtifactsDirForDataUrl } from '@/utils/layers/osm_2_geojson_2_json/artifactPersist.js';
+  import { minimalLineStringFeatureCollectionFromRouteExportRows } from '@/utils/mapDrawnRoutesImport.js';
 
   // ==================== 🏪 狀態管理初始化 (State Management Initialization) ====================
 
@@ -121,42 +123,8 @@
 
   const osmFetched = ref('');
   const osmError = ref('');
-
-  watch(
-    () => [
-      props.osmViewerMode,
-      activeResolvedLayer.value?.osmFileName,
-      activeResolvedLayer.value?.visible,
-      activeResolvedLayer.value?.isLoaded,
-    ],
-    async () => {
-      if (props.osmViewerMode !== 'osm-xml') return;
-      osmError.value = '';
-      const session = getOsm2GeojsonSessionOsmXml();
-      if (session?.length > 0) {
-        osmFetched.value = session;
-        return;
-      }
-      const fn = activeResolvedLayer.value?.osmFileName;
-      if (!fn || !String(fn).trim()) {
-        osmFetched.value = '';
-        osmError.value = '';
-        return;
-      }
-      try {
-        const baseUrl = process.env.BASE_URL || '/';
-        let res = await fetch(`${baseUrl}data/${fn}`);
-        if (!res.ok) res = await fetch(`/data/${fn}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        osmFetched.value = await res.text();
-      } catch {
-        osmFetched.value = '';
-        osmError.value =
-          `無法從 /data/ 讀取「${fn}」。若以本機檔載入，session 於本次運行期間保留原文。`;
-      }
-    },
-    { immediate: true }
-  );
+  const artifactRoutesGeoJsonText = ref(null);
+  const artifactSegmentsJsonText = ref(null);
 
   // 獲取所有開啟且有可顯示 JSON 之相關圖層
   const visibleLayers = computed(() => {
@@ -172,6 +140,105 @@
           (layer.layerId === OSM_2_LAYER_ID && Array.isArray(layer.jsonData)))
     );
   });
+
+  const artifactDirEncoded = computed(() => {
+    if (!props.osmViewerMode) return '';
+    const layer = visibleLayers.value.find((l) => l.layerId === OSM_2_LAYER_ID);
+    if (!layer?.visible) return '';
+    const gName = dataStore.findGroupNameByLayerId(OSM_2_LAYER_ID);
+    return encodeOsm2ArtifactsDirForDataUrl(gName, OSM_2_LAYER_ID) || '';
+  });
+
+  async function fetchArtifactFileText(fileName) {
+    const dir = artifactDirEncoded.value;
+    if (!dir) return null;
+    const baseUrl = process.env.BASE_URL || '/';
+    const q = `?t=${Date.now()}`;
+    try {
+      let res = await fetch(`${baseUrl}data/${dir}/${fileName}${q}`);
+      if (!res.ok) res = await fetch(`/data/${dir}/${fileName}${q}`);
+      return res.ok ? await res.text() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  watch(
+    () => [
+      props.osmViewerMode,
+      artifactDirEncoded.value,
+      activeResolvedLayer.value?.osmFileName,
+      activeResolvedLayer.value?.visible,
+      activeResolvedLayer.value?.isLoaded,
+      activeResolvedLayer.value?.geojsonData,
+      activeResolvedLayer.value?.jsonData,
+    ],
+    async () => {
+      artifactRoutesGeoJsonText.value = null;
+      artifactSegmentsJsonText.value = null;
+      if (!props.osmViewerMode) return;
+
+      const dir = artifactDirEncoded.value;
+
+      if (props.osmViewerMode === 'osm-xml') {
+        osmError.value = '';
+        if (dir) {
+          const fromArtifact = await fetchArtifactFileText('source.osm');
+          if (fromArtifact?.trim()) {
+            osmFetched.value = fromArtifact;
+            return;
+          }
+        }
+        const session = getOsm2GeojsonSessionOsmXml();
+        if (session?.length > 0) {
+          osmFetched.value = session;
+          return;
+        }
+        const fn = activeResolvedLayer.value?.osmFileName;
+        if (!fn || !String(fn).trim()) {
+          osmFetched.value = '';
+          osmError.value = '';
+          return;
+        }
+        try {
+          const baseUrl = process.env.BASE_URL || '/';
+          let res = await fetch(`${baseUrl}data/${fn}`);
+          if (!res.ok) res = await fetch(`/data/${fn}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          osmFetched.value = await res.text();
+        } catch {
+          osmFetched.value = '';
+          osmError.value =
+            `無法從 /data/ 讀取「${fn}」。若以本機檔載入，session 於本次運行期間保留原文。`;
+        }
+        return;
+      }
+
+      if (props.osmViewerMode === 'osm-geojson' && dir) {
+        const txt = await fetchArtifactFileText('routes.geojson');
+        if (txt?.trim()) {
+          try {
+            artifactRoutesGeoJsonText.value = JSON.stringify(JSON.parse(txt), null, 2);
+          } catch {
+            artifactRoutesGeoJsonText.value = txt;
+          }
+        }
+        return;
+      }
+
+      if (props.osmViewerMode === 'osm-derived-json' && dir) {
+        const txt = await fetchArtifactFileText('segments.json');
+        if (txt?.trim()) {
+          try {
+            artifactSegmentsJsonText.value = JSON.stringify(JSON.parse(txt), null, 2);
+          } catch {
+            artifactSegmentsJsonText.value = txt;
+          }
+        }
+      }
+    },
+    { immediate: true }
+  );
 
   /**
    * 📑 設定作用中圖層分頁 (Set Active Layer Tab)
@@ -198,9 +265,11 @@
     if (!props.osmViewerMode) {
       return '空間網絡網格 JSON 數據 (spaceNetworkGridJsonData)';
     }
-    if (props.osmViewerMode === 'osm-xml') return 'OSM XML 來源（session／public/data）';
-    if (props.osmViewerMode === 'osm-geojson') return 'geojsonData（FeatureCollection）';
-    return 'jsonData 路段匯出陣列（與 taipei_city_2026.json 同形；Upper 僅顯示該陣列）';
+    if (props.osmViewerMode === 'osm-xml')
+      return 'OSM XML：優先 public/data/layers／{groupName}／osm_2_geojson_2_json／source.osm（否則 session／flat path）';
+    if (props.osmViewerMode === 'osm-geojson')
+      return '手繪會由 jsonData 還原折線 GeoJSON；否則資料夾 routes.geojson → 圖層 geojsonData';
+    return 'segments.json：優先資料夾內同名檔，否則圖層 jsonData 路段陣列';
   });
 
   /** 空白狀態主文案（內容區） */
@@ -209,7 +278,7 @@
       return '此圖層沒有可用的空間網絡網格 JSON 數據';
     if (props.osmViewerMode === 'osm-xml') return '此圖層沒有可顯示的 OSM XML 文字';
     if (props.osmViewerMode === 'osm-geojson')
-      return '此圖層沒有可用的 geojsonData';
+      return '此圖層尚無可由 jsonData 還原之折線，且 geojsonData 為空';
     return '此圖層尚無 jsonData 路段匯出（請先載入 OSM）';
   });
 
@@ -218,7 +287,7 @@
     if (!props.osmViewerMode) {
       return '沒有開啟的圖層或沒有空間網絡網格 JSON 數據';
     }
-    return '請先開啟「OSM → GeoJSON」圖層';
+    return '請先開啟「OSM → GeoJSON → JSON」圖層';
   });
 
   /**
@@ -240,18 +309,63 @@
     if (props.osmViewerMode === 'osm-xml') {
       if (osmError.value) return osmError.value;
       const t = osmFetched.value;
-      return t && String(t).length > 0 ? t : null;
+      if (t && String(t).trim().length > 0) return t;
+      const hasHandDraw =
+        layer.layerId === OSM_2_LAYER_ID &&
+        Array.isArray(layer.jsonData) &&
+        layer.jsonData.some((r) => r && r._drawn);
+      if (hasHandDraw) {
+        return '（MapTab 手繪／僅有路段資料：無 OSM XML；幾何必看 geojson-viewer／原始列看 json-viewer）';
+      }
+      return null;
     }
     if (props.osmViewerMode === 'osm-geojson') {
+      const hasHandDraw =
+        layer.layerId === OSM_2_LAYER_ID &&
+        Array.isArray(layer.jsonData) &&
+        layer.jsonData.some((r) => r && r._drawn);
+      if (hasHandDraw) {
+        const fc = minimalLineStringFeatureCollectionFromRouteExportRows(layer.jsonData);
+        if (fc.features.length > 0) {
+          try {
+            return JSON.stringify(fc, null, 2);
+          } catch (e) {
+            return String(e);
+          }
+        }
+      }
+      if (artifactRoutesGeoJsonText.value?.trim()) return artifactRoutesGeoJsonText.value;
       const g = layer.geojsonData;
-      if (!g || !Array.isArray(g.features) || !g.features.length) return null;
+      if (g?.features?.length) {
+        try {
+          return JSON.stringify(g, null, 2);
+        } catch (e) {
+          return String(e);
+        }
+      }
+      const synth = minimalLineStringFeatureCollectionFromRouteExportRows(layer.jsonData || []);
+      if (synth.features.length > 0) {
+        try {
+          return JSON.stringify(synth, null, 2);
+        } catch (e) {
+          return String(e);
+        }
+      }
+      return null;
+    }
+    /** json-viewer：此圖層路段匯出為頂層陣列（與 taipei_city_2026.json），不包一層 processedJsonData */
+    const jsonHandDraw =
+      layer.layerId === OSM_2_LAYER_ID &&
+      Array.isArray(layer.jsonData) &&
+      layer.jsonData.some((r) => r && r._drawn);
+    if (jsonHandDraw) {
       try {
-        return JSON.stringify(g, null, 2);
+        return JSON.stringify(layer.jsonData, null, 2);
       } catch (e) {
         return String(e);
       }
     }
-    /** json-viewer：此圖層路段匯出為頂層陣列（與 taipei_city_2026.json），不包一層 processedJsonData */
+    if (artifactSegmentsJsonText.value?.trim()) return artifactSegmentsJsonText.value;
     if (layer.layerId === OSM_2_LAYER_ID && Array.isArray(layer.jsonData)) {
       try {
         return JSON.stringify(layer.jsonData, null, 2);

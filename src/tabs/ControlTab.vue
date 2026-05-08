@@ -3666,7 +3666,10 @@
       setOsm2GeojsonSessionOsmXml(text);
       const result = osmXmlToOsm2GeojsonLoaderResult(text);
       layer.osmFileName = file.name;
-      mergeOsm2GeojsonLoaderResultIntoLayer(layer, result);
+      mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, {
+        groupName: dataStore.findGroupNameByLayerId(OSM_2_GEOJSON_2_JSON_LAYER_ID),
+        sourceOsmXmlText: text,
+      });
       dataStore.saveLayerState(layer.layerId, getOsm2GeojsonPersistPatchAfterLoaderMerge(layer));
     } catch (err) {
       console.error('本機 OSM 讀取失敗:', err);

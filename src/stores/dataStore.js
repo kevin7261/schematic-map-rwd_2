@@ -153,6 +153,7 @@ import {
   executeOsmGeojsonToTaipeiSn4ASpaceGrid,
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
+  schedulePersistOsm2GeojsonArtifacts,
 } from '../utils/layers/osm_2_geojson_2_json/index.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
@@ -1939,6 +1940,17 @@ export const useDataStore = defineStore(
      * @see {@link findLayerById} 圖層搜尋函數
      * @see {@link saveLayerState} 圖層狀態保存函數
      */
+    const findGroupNameByLayerId = (id) => {
+      for (const mainGroup of layers.value) {
+        for (const lyr of mainGroup.groupLayers) {
+          if (lyr.layerId === id) {
+            return mainGroup.groupName;
+          }
+        }
+      }
+      return null;
+    };
+
     const toggleLayerVisibility = async (layerId) => {
       const layer = findLayerById(layerId);
       if (!layer) {
@@ -2166,6 +2178,13 @@ export const useDataStore = defineStore(
             layerInfoData: layer.layerInfoData,
             trafficData: layer.trafficData,
           });
+          if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID) {
+            schedulePersistOsm2GeojsonArtifacts({
+              groupName: findGroupNameByLayerId(layerId),
+              layer,
+              sourceOsmXmlText: result.sourceOsmXmlText,
+            });
+          }
         } catch (error) {
           console.error(`❌ 載入圖層 "${layer.layerName}" 失敗:`, error);
           layer.visible = false; // 載入失敗時恢復可見性狀態
@@ -3181,22 +3200,6 @@ export const useDataStore = defineStore(
           saveLayerState(layerId, { isLoading: layer.isLoading });
         }
       }
-    };
-
-    /**
-     * 根據圖層ID找到對應的群組名稱
-     * @param {string} layerId - 圖層ID
-     * @returns {string|null} - 群組名稱，如果找不到則返回null
-     */
-    const findGroupNameByLayerId = (layerId) => {
-      for (const mainGroup of layers.value) {
-        for (const layer of mainGroup.groupLayers) {
-          if (layer.layerId === layerId) {
-            return mainGroup.groupName;
-          }
-        }
-      }
-      return null;
     };
 
     // ==================== 返回的狀態和方法 ====================

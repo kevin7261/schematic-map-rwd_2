@@ -4,11 +4,15 @@
 
 export { LAYER_ID, setOsm2GeojsonSessionOsmXml, getOsm2GeojsonSessionOsmXml } from './sessionOsmXml.js';
 export {
-  osm_2_geojson,
+  osmXmlStringToGeojsonData,
   geojson_2_json,
   osmXmlToOsm2GeojsonLoaderResult,
   parseLocalOsmXmlStringToRouteLoadResult,
 } from './pipeline.js';
+export {
+  encodeOsm2ArtifactsDirForDataUrl,
+  schedulePersistOsm2GeojsonArtifacts,
+} from './artifactPersist.js';
 export {
   mergeOsm2GeojsonLoaderResultIntoLayer,
   getOsm2GeojsonPersistPatchAfterLoaderMerge,

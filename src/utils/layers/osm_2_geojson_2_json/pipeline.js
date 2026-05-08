@@ -6,8 +6,8 @@ import { buildStandardRouteGeoJsonLoadResult } from '@/utils/dataProcessor.js';
 import { exportRouteSegmentsFromGeoJson } from '@/utils/geojsonExportRouteSegments.js';
 import { osmXmlStringToGeoJsonFeatureCollection } from '@/utils/osmXmlToGeoJson.js';
 
-/** OSM XML 字串 → FeatureCollection（僅幾何／要素） */
-export function osm_2_geojson(osmXmlString) {
+/** OSM XML 字串 → { geojsonData }（圖層 osm_2_geojson_2_json 管線第一步，非 layerId） */
+export function osmXmlStringToGeojsonData(osmXmlString) {
   return { geojsonData: osmXmlStringToGeoJsonFeatureCollection(osmXmlString) };
 }
 
@@ -26,11 +26,11 @@ export function geojson_2_json(geojsonData) {
 }
 
 /**
- * 單次載入：osm_2_geojson → geojson_2_json；供 geojsonLoader／本機選檔。
+ * 單次載入：osmXmlStringToGeojsonData → geojson_2_json；供 geojsonLoader／本機選檔。
  * @returns {Object} 含 sourceOsmXmlText
  */
 export function osmXmlToOsm2GeojsonLoaderResult(osmXmlString) {
-  const { geojsonData } = osm_2_geojson(osmXmlString);
+  const { geojsonData } = osmXmlStringToGeojsonData(osmXmlString);
   return {
     ...geojson_2_json(geojsonData),
     sourceOsmXmlText: osmXmlString,

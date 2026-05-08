@@ -1,6 +1,6 @@
 /**
  * 空間網絡網格測試_4：taipei_sn4_a 手繪 → GeoJSON FeatureCollection。
- * 與 executeOsmGeojsonToRouteSegmentsNd 內 resolveSketchFeatureCollectionForNd 分檔複製。
+ * 手繪資料轉 GeoJSON 之邏輯與舊版 Nd 管線內 resolveSketchFeatureCollectionForNd 對齊（已分檔）。
  */
 
 import {

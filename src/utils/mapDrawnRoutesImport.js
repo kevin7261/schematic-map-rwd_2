@@ -220,6 +220,32 @@ export function expandLonLatChainFromRouteCoordinates(routeCoordinates) {
   return out;
 }
 
+/**
+ * 由地圖路段匯出列還原僅 LineString 之 FeatureCollection（MapTab 手繪只寫 jsonData、geojsonData 未必更新時預覽用）。
+ *
+ * @param {unknown[]} rows
+ * @returns {{ type: 'FeatureCollection', features: object[] }}
+ */
+export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
+  if (!Array.isArray(rows)) return { type: 'FeatureCollection', features: [] };
+  const features = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || !Array.isArray(row.routeCoordinates)) continue;
+    const chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
+    if (!chain || chain.length < 2) continue;
+    features.push({
+      type: 'Feature',
+      properties: {
+        name: row.routeName ?? '',
+        color: row.color ?? '#000000',
+        route_id: row.route_id != null ? String(row.route_id) : '',
+      },
+      geometry: { type: 'LineString', coordinates: chain },
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
 function normalizeNodeStationStrings(o, px, py) {
   const ens = ensureSegmentStationStrings(
     {
