@@ -525,16 +525,32 @@
   const getMapFeatureCollection = (layer) => {
     if (!layer) return null;
     const schematic = getSchematicJsonData(layer);
+    /** @type {{ type:'FeatureCollection', features: unknown[] }|null} */
+    let base = null;
     if (
       schematic &&
       schematic.type === 'FeatureCollection' &&
       Array.isArray(schematic.features)
     ) {
-      return schematic;
+      base = schematic;
+    } else {
+      const gj = layer.geojsonData;
+      if (gj && gj.type === 'FeatureCollection' && Array.isArray(gj.features)) base = gj;
     }
-    const gj = layer.geojsonData;
-    if (gj && gj.type === 'FeatureCollection' && Array.isArray(gj.features)) return gj;
-    return null;
+    if (!base) return null;
+    const ug = layer.layoutUniformGridGeoJson;
+    if (
+      ug &&
+      ug.type === 'FeatureCollection' &&
+      Array.isArray(ug.features) &&
+      ug.features.length > 0
+    ) {
+      return {
+        type: 'FeatureCollection',
+        features: [...base.features, ...ug.features],
+      };
+    }
+    return base;
   };
 
   /**
@@ -4088,10 +4104,39 @@
 
     const hvTransformPath = (path) => path;
 
+    const drawLayoutUniformGridLines = (coords) => {
+      if (!Array.isArray(coords) || coords.length < 2) return;
+      const transformed = offsetPathToSchematicCellCenters(
+        hvTransformPath(transformPathCoords(coords))
+      );
+      const d = lineGenerator(transformed);
+      if (!d) return;
+      zoomGroup
+        .append('path')
+        .attr('d', d)
+        .attr('class', 'layout-uniform-station-grid-line')
+        .attr('stroke', '#5c6b7a')
+        .attr('fill', 'none')
+        .attr('stroke-width', 1.15)
+        .attr('opacity', 0.88)
+        .attr('stroke-dasharray', '4 4')
+        .attr('stroke-linecap', 'round')
+        .style('pointer-events', 'none');
+    };
+
+    // 均勻细分網格線（繪於路線之下）
+    for (const uf of routeFeatures) {
+      if (!uf || !uf.geometry || uf.geometry.type !== 'LineString') continue;
+      const pq = uf.properties || {};
+      if (pq.layoutUniformStationGrid !== true) continue;
+      drawLayoutUniformGridLines(uf.geometry.coordinates);
+    }
+
     // 繪製路線（支援 LineString / MultiLineString）；有疊加網格時線一起移動
     routeFeatures.forEach((feature) => {
       if (!feature || !feature.geometry) return;
       const props = feature.properties || {};
+      if (props.layoutUniformStationGrid === true) return;
       const tags = props.tags || {};
       const geom = feature.geometry;
       const isHvZHl = false;
@@ -5945,6 +5990,7 @@
       return {
         sn: layer.spaceNetworkGridJsonData,
         gj: layer.geojsonData,
+        ug: layer.layoutUniformGridGeoJson,
       };
     },
     async () => {
@@ -5958,7 +6004,13 @@
         gj.type === 'FeatureCollection' &&
         Array.isArray(gj.features) &&
         gj.features.length > 0;
-      if (!hasSn && !hasGj) return;
+      const ugFc = layer.layoutUniformGridGeoJson;
+      const hasUg =
+        ugFc &&
+        ugFc.type === 'FeatureCollection' &&
+        Array.isArray(ugFc.features) &&
+        ugFc.features.length > 0;
+      if (!hasSn && !hasGj && !hasUg) return;
       const containerId = getContainerId();
       d3.select(`#${containerId}`).selectAll('svg').remove();
       d3.select('body').selectAll('.d3js-map-tooltip').remove();

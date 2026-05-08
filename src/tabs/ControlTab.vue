@@ -22,6 +22,7 @@
   import { parseOsmXmlStringToRouteGeoJsonLoadResult } from '@/utils/dataProcessor.js';
   import {
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
+    SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
     mergeOsm2GeojsonLoaderResultIntoLayer,
     osmXmlToOsm2GeojsonLoaderResult,
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
@@ -59,6 +60,7 @@
     towardCenterMoveLabel,
   } from '../utils/gridNormalizationMinDistance.js';
   import { buildMapDrawnRoutesExport } from '@/utils/exportMapDrawnRoutesFromLayer.js';
+  import { buildMapDrawnStationUniformRefinementGridFeatureCollection } from '@/utils/stationUniformGridGeoJson.js';
   import { isRegisteredNetworkDrawSketchSn4LayerId } from '@/utils/networkDrawSketchSn4PipelineLayers.js';
   import {
     getSchematicPlotBoundsFromLayer,
@@ -3654,6 +3656,23 @@
     if (el) el.click();
   };
 
+  /** json 繪製：全域均勻網格（每軸 4→16→64…），寫入 layoutUniformGridGeoJson（space-layout-grid-viewer） */
+  const onGenerateJsonDrawUniformGridClick = () => {
+    dataStore.syncOsm2DataJsonMirrorFromParent();
+    const lay = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+    if (!lay) return;
+    const rows = lay.jsonData ?? lay.dataJson;
+    if (!isMapDrawnRoutesExportArray(rows) || rows.length === 0) {
+      window.alert(
+        '尚無路段匯出資料可用於網格。請先在「Map」對應圖層以畫線模式繪製路段，並確認上方「OSM → GeoJSON → JSON」已有路段 JSON。'
+      );
+      return;
+    }
+    const fc = buildMapDrawnStationUniformRefinementGridFeatureCollection(rows);
+    lay.layoutUniformGridGeoJson = fc;
+    dataStore.saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, { layoutUniformGridGeoJson: fc });
+  };
+
   const onTaipeiOsmSpaceGridLocalFileInputChange = async (event) => {
     const input = event.target;
     const file = input.files && input.files[0];
@@ -6358,6 +6377,25 @@
             </li>
           </ol>
         </div>
+
+        <!-- json 繪製：經緯路段四元樹格（space-layout-grid-viewer） -->
+        <div v-if="layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">版面均勻網格</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
+            @click="onGenerateJsonDrawUniformGridClick"
+          >
+            產生均勻細分網格（每格至多一站）
+          </button>
+          <div class="text-muted" style="font-size: 11px; line-height: 1.45">
+            自父圖層同步之 <code class="small">jsonData</code> 取路段
+            <strong>segment</strong>
+            內站點經緯度；先對全域外框<strong>每軸切 4 段</strong>（共 4×4＝16 格），若有格內多於一站則<strong>再每軸 ×4</strong>（16×16→256→…），直到每格至多一站或達細分上限。在
+            <code class="small">space-layout-grid-viewer</code> 繪製最終<strong>直角格線</strong>。重複按鈕會覆寫格線。
+          </div>
+        </div>
+
         <div v-if="isCurrentLayerGridSchematic" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">網格預覽</div>
           <div class="d-flex justify-content-center">

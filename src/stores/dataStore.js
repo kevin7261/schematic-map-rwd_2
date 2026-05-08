@@ -333,6 +333,8 @@ export const useDataStore = defineStore(
             dataOSM: null,
             dataGeojson: null,
             dataJson: null,
+            /** space-layout-grid-viewer：均勻網格線（每軸 4→16→64… 遞增直至每格至多一站） */
+            layoutUniformGridGeoJson: null,
             upperViewTabs: ['space-layout-grid-viewer'],
           },
         ],
@@ -1930,6 +1932,7 @@ export const useDataStore = defineStore(
           geojsonData: layoutViewer.geojsonData,
           dataJson: layoutViewer.dataJson,
           isLoaded: layoutViewer.isLoaded,
+          layoutUniformGridGeoJson: layoutViewer.layoutUniformGridGeoJson ?? null,
         });
       }
     };
@@ -2044,6 +2047,7 @@ export const useDataStore = defineStore(
           geojsonData: layer.geojsonData,
           dataJson: layer.dataJson,
           isLoaded: layer.isLoaded,
+          layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
         });
       }
 
@@ -3199,6 +3203,7 @@ export const useDataStore = defineStore(
           jsonData: layer.jsonData,
           geojsonData: layer.geojsonData,
           dataJson: layer.dataJson,
+          layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
         });
         return;
       }
