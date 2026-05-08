@@ -23,14 +23,15 @@
   import {
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
     SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
-    OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID,
     mergeOsm2GeojsonLoaderResultIntoLayer,
     osmXmlToOsm2GeojsonLoaderResult,
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
     setOsm2GeojsonSessionOsmXml,
-    executeOsmLayoutGridCoordNormalize,
-    executeOsmLayoutGridStraighten,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
+  import {
+    JSON_GRID_COORD_NORMALIZED_LAYER_ID,
+    executeJsonGridCoordNormalize,
+  } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { getIcon } from '@/utils/utils.js';
 
   /**
@@ -2572,14 +2573,14 @@
     return !currentLayerHasExecuteInputData.value;
   });
 
-  /** taipei_d3／taipei_sn4_d／版面網格·座標正規化：c3→d3 結果（dashboard 由對應 execute 寫入） */
+  /** taipei_d3／taipei_sn4_d／JSON·網格·座標正規化：c3→d3 結果（dashboard 由對應 execute 寫入） */
   const taipeiD3CoordNormalizeReport = computed(() => {
     const layer = currentLayer.value;
     const d = layer?.dashboardData;
     if (
       (layer?.layerId !== 'taipei_d3' &&
         layer?.layerId !== 'taipei_sn4_d' &&
-        layer?.layerId !== OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) ||
+        layer?.layerId !== JSON_GRID_COORD_NORMALIZED_LAYER_ID) ||
       !d?.coordNormalize ||
       !d.gridSizeCells
     )
@@ -3659,37 +3660,16 @@
     if (el) el.click();
   };
 
-  /** 版面網格·路線直線化（B3→C3）：輸入只讀本圖層已複製之 dataJson／geojsonData 或現有 b3 */
-  const onOsmLayoutGridStraightenClick = async () => {
+  /** JSON·網格·座標正規化（本層 b→c→d，單鍵） */
+  const onJsonGridCoordNormalizeClick = async () => {
     if (isExecuting.value) return;
     isExecuting.value = true;
     try {
       await nextTick();
-      const ok = await Promise.resolve(executeOsmLayoutGridStraighten());
+      const ok = await Promise.resolve(executeJsonGridCoordNormalize());
       if (!ok) {
         window.alert(
-          '路線直線化失敗：請先在左側開啟「版面網格·座標正規化」圖層（會自動自「OSM → GeoJSON → JSON」複製 dataJson）；或將 b3／spaceNetworkGridJsonData 貼入本圖層後再試。'
-        );
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setTimeout(() => {
-        isExecuting.value = false;
-      }, 300);
-    }
-  };
-
-  /** 版面網格·座標正規化（C3→D3）：請先完成路線直線化或自行貼入 c3 */
-  const onOsmLayoutGridCoordNormalizeClick = async () => {
-    if (isExecuting.value) return;
-    isExecuting.value = true;
-    try {
-      await nextTick();
-      const ok = await Promise.resolve(executeOsmLayoutGridCoordNormalize());
-      if (!ok) {
-        window.alert(
-          '座標正規化失敗：本圖層尚無可用的 spaceNetworkGridJsonData。請先按「路線直線化」，或將 c3／直線化後路網貼入後再試。'
+          '座標正規化失敗：請先在左側開啟「JSON·網格·座標正規化」圖層（會自動自「OSM → GeoJSON → JSON」複製 dataJson），或將路網貼入 spaceNetworkGridJsonData 後再試。'
         );
       }
     } catch (err) {
@@ -6463,33 +6443,23 @@
           </ol>
         </div>
 
-        <!-- 版面網格·座標正規化：直線化、正規化兩按鈕 -->
+        <!-- JSON·網格·座標正規化：單鍵 b→c→d -->
         <div
-          v-if="layer.layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID"
+          v-if="layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID"
           class="pb-3 mb-3 border-bottom"
         >
-          <div class="my-title-xs-gray pb-2">路網處理（分兩步）</div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
-            @click="onOsmLayoutGridStraightenClick"
-          >
-            ① 路線直線化（同測試_4／b→c）
-          </button>
+          <div class="my-title-xs-gray pb-2">座標正規化</div>
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue"
-            @click="onOsmLayoutGridCoordNormalizeClick"
+            @click="onJsonGridCoordNormalizeClick"
           >
-            ② 座標正規化（同測試_4／c→d）
+            座標正規化（本層 dataJson／路網 → d3）
           </button>
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.55">
-            <strong>開啟本圖層</strong>時會自動自「OSM → GeoJSON → JSON」複製 <code class="small">dataJson</code>／<code class="small">geojsonData</code>；之後<strong>①② 只跑本層這份資料</strong>。<br>
-            <strong>①</strong>：本圖層已有 <code class="small">spaceNetworkGridJsonData</code>（b）時優先用之；否則自本層 <code class="small">geojsonData</code>／<code class="small">dataJson</code> 建 b→直線化為 c；黑點不畫（<code class="small">showStationPlacement</code> 關）。<br>
-            <strong>②</strong>：只處理目前圖層之 c3 路網（請先按 ① 或手貼直線化後資料）。使用
-            <code class="small">buildTaipeiD3FromC3Network</code>。<br>
-            ①② 成功後皆會將<strong>當步路網</strong>經 <code class="small">minimalOsmXmlFromLonLatFeatureCollection</code> 寫入<strong>本圖層</strong>之
-            <code class="small">dataOSM</code>。
+            <strong>開啟本圖層</strong>會自動自「OSM → GeoJSON → JSON」複製 <code class="small">dataJson</code>／<code class="small">geojsonData</code>。<br>
+            按鈕一次完成本層 <strong>b→c→d</strong>（內含直線化與 <code class="small">buildTaipeiD3FromC3Network</code>），只使用<strong>本圖層</strong>資料；成功後將 d3 路網經
+            <code class="small">minimalOsmXmlFromLonLatFeatureCollection</code> 寫入本層 <code class="small">dataOSM</code>。
           </div>
         </div>
 

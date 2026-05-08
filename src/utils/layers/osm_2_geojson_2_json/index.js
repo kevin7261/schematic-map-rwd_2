@@ -6,7 +6,6 @@ export {
   LAYER_ID,
   SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
   JSON_DRAW_LAYOUT_READ_LAYER_ID,
-  OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID,
   isSpaceLayoutUniformGridViewerLayerId,
   setOsm2GeojsonSessionOsmXml,
   getOsm2GeojsonSessionOsmXml,
@@ -26,7 +25,3 @@ export {
 } from './layerMerge.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
 export { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from './executeOsmGeojsonToTaipeiSn4ASpaceGrid.js';
-export {
-  executeOsmLayoutGridCoordNormalize,
-  executeOsmLayoutGridStraighten,
-} from './executeOsmLayoutGridCoordNormalize.js';

@@ -89,10 +89,10 @@
   } from '@/utils/gridAxisTicks.js';
   import {
     isSpaceLayoutUniformGridViewerLayerId,
-    OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID,
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
     getOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+  import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from '@/utils/layers/json_grid_coord_normalized/sessionJsonGridCoordNormalized.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
   import { uniformGridCellFromLayoutMeta } from '@/utils/stationUniformGridGeoJson.js';
 
@@ -583,7 +583,7 @@
    * 不依賴本圖層之 osm-viewer 分頁。
    */
   const backingGeoJsonFromOsm2DataOsmForCoordNormViewer = (layer) => {
-    if (!layer || layer.layerId !== OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) return null;
+    if (!layer || layer.layerId !== JSON_GRID_COORD_NORMALIZED_LAYER_ID) return null;
     const osmLayer = dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
     let xml = osmLayer?.dataOSM;
     if (!xml || !String(xml).trim()) {
@@ -3539,7 +3539,7 @@
     const xRange = xMax - xMin;
     const yRange = yMax - yMin;
 
-    /** taipei_d3／e3／f3／g3／h3 與資料處理 _dp 對應層：整數座標系，背景與軸每 1 單位一條線／一個刻度 */
+    /** taipei_d3／e3／…、`json_grid_coord_normalized`：整數座標系，背景與軸每 1 單位一條線／一個刻度 */
     const isTaipeiD3CoordNormalizeLayer =
       layerTab === 'taipei_d3' ||
       layerTab === 'taipei_sn4_d' ||
@@ -3561,6 +3561,7 @@
       layerTab === 'taipei_f3_dp_2' ||
       layerTab === 'taipei_g3_dp_2' ||
       layerTab === 'taipei_h3_dp_2' ||
+      layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
     /** 經緯度或小範圍連續座標：整數步長會變成 1 導致刻度迴圈為空，改以 d3.ticks 產生網格與軸刻度 */
@@ -6196,7 +6197,7 @@
       const layer = dataStore.findLayerById(activeLayerTab.value);
       if (!layer) return null;
       const osmLay =
-        activeLayerTab.value === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID
+        activeLayerTab.value === JSON_GRID_COORD_NORMALIZED_LAYER_ID
           ? dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID)
           : null;
       /** OSM／a3 等僅有 geojsonData 時，異步載入完成須觸發重繪（原本只監聽 spaceNetworkGridJsonData） */
@@ -6229,7 +6230,7 @@
         Array.isArray(ugFc.features) &&
         ugFc.features.length > 0;
       let hasOsmBackedMap = false;
-      if (layer.layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) {
+      if (layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID) {
         hasOsmBackedMap = !!backingGeoJsonFromOsm2DataOsmForCoordNormViewer(layer);
       }
       if (!hasSn && !hasGj && !hasUg && !hasOsmBackedMap) return;
