@@ -120,15 +120,6 @@ import {
   loadOsmXmlAsGeoJsonForRoutes,
 } from '../utils/dataProcessor.js';
 
-import { getSchematicPlotBoundsFromLayer } from '../utils/schematicPlotMapper.js';
-import {
-  buildNormalizeSegmentsFromSketchPolylinesNorm,
-  buildPlotMarkersFromSketchMarkersGeo,
-  buildPlotMarkersFromSketchMarkersPx,
-  sketchPolylinesWgs84ToGeoJsonFeatureCollection,
-} from '../utils/networkDrawSketchToSpaceNetworkSegments.js';
-import { buildTaipeiB3ExecuteLayerFieldsFromGeojson } from '../utils/taipeiTest3/buildTaipeiA3StyleLayerFieldsFromGeojson.js';
-
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
 
@@ -144,7 +135,6 @@ import {
   executeTaipeiTest4_I3_To_J3,
   executeTaipeiTest4_K3_To_L3,
   executeTaipeiTest4_L3_To_M3,
-  executeOsmGeojsonToRouteSegmentsNdSketch2,
   executeTaipeiTest3_B3_To_C3_Nd_Grid2,
   executeTaipeiTest3_C3_To_D3_Nd_Grid2,
   executeTaipeiTest3_D3_To_E3_Nd_Grid2,
@@ -165,8 +155,6 @@ import {
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/index.js';
 import {
-  getAllNetworkDrawSketchLayerIds,
-  networkDrawPipelineB3LayerIdForSketch,
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
 } from '../utils/networkDrawSketchPipelineLayers.js';
@@ -178,11 +166,6 @@ import {
   readSn4SketchPolylinesFromLayerGeojson,
   readSn4SketchStationMarkersFromLayerGeojson,
 } from '../utils/mergeSn4SketchIntoLayerGeojson.js';
-import {
-  isNetworkDrawSketchRoutesExportJsonArray,
-  mapDrawnExportRowsToLonLatPolylinesWithMeta,
-} from '../utils/mapDrawnRoutesImport.js';
-
 // ==================== 📦 主要數據存儲定義 (Main Data Store Definition) ====================
 
 /**
@@ -309,65 +292,6 @@ export const useDataStore = defineStore(
             highlightedSegmentIndex: null,
             squareGridCellsTaipeiTest3: false,
             upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
-          },
-          {
-            /** 上半部 NetworkDrawTab：繪線／Hover／加站點（線上點擊插入頂點，不拆成兩條線）／切開（拆成兩條）／刪除；「切分並連線」＝交叉點切分後二路節點合併，執行完進 Hover */
-            layerId: 'network_draw_sketch_2',
-            layerName: '手繪網絡線',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'cyan',
-            jsonData: null,
-            trafficData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            spaceNetworkGridJsonDataK3Tab: null,
-            spaceNetworkGridJsonDataK3Tab_SectionData: null,
-            spaceNetworkGridJsonDataK3Tab_ConnectData: null,
-            spaceNetworkGridJsonDataK3Tab_StationData: null,
-            processedJsonDataK3Tab: null,
-            showStationPlacement: false,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            /** GeoJSON FeatureCollection（node＝Point、way＝LineString，properties 扁平；與 thesis `data/taipei/taipei.geojson`／專案 `public/data/taipei/taipei.geojson` 同構）；首次開啟圖層時載入該檔 */
-            geojsonData: { type: 'FeatureCollection', features: [] },
-            /** 上次「執行下一步」匯出之 WGS84 GeoJSON（供離線下載；即時下載以 store 折線為準） */
-            networkDrawSketchExportWgs84GeoJson: null,
-            /** 由手繪同步：匯出列（與 execute 寫入 b 層同源）；底圖載入不寫入此欄 */
-            processedJsonData: null,
-            /** 已從檔案匯入路段 JSON／GeoJSON 且手繪尚無折線時，避免 refresh 清空欄位 */
-            networkDrawSketchPreserveImportedRoutesJson: false,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            csvLoader_Traffic: null,
-            geojsonLoader: loadGeoJsonForRoutes,
-            processToDrawData: null,
-            geojsonFileName: 'taipei/taipei.geojson',
-            jsonFileName: null,
-            csvFileName_traffic: null,
-            /** 手繪輸出 GeoJSON → taipei_b3_dp_nd_2（與 taipeiTest3 建構 b3 同源） */
-            executeFunction: executeOsmGeojsonToRouteSegmentsNdSketch2,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            squareGridCellsTaipeiTest3: false,
-            /** UpperView 分頁聯集：手繪、WGS84 底圖、路網示意、JSON 數據（見 UpperView isTabEnabled） */
-            upperViewTabs: [
-              'network-draw-lines',
-              'map',
-              'space-network-grid',
-              'space-network-grid-json-data',
-            ],
           },
         ],
       },
@@ -1125,7 +1049,7 @@ export const useDataStore = defineStore(
             layoutGridJsonData_Test3: null,
             layoutGridJsonData_Test4: null,
             geojsonData: null,
-            /** 來源為手繪／network_draw_sketch「執行下一步」寫入之匯出列 */
+            /** 來源為前步「執行下一步」寫入之匯出列 */
             processedJsonData: null,
             drawJsonData: null,
             dashboardData: null,
@@ -2904,233 +2828,6 @@ export const useDataStore = defineStore(
     };
 
     const defaultNdSketchMarkers = () => ({ red: [], blue: [], green: [], station: [] });
-    const buildDefaultNetworkDrawSketchBundle = () => {
-      const o = {};
-      for (const id of getAllNetworkDrawSketchLayerIds()) {
-        o[id] = {
-          polylines: [],
-          routeExportRows: [],
-          markers: defaultNdSketchMarkers(),
-          useGeo: true,
-        };
-      }
-      return o;
-    };
-    /** 各手繪圖層（network_draw_sketch*）之折線／標記／座標系，分檔不共用 */
-    const networkDrawSketchBundleByLayerId = ref(buildDefaultNetworkDrawSketchBundle());
-
-    const ensureNetworkDrawSketchBundleEntry = (sketchLayerId) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
-      if (!networkDrawSketchBundleByLayerId.value[sketchLayerId]) {
-        networkDrawSketchBundleByLayerId.value = {
-          ...networkDrawSketchBundleByLayerId.value,
-          [sketchLayerId]: {
-            polylines: [],
-            routeExportRows: [],
-            markers: defaultNdSketchMarkers(),
-            useGeo: true,
-          },
-        };
-      }
-    };
-
-    const getNetworkDrawSketchPolylinesForLayer = (sketchLayerId) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return [];
-      return networkDrawSketchBundleByLayerId.value[sketchLayerId]?.polylines ?? [];
-    };
-    const getNetworkDrawSketchRouteExportRowsForLayer = (sketchLayerId) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return [];
-      return networkDrawSketchBundleByLayerId.value[sketchLayerId]?.routeExportRows ?? [];
-    };
-    const getNetworkDrawSketchMarkersForLayer = (sketchLayerId) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return defaultNdSketchMarkers();
-      return (
-        networkDrawSketchBundleByLayerId.value[sketchLayerId]?.markers ?? defaultNdSketchMarkers()
-      );
-    };
-    const getNetworkDrawSketchUseGeoForLayer = (sketchLayerId) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return true;
-      return !!networkDrawSketchBundleByLayerId.value[sketchLayerId]?.useGeo;
-    };
-
-    /** 主手繪圖層向後相容：等同 get…ForLayer('network_draw_sketch_2') */
-    const networkDrawSketchPolylines = computed(() =>
-      getNetworkDrawSketchPolylinesForLayer('network_draw_sketch_2')
-    );
-    const networkDrawSketchMarkers = computed(() =>
-      getNetworkDrawSketchMarkersForLayer('network_draw_sketch_2')
-    );
-    const networkDrawSketchUseGeo = computed(() =>
-      getNetworkDrawSketchUseGeoForLayer('network_draw_sketch_2')
-    );
-
-    const setNetworkDrawSketchUseGeo = (v, sketchLayerId = 'network_draw_sketch_2') => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
-      ensureNetworkDrawSketchBundleEntry(sketchLayerId);
-      const cur = networkDrawSketchBundleByLayerId.value[sketchLayerId];
-      networkDrawSketchBundleByLayerId.value = {
-        ...networkDrawSketchBundleByLayerId.value,
-        [sketchLayerId]: { ...cur, useGeo: !!v },
-      };
-    };
-    const setNetworkDrawSketchMarkers = (m, sketchLayerId = 'network_draw_sketch_2') => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
-      ensureNetworkDrawSketchBundleEntry(sketchLayerId);
-      const pick = (arr) =>
-        Array.isArray(arr)
-          ? arr
-              .filter((p) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
-              .map((p) => ({ x: Number(p.x), y: Number(p.y) }))
-          : [];
-      const cur = networkDrawSketchBundleByLayerId.value[sketchLayerId];
-      networkDrawSketchBundleByLayerId.value = {
-        ...networkDrawSketchBundleByLayerId.value,
-        [sketchLayerId]: {
-          ...cur,
-          markers: {
-            red: pick(m?.red),
-            blue: pick(m?.blue),
-            green: pick(m?.green),
-            station: pick(m?.station),
-          },
-        },
-      };
-    };
-
-    const setNetworkDrawSketchPolylines = (
-      lines,
-      sketchLayerId = 'network_draw_sketch_2',
-      routeExportRowsArg
-    ) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
-      ensureNetworkDrawSketchBundleEntry(sketchLayerId);
-      const sketchLayer = findLayerById(sketchLayerId);
-      if (!Array.isArray(lines)) {
-        const cur = networkDrawSketchBundleByLayerId.value[sketchLayerId];
-        networkDrawSketchBundleByLayerId.value = {
-          ...networkDrawSketchBundleByLayerId.value,
-          [sketchLayerId]: {
-            ...cur,
-            polylines: [],
-            routeExportRows: [],
-            markers: defaultNdSketchMarkers(),
-          },
-        };
-        if (sketchLayer) sketchLayer.networkDrawSketchExportWgs84GeoJson = null;
-        return;
-      }
-      const mapped = lines.map((pl) =>
-        Array.isArray(pl) ? pl.map((p) => ({ x: Number(p.x), y: Number(p.y) })) : []
-      );
-      const cur = networkDrawSketchBundleByLayerId.value[sketchLayerId];
-      /** @type {Array<null | object>} */
-      let routeExportRows;
-      if (Array.isArray(routeExportRowsArg)) {
-        routeExportRows = mapped.map((_, i) =>
-          i < routeExportRowsArg.length && routeExportRowsArg[i] != null
-            ? JSON.parse(JSON.stringify(routeExportRowsArg[i]))
-            : null
-        );
-      } else {
-        const prev = cur.routeExportRows || [];
-        routeExportRows = mapped.map((_, i) => (i < prev.length ? prev[i] : null));
-      }
-      networkDrawSketchBundleByLayerId.value = {
-        ...networkDrawSketchBundleByLayerId.value,
-        [sketchLayerId]: { ...cur, polylines: mapped, routeExportRows },
-      };
-      if (!mapped.some((pl) => pl && pl.length >= 2)) {
-        if (sketchLayer) sketchLayer.networkDrawSketchExportWgs84GeoJson = null;
-      }
-    };
-
-    /** 手繪 WGS84 → 與 execute 相同之匯出列／flat segments，供「空間網絡網格 JSON 數據」分頁顯示 */
-    const refreshNetworkDrawSketchLayerExportJsonFields = (sketchLayerId) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
-      const sketchLayer = findLayerById(sketchLayerId);
-      const lines = getNetworkDrawSketchPolylinesForLayer(sketchLayerId);
-      const markers = getNetworkDrawSketchMarkersForLayer(sketchLayerId);
-      const useGeo = getNetworkDrawSketchUseGeoForLayer(sketchLayerId);
-      const hasLines = Array.isArray(lines) && lines.some((pl) => pl && pl.length >= 2);
-      const importedRoutesPending =
-        sketchLayer?.networkDrawSketchPreserveImportedRoutesJson &&
-        Array.isArray(sketchLayer.processedJsonData) &&
-        sketchLayer.processedJsonData.length > 0;
-
-      const clearDerived = () => {
-        if (!sketchLayer) return;
-        sketchLayer.processedJsonData = null;
-        sketchLayer.spaceNetworkGridJsonData = null;
-        sketchLayer.spaceNetworkGridJsonData_SectionData = null;
-        sketchLayer.spaceNetworkGridJsonData_ConnectData = null;
-        sketchLayer.spaceNetworkGridJsonData_StationData = null;
-        sketchLayer.networkDrawSketchExportWgs84GeoJson = null;
-        sketchLayer.showStationPlacement = false;
-        sketchLayer.dashboardData = null;
-        sketchLayer.networkDrawSketchPreserveImportedRoutesJson = false;
-      };
-
-      if (!sketchLayer) return;
-
-      if (!hasLines || !useGeo) {
-        if (importedRoutesPending) return;
-        clearDerived();
-        return;
-      }
-
-      sketchLayer.networkDrawSketchPreserveImportedRoutesJson = false;
-
-      try {
-        const fc = sketchPolylinesWgs84ToGeoJsonFeatureCollection(lines, { markersWgs84: markers });
-        const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(fc, {
-          compactStationNumericIds: true,
-        });
-        sketchLayer.processedJsonData = derived.processedJsonData;
-        sketchLayer.spaceNetworkGridJsonData = derived.spaceNetworkGridJsonData;
-        sketchLayer.spaceNetworkGridJsonData_SectionData =
-          derived.spaceNetworkGridJsonData_SectionData;
-        sketchLayer.spaceNetworkGridJsonData_ConnectData =
-          derived.spaceNetworkGridJsonData_ConnectData;
-        sketchLayer.spaceNetworkGridJsonData_StationData =
-          derived.spaceNetworkGridJsonData_StationData;
-        sketchLayer.showStationPlacement = derived.showStationPlacement;
-        sketchLayer.dashboardData = {
-          ...derived.dashboardData,
-          sourceLayerId: sketchLayerId,
-          segmentExportSource: 'network_draw_sketch_wgs84',
-        };
-        sketchLayer.networkDrawSketchExportWgs84GeoJson = JSON.parse(JSON.stringify(fc));
-      } catch {
-        clearDerived();
-      }
-    };
-
-    /**
-     * 手繪圖層：自檔案匯入「路段匯出」JSON 陣列 → 寫入手繪折線（network-draw-lines 讀 store 折線）
-     * 並 refresh 衍生欄位。僅接受頂層陣列，不接受 GeoJSON。
-     */
-    const applyNetworkDrawSketchRoutesExportJsonImport = (sketchLayerId, parsedRoot) => {
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchLayerId)) return;
-      const sketchLayer = findLayerById(sketchLayerId);
-      if (!sketchLayer) return;
-
-      if (!isNetworkDrawSketchRoutesExportJsonArray(parsedRoot)) {
-        throw new Error(
-          '頂層須為路段匯出陣列：每筆須含 routeName、segment、routeCoordinates（[起點,[轉折],迄點] 或 [[lon,lat],…]）'
-        );
-      }
-
-      const { polylines, routeExportRows } =
-        mapDrawnExportRowsToLonLatPolylinesWithMeta(parsedRoot);
-      if (!polylines.length) {
-        throw new Error('無法還原為路段（routeCoordinates 須至少兩點）');
-      }
-
-      setNetworkDrawSketchUseGeo(true, sketchLayerId);
-      setNetworkDrawSketchMarkers(defaultNdSketchMarkers(), sketchLayerId);
-      setNetworkDrawSketchPolylines(polylines, sketchLayerId, routeExportRows);
-      refreshNetworkDrawSketchLayerExportJsonFields(sketchLayerId);
-    };
 
     /** 測試_4 taipei_sn4_a：僅保留 useGeo 旗標；折線／標記一律由 layer.geojsonData 解析 */
     const buildDefaultNetworkDrawSketchSn4Bundle = () => {
@@ -3185,216 +2882,6 @@ export const useDataStore = defineStore(
     /** @deprecated Sn4 以 layer.geojsonData 為準，呼叫不會改變圖層資料 */
     const setNetworkDrawSketchSn4Polylines = (_lines, sketchLayerId = 'taipei_sn4_a') => {
       void sketchLayerId;
-    };
-
-    /**
-     * @param {object|null} markersPx { red, blue, green, station } 與 polylines 同座標系
-     * @returns {{ polylinesNorm: Array, strokeColorIndices: number[], sketchBounds: object } | null}
-     */
-    const polylinesGeoToNormalizedSketch = (polylines, markersPx) => {
-      const indexed = (polylines || [])
-        .map((pl, i) => ({ pl, i }))
-        .filter(({ pl }) => pl && pl.length >= 2);
-      if (indexed.length === 0) return null;
-      const valid = indexed.map((x) => x.pl);
-      let minLng = Infinity;
-      let minLat = Infinity;
-      let maxLng = -Infinity;
-      let maxLat = -Infinity;
-      for (const pl of valid) {
-        for (const p of pl) {
-          const x = Number(p.x);
-          const y = Number(p.y);
-          minLng = Math.min(minLng, x);
-          maxLng = Math.max(maxLng, x);
-          minLat = Math.min(minLat, y);
-          maxLat = Math.max(maxLat, y);
-        }
-      }
-      const absorbMarkers = (m) => {
-        if (!m || typeof m !== 'object') return;
-        const add = (pt) => {
-          if (!pt || !Number.isFinite(Number(pt.x)) || !Number.isFinite(Number(pt.y))) return;
-          const x = Number(pt.x);
-          const y = Number(pt.y);
-          minLng = Math.min(minLng, x);
-          maxLng = Math.max(maxLng, x);
-          minLat = Math.min(minLat, y);
-          maxLat = Math.max(maxLat, y);
-        };
-        (m.red || []).forEach(add);
-        (m.blue || []).forEach(add);
-        (m.green || []).forEach(add);
-        (m.station || []).forEach(add);
-      };
-      absorbMarkers(markersPx);
-      const w = maxLng - minLng || 1e-12;
-      const h = maxLat - minLat || 1e-12;
-      const sketchBounds = { minX: minLng, maxX: maxLng, minY: minLat, maxY: maxLat };
-      const polylinesNorm = valid.map((pl) =>
-        pl.map((p) => {
-          const lng = Number(p.x);
-          const lat = Number(p.y);
-          return {
-            nx: (lng - minLng) / w,
-            ny: (maxLat - lat) / h,
-          };
-        })
-      );
-      const strokeColorIndices = indexed.map((x) => x.i);
-      return { polylinesNorm, strokeColorIndices, sketchBounds };
-    };
-
-    const polylinesPxToNormalizedSketch = (polylines, markersPx, useGeo) => {
-      if (useGeo) {
-        return polylinesGeoToNormalizedSketch(polylines, markersPx);
-      }
-      const indexed = (polylines || [])
-        .map((pl, i) => ({ pl, i }))
-        .filter(({ pl }) => pl && pl.length >= 2);
-      if (indexed.length === 0) return null;
-      const valid = indexed.map((x) => x.pl);
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (const pl of valid) {
-        for (const p of pl) {
-          minX = Math.min(minX, p.x);
-          maxX = Math.max(maxX, p.x);
-          minY = Math.min(minY, p.y);
-          maxY = Math.max(maxY, p.y);
-        }
-      }
-      const absorbMarkers = (m) => {
-        if (!m || typeof m !== 'object') return;
-        const add = (pt) => {
-          if (!pt || !Number.isFinite(Number(pt.x)) || !Number.isFinite(Number(pt.y))) return;
-          const x = Number(pt.x);
-          const y = Number(pt.y);
-          minX = Math.min(minX, x);
-          maxX = Math.max(maxX, x);
-          minY = Math.min(minY, y);
-          maxY = Math.max(maxY, y);
-        };
-        (m.red || []).forEach(add);
-        (m.blue || []).forEach(add);
-        (m.green || []).forEach(add);
-        (m.station || []).forEach(add);
-      };
-      absorbMarkers(markersPx);
-      const sketchBounds = { minX, maxX, minY, maxY };
-      const w = maxX - minX || 1;
-      const h = maxY - minY || 1;
-      const polylinesNorm = valid.map((pl) =>
-        pl.map((p) => ({
-          nx: (p.x - minX) / w,
-          ny: (p.y - minY) / h,
-        }))
-      );
-      const strokeColorIndices = indexed.map((x) => x.i);
-      return { polylinesNorm, strokeColorIndices, sketchBounds };
-    };
-
-    /**
-     * 將手繪折線轉成 Normalize Segments 寫入對應 b 層（對齊最後選定／首個可見之 space-network-grid 圖層圖幅）。
-     * @returns {{ ok: true } | { ok: false, reason: 'no_lines' | 'no_target' }}
-     */
-    const applyNetworkDrawSketchToSpaceNetworkGrid = () => {
-      let sketchId = controlActiveLayerId.value;
-      if (!isRegisteredNetworkDrawSketchLayerId(sketchId)) {
-        sketchId = 'network_draw_sketch_2';
-      }
-      const b3DestId = networkDrawPipelineB3LayerIdForSketch(sketchId);
-      const raw = getNetworkDrawSketchPolylinesForLayer(sketchId);
-      const markers = getNetworkDrawSketchMarkersForLayer(sketchId);
-      const useGeo = getNetworkDrawSketchUseGeoForLayer(sketchId);
-      if (!Array.isArray(raw) || !raw.some((pl) => pl && pl.length >= 2)) {
-        return { ok: false, reason: 'no_lines' };
-      }
-      const normPack = polylinesPxToNormalizedSketch(raw, markers, useGeo);
-      if (!normPack) return { ok: false, reason: 'no_lines' };
-      const { polylinesNorm, strokeColorIndices, sketchBounds } = normPack;
-
-      let targetId = lastSpaceNetworkGridSketchTargetLayerId.value;
-      if (
-        typeof targetId !== 'string' ||
-        !targetId ||
-        isRegisteredNetworkDrawSketchLayerId(targetId)
-      ) {
-        targetId = null;
-      }
-      if (targetId) {
-        const L = findLayerById(targetId);
-        if (
-          !L ||
-          !L.visible ||
-          !Array.isArray(L.upperViewTabs) ||
-          !L.upperViewTabs.includes('space-network-grid')
-        ) {
-          targetId = null;
-        }
-      }
-      if (!targetId) {
-        const vis = getAllLayers().filter(
-          (l) =>
-            l.visible &&
-            !isRegisteredNetworkDrawSketchLayerId(l.layerId) &&
-            !isRegisteredNetworkDrawSketchSn4LayerId(l.layerId) &&
-            !isNetworkDrawSketchPipelineB3LayerId(l.layerId) &&
-            Array.isArray(l.upperViewTabs) &&
-            l.upperViewTabs.includes('space-network-grid')
-        );
-        targetId = vis[0]?.layerId ?? null;
-      }
-
-      const baseLayer = targetId ? findLayerById(targetId) : null;
-      if (!targetId || !baseLayer) {
-        return { ok: false, reason: 'no_target' };
-      }
-      const segments = buildNormalizeSegmentsFromSketchPolylinesNorm(baseLayer, polylinesNorm, {
-        strokeColorIndices,
-      });
-      if (!Array.isArray(segments) || segments.length === 0) {
-        return { ok: false, reason: 'no_lines' };
-      }
-
-      const dest = findLayerById(b3DestId);
-      if (!dest) {
-        return { ok: false, reason: 'no_target' };
-      }
-
-      dest.visible = true;
-      dest.isLoaded = true;
-      dest.spaceNetworkGridJsonData = JSON.parse(JSON.stringify(segments));
-
-      const plotB = getSchematicPlotBoundsFromLayer(baseLayer) || {
-        xMin: 0,
-        xMax: 1,
-        yMin: 0,
-        yMax: 1,
-      };
-      dest.networkDrawSketchMarkersPlot = useGeo
-        ? buildPlotMarkersFromSketchMarkersGeo(markers, sketchBounds, plotB)
-        : buildPlotMarkersFromSketchMarkersPx(markers, sketchBounds, plotB);
-
-      const sketchLayer = findLayerById(sketchId);
-      if (sketchLayer && useGeo) {
-        sketchLayer.networkDrawSketchExportWgs84GeoJson = JSON.parse(
-          JSON.stringify(
-            sketchPolylinesWgs84ToGeoJsonFeatureCollection(raw, {
-              markersWgs84: markers,
-            })
-          )
-        );
-      }
-
-      clearNetworkDrawSketchGridOverlay();
-      setNetworkSketchAfterDrawTargetLayerId(b3DestId);
-      setControlActiveLayerId(b3DestId);
-      setNetworkSketchAfterDrawSwitchLayerPending(true);
-      requestSpaceNetworkGridFullRedraw();
-      return { ok: true };
     };
 
     /** 由 store 請求首頁切換上半部頁籤（例：手繪後切至 space-network-grid）；HomeView 監聽後套用並清除 */
@@ -3716,7 +3203,6 @@ export const useDataStore = defineStore(
 
     return {
       layers,
-      applyNetworkDrawSketchToSpaceNetworkGrid,
       clearPendingHomeActiveUpperTab,
       findLayerById, // 根據 ID 尋找圖層
       getAllLayers, // 獲取所有圖層的扁平陣列
@@ -3777,18 +3263,6 @@ export const useDataStore = defineStore(
       spaceNetworkGridFullRedrawTrigger,
       requestSpaceNetworkGridFullRedraw,
       networkDrawSketchGridOverlay,
-      networkDrawSketchPolylines,
-      getNetworkDrawSketchPolylinesForLayer,
-      getNetworkDrawSketchRouteExportRowsForLayer,
-      getNetworkDrawSketchMarkersForLayer,
-      getNetworkDrawSketchUseGeoForLayer,
-      setNetworkDrawSketchPolylines,
-      refreshNetworkDrawSketchLayerExportJsonFields,
-      applyNetworkDrawSketchRoutesExportJsonImport,
-      networkDrawSketchUseGeo,
-      setNetworkDrawSketchUseGeo,
-      networkDrawSketchMarkers,
-      setNetworkDrawSketchMarkers,
       getNetworkDrawSketchSn4PolylinesForLayer,
       getNetworkDrawSketchSn4MarkersForLayer,
       getNetworkDrawSketchSn4UseGeoForLayer,

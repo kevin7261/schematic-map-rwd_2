@@ -1,6 +1,5 @@
 export { executeOsmGeojsonToTaipeiSn4A } from './executeOsmGeojsonToTaipeiSn4A.js';
 export { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../layers/osm_2_geojson_2_json/index.js';
-export { executeOsmGeojsonToRouteSegmentsNdSketch2 } from './executeOsmGeojsonToRouteSegmentsNd.js';
 export {
   executeTaipeiTest3_B3_To_C3_Nd_Grid2,
   executeTaipeiTest3_C3_To_D3_Nd_Grid2,

@@ -59,7 +59,6 @@
     towardCenterMoveLabel,
   } from '../utils/gridNormalizationMinDistance.js';
   import { buildMapDrawnRoutesExport } from '@/utils/exportMapDrawnRoutesFromLayer.js';
-  import { isRegisteredNetworkDrawSketchLayerId } from '@/utils/networkDrawSketchPipelineLayers.js';
   import { isRegisteredNetworkDrawSketchSn4LayerId } from '@/utils/networkDrawSketchSn4PipelineLayers.js';
   import {
     getSchematicPlotBoundsFromLayer,
@@ -229,12 +228,6 @@
   const canExecuteLayer = computed(() => {
     if (!currentLayer.value) return false;
 
-    if (isRegisteredNetworkDrawSketchLayerId(currentLayer.value.layerId)) {
-      return !!(
-        currentLayer.value.executeFunction &&
-        typeof currentLayer.value.executeFunction === 'function'
-      );
-    }
     if (isRegisteredNetworkDrawSketchSn4LayerId(currentLayer.value.layerId)) {
       return !!(
         currentLayer.value.executeFunction &&
@@ -2523,30 +2516,9 @@
     return !!(layer.geojsonData || layer.layoutGridJsonData || layer.spaceNetworkGridJsonData);
   });
 
-  const isNetworkDrawSketchLayer = computed(() =>
-    isRegisteredNetworkDrawSketchLayerId(currentLayer.value?.layerId)
-  );
-
   const isNetworkDrawSketchSn4Layer = computed(() =>
     isRegisteredNetworkDrawSketchSn4LayerId(currentLayer.value?.layerId)
   );
-
-  const networkDrawSketchHasLines = computed(() => {
-    const lid = currentLayer.value?.layerId;
-    if (!isRegisteredNetworkDrawSketchLayerId(lid)) return false;
-    const lines = dataStore.getNetworkDrawSketchPolylinesForLayer(lid);
-    if (!Array.isArray(lines)) return false;
-    return lines.some((pl) => Array.isArray(pl) && pl.length >= 2);
-  });
-
-  /** 手繪「加站點」於 store 之紫色標記數（與 NetworkDrawTab 同步） */
-  const networkDrawSketchStationCount = computed(() => {
-    const lid = currentLayer.value?.layerId;
-    if (!isRegisteredNetworkDrawSketchLayerId(lid)) return 0;
-    const m = dataStore.getNetworkDrawSketchMarkersForLayer(lid);
-    const s = m?.station;
-    return Array.isArray(s) ? s.length : 0;
-  });
 
   const networkDrawSketchSn4HasLines = computed(() => {
     const lid = currentLayer.value?.layerId;
@@ -2564,33 +2536,6 @@
     return Array.isArray(s) ? s.length : 0;
   });
 
-  const networkDrawSketchImportTargetLayerId = ref(null);
-
-  const openNetworkDrawSketchRoutesJsonPicker = (layerId) => {
-    networkDrawSketchImportTargetLayerId.value = layerId;
-    nextTick(() => {
-      const el = document.getElementById('network-draw-sketch-routes-json-input');
-      if (el) el.click();
-    });
-  };
-
-  const onNetworkDrawSketchRoutesJsonFileSelected = async (ev) => {
-    const layerId = networkDrawSketchImportTargetLayerId.value;
-    networkDrawSketchImportTargetLayerId.value = null;
-    const input = ev.target;
-    const file = input?.files?.[0];
-    if (input) input.value = '';
-    if (!file || !layerId) return;
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      dataStore.applyNetworkDrawSketchRoutesExportJsonImport(layerId, parsed);
-    } catch (e) {
-      console.error('[匯入路段 JSON]', e);
-      window.alert(`匯入失敗：${e?.message || String(e)}`);
-    }
-  };
-
   const networkDrawSketchSn4Wgs84GeoJsonDownloadableForLayerId = (layerId) => {
     if (!isRegisteredNetworkDrawSketchSn4LayerId(layerId)) return false;
     if (!dataStore.getNetworkDrawSketchSn4UseGeoForLayer(layerId)) return false;
@@ -2607,7 +2552,6 @@
   };
 
   const controlExecuteNextDisabled = computed(() => {
-    if (isNetworkDrawSketchLayer.value) return !networkDrawSketchHasLines.value;
     if (isNetworkDrawSketchSn4Layer.value) {
       const L = currentLayer.value;
       const hasGj = !!(L?.geojsonData?.features && L.geojsonData.features.length > 0);
@@ -3574,13 +3518,6 @@
     if (!layer || !Array.isArray(layer.upperViewTabs)) return [];
     const t = layer.upperViewTabs;
     const out = [];
-    if (t.includes('network-draw-lines')) {
-      out.push({
-        tab: 'network-draw-lines',
-        iconKey: 'network_sketch',
-        title: '開啟上半部手繪網絡線',
-      });
-    }
     if (t.includes('network-draw-lines-sn4')) {
       out.push({
         tab: 'network-draw-lines-sn4',
@@ -3631,10 +3568,6 @@
     }
     // taipei_osm_geojson_2／taipei_osm_geojson_sn4／osm_2_geojson_2_json：executeFunction 不依賴此參數；僅須非空以便通過檢查
     if (!jsonData && isRegisteredNetworkDrawSketchSn4LayerId(L.layerId)) {
-      jsonData = L.networkDrawSketchExportWgs84GeoJson ||
-        L.geojsonData || { type: 'FeatureCollection', features: [] };
-    }
-    if (!jsonData && isRegisteredNetworkDrawSketchLayerId(L.layerId)) {
       jsonData = L.networkDrawSketchExportWgs84GeoJson ||
         L.geojsonData || { type: 'FeatureCollection', features: [] };
     }
@@ -6310,20 +6243,17 @@
                 <span>{{ getLayerFullTitle(layer).layerName }}</span>
               </span>
             </div>
-            <!-- 手繪主圖層僅保留下方匯入區，不顯示上半分頁捷徑 -->
-            <template v-if="!isRegisteredNetworkDrawSketchLayerId(layer.layerId)">
-              <button
-                v-for="s in layerUpperTabShortcuts(layer)"
-                :key="layer.layerId + '-up-' + s.tab"
-                type="button"
-                class="btn rounded-circle border-0 d-flex align-items-center justify-content-center my-btn-transparent my-font-size-xs flex-shrink-0"
-                :title="s.title"
-                style="width: 30px; min-width: 30px; height: 30px"
-                @click.stop="openHomeUpperTab(s.tab)"
-              >
-                <i :class="getIcon(s.iconKey).icon"></i>
-              </button>
-            </template>
+            <button
+              v-for="s in layerUpperTabShortcuts(layer)"
+              :key="layer.layerId + '-up-' + s.tab"
+              type="button"
+              class="btn rounded-circle border-0 d-flex align-items-center justify-content-center my-btn-transparent my-font-size-xs flex-shrink-0"
+              :title="s.title"
+              style="width: 30px; min-width: 30px; height: 30px"
+              @click.stop="openHomeUpperTab(s.tab)"
+            >
+              <i :class="getIcon(s.iconKey).icon"></i>
+            </button>
           </div>
           <div class="w-100" :class="`my-bgcolor-${layer.colorName}`" style="min-height: 4px"></div>
         </li>
@@ -6332,38 +6262,11 @@
 
     <!-- 📋 圖層操作內容區域 -->
     <div v-if="visibleLayers.length > 0" class="flex-grow-1 overflow-auto p-3 my-bgcolor-white">
-      <input
-        id="network-draw-sketch-routes-json-input"
-        type="file"
-        accept=".json,application/json"
-        class="d-none"
-        @change="onNetworkDrawSketchRoutesJsonFileSelected"
-      />
       <div
         v-for="layer in validVisibleLayers"
         :key="layer.layerId"
         v-show="activeLayerTab === layer.layerId"
       >
-        <!-- 手繪網絡線：匯入路段匯出 JSON（頂層陣列） -->
-        <div
-          v-if="isRegisteredNetworkDrawSketchLayerId(layer.layerId)"
-          class="pb-3 mb-3 border-bottom"
-        >
-          <div class="my-title-xs-gray pb-2">匯入</div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-btn-blue my-font-size-xs text-nowrap w-100 my-cursor-pointer"
-            @click="openNetworkDrawSketchRoutesJsonPicker(layer.layerId)"
-          >
-            匯入路段 JSON
-          </button>
-          <div class="my-font-size-xs text-muted mt-2">
-            頂層為陣列；每筆含 routeName、segment；routeCoordinates 可為程式匯出的 [起點,[轉折],迄點]，或連續
-            [[lon,lat],…] 折線（至少兩點）。
-          </div>
-        </div>
-
-        <template v-if="!isRegisteredNetworkDrawSketchLayerId(layer.layerId)">
         <!-- 測試_4 taipei_sn4_a：手繪匯出 GeoJSON -->
         <div
           v-if="
@@ -6568,13 +6471,6 @@
           >
             執行下一步
           </button>
-          <div
-            v-if="isNetworkDrawSketchLayer && networkDrawSketchStationCount > 0"
-            class="mt-2 text-center small text-success"
-            style="line-height: 1.35"
-          >
-            手繪加站點：已插入 {{ networkDrawSketchStationCount }} 處（紫色圓點）
-          </div>
           <div
             v-if="isNetworkDrawSketchSn4Layer && networkDrawSketchSn4StationCount > 0"
             class="mt-2 text-center small text-success"
@@ -9195,7 +9091,6 @@
             合併黑點路段 (權重差&lt;=3)
           </button>
         </div>
-        </template>
       </div>
     </div>
 

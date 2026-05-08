@@ -2,9 +2,7 @@
  * 手繪 sketch 與「網絡／網格繪製」管線 b 層一對一對應（執行下一步寫入目標）。
  * 各條管線圖層 id 獨立，不與其他群組共用。
  */
-export const NETWORK_DRAW_SKETCH_TO_B3_LAYER_ID = {
-  network_draw_sketch_2: 'taipei_b3_dp_nd_2',
-};
+export const NETWORK_DRAW_SKETCH_TO_B3_LAYER_ID = {};
 
 /** @returns {string[]} */
 export function getAllNetworkDrawSketchLayerIds() {
