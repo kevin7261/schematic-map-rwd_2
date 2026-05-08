@@ -82,6 +82,74 @@
     snapCoarseGridStepToMultipleOf5,
     formatAxisTickLabelMaxTwoDecimals,
   } from '@/utils/gridAxisTicks.js';
+  import { SPACE_LAYOUT_GRID_VIEWER_LAYER_ID } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+
+  /**
+   * @param {*} meta — layoutUniformGridMeta（wgs84／compressed）
+   */
+  function buildLayoutViewerUniformAxisTicks(meta, approxPerAxis = 12) {
+    if (!meta || typeof meta !== 'object') return null;
+    const nApprox = Math.max(4, Math.floor(Number(approxPerAxis)) || 12);
+
+    if (meta.mode === 'wgs84' && meta.bounds && Number.isFinite(meta.divisionsPerAxis)) {
+      const b = meta.bounds;
+      const div = Math.max(1, Math.floor(Number(meta.divisionsPerAxis)));
+      const stride = Math.max(1, Math.ceil(div / nApprox));
+      const lonSpan = b.maxLon - b.minLon;
+      const latSpan = b.maxLat - b.minLat;
+      const xTicks = [];
+      for (let i = 0; i <= div; i += stride) {
+        xTicks.push(div > 0 && lonSpan !== 0 ? b.minLon + (lonSpan * i) / div : b.minLon + i);
+      }
+      const lastX = div > 0 && lonSpan !== 0 ? b.maxLon : b.minLon + div;
+      if (
+        xTicks.length === 0 ||
+        Math.abs(xTicks[xTicks.length - 1] - lastX) > 1e-9 * Math.max(1, Math.abs(lastX))
+      ) {
+        xTicks.push(lastX);
+      }
+      const yTicks = [];
+      for (let j = 0; j <= div; j += stride) {
+        yTicks.push(div > 0 && latSpan !== 0 ? b.minLat + (latSpan * j) / div : b.minLat + j);
+      }
+      const lastY = div > 0 && latSpan !== 0 ? b.maxLat : b.minLat + div;
+      if (
+        yTicks.length === 0 ||
+        Math.abs(yTicks[yTicks.length - 1] - lastY) > 1e-9 * Math.max(1, Math.abs(lastY))
+      ) {
+        yTicks.push(lastY);
+      }
+      return {
+        xTicks,
+        yTicks,
+        xLabelsAsFloat: true,
+        yLabelsAsFloat: true,
+        skipDefaultBackgroundGrid: true,
+      };
+    }
+
+    if (meta.mode === 'compressed' && Number.isFinite(meta.nx) && Number.isFinite(meta.ny)) {
+      const nx = Math.max(0, Math.floor(Number(meta.nx)));
+      const ny = Math.max(0, Math.floor(Number(meta.ny)));
+      const sx = Math.max(1, Math.ceil((nx + 1) / nApprox));
+      const sy = Math.max(1, Math.ceil((ny + 1) / nApprox));
+      const xTicks = [];
+      for (let i = 0; i <= nx; i += sx) xTicks.push(i);
+      if (xTicks.length === 0 || xTicks[xTicks.length - 1] !== nx) xTicks.push(nx);
+      const yTicks = [];
+      for (let j = 0; j <= ny; j += sy) yTicks.push(j);
+      if (yTicks.length === 0 || yTicks[yTicks.length - 1] !== ny) yTicks.push(ny);
+      return {
+        xTicks,
+        yTicks,
+        xLabelsAsFloat: false,
+        yLabelsAsFloat: false,
+        skipDefaultBackgroundGrid: true,
+      };
+    }
+
+    return null;
+  }
 
   /** 與 MapTab circleStyleForJsonEndpointType 非 hover 狀之色塊對應（D3 無 pane／半徑略同 Leaflet px） */
   function mapTabApproxBaseSvgForEndpoint(normType) {
@@ -3472,8 +3540,10 @@
       yRange > 1e-9 &&
       Math.max(xRange, yRange) <= 30;
 
-    const formatAxisTickLabel = (tick, _span, asFloat) =>
-      formatAxisTickLabelMaxTwoDecimals(tick, asFloat);
+    const layoutUniformTickOverride =
+      layerTab === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID
+        ? buildLayoutViewerUniformAxisTicks(dataStore.findLayerById(layerTab)?.layoutUniformGridMeta)
+        : null;
 
     // 縮減疊加／taipei_g：背景與軸皆每個整數一條線／一個刻度；其餘圖層網格與軸標籤可抽稀（粗步長為 5 的倍數）
     const xGridStep = isTaipeiD3CoordNormalizeLayer
@@ -3501,10 +3571,18 @@
           ? 1
           : yGridStep;
 
-    // 軸／網格共用刻度位置（taipei_g：整數格；連續座標：d3.ticks；其餘：整數步長抽稀）
+    // 軸／網格共用刻度位置（json 繪製均勻格：與 meta 對齊；taipei_g：整數格；連續座標：nice step；其餘：抽稀）
     const xTicks = [];
     const yTicks = [];
-    if (useSchematicCellCenterGrid) {
+    let xAxisLabelsAsFloat = false;
+    let yAxisLabelsAsFloat = false;
+
+    if (layoutUniformTickOverride) {
+      xTicks.push(...layoutUniformTickOverride.xTicks);
+      yTicks.push(...layoutUniformTickOverride.yTicks);
+      xAxisLabelsAsFloat = layoutUniformTickOverride.xLabelsAsFloat;
+      yAxisLabelsAsFloat = layoutUniformTickOverride.yLabelsAsFloat;
+    } else if (useSchematicCellCenterGrid) {
       for (let tx = Math.ceil(xMin / tickXStep) * tickXStep; tx <= xMax; tx += tickXStep) {
         xTicks.push(tx);
       }
@@ -3516,6 +3594,8 @@
       const yTickStep = niceTickStepMultipleOf5(yRange, 8);
       xTicks.push(...buildTicksInRange(xMin, xMax, xTickStep));
       yTicks.push(...buildTicksInRange(yMin, yMax, yTickStep));
+      xAxisLabelsAsFloat = true;
+      yAxisLabelsAsFloat = true;
     } else {
       for (let x = Math.ceil(xMin / tickXStep) * tickXStep; x <= xMax; x += tickXStep) {
         xTicks.push(x);
@@ -3525,11 +3605,41 @@
       }
     }
 
-    // 🎯 繪製淺灰色網格線（在背景層）
+    const skipDefaultLightBackgroundGrid =
+      Boolean(layoutUniformTickOverride?.skipDefaultBackgroundGrid);
+
+    // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
-    if (useSchematicCellCenterGrid) {
-      if (dataStore.showGrid) {
+    if (!skipDefaultLightBackgroundGrid) {
+      if (useSchematicCellCenterGrid) {
+        if (dataStore.showGrid) {
+          xTicks.forEach((tick) => {
+            const xPos = xScale(tick);
+            gridGroup
+              .append('line')
+              .attr('x1', xPos)
+              .attr('y1', margin.top)
+              .attr('x2', xPos)
+              .attr('y2', margin.top + height)
+              .attr('stroke', '#E0E0E0')
+              .attr('stroke-width', 0.5)
+              .attr('opacity', 0.6);
+          });
+          yTicks.forEach((tick) => {
+            const yPos = yScale(tick);
+            gridGroup
+              .append('line')
+              .attr('x1', margin.left)
+              .attr('y1', yPos)
+              .attr('x2', margin.left + width)
+              .attr('y2', yPos)
+              .attr('stroke', '#E0E0E0')
+              .attr('stroke-width', 0.5)
+              .attr('opacity', 0.6);
+          });
+        }
+      } else {
         xTicks.forEach((tick) => {
           const xPos = xScale(tick);
           gridGroup
@@ -3555,31 +3665,6 @@
             .attr('opacity', 0.6);
         });
       }
-    } else {
-      xTicks.forEach((tick) => {
-        const xPos = xScale(tick);
-        gridGroup
-          .append('line')
-          .attr('x1', xPos)
-          .attr('y1', margin.top)
-          .attr('x2', xPos)
-          .attr('y2', margin.top + height)
-          .attr('stroke', '#E0E0E0')
-          .attr('stroke-width', 0.5)
-          .attr('opacity', 0.6);
-      });
-      yTicks.forEach((tick) => {
-        const yPos = yScale(tick);
-        gridGroup
-          .append('line')
-          .attr('x1', margin.left)
-          .attr('y1', yPos)
-          .attr('x2', margin.left + width)
-          .attr('y2', yPos)
-          .attr('stroke', '#E0E0E0')
-          .attr('stroke-width', 0.5)
-          .attr('opacity', 0.6);
-      });
     }
 
     // 將網格線移到最底層
@@ -3653,7 +3738,7 @@
         .attr('text-anchor', 'middle')
         .attr('font-size', '10px')
         .attr('fill', '#666666')
-        .text(formatAxisTickLabel(tick, xRange, preferContinuousGridTicks));
+        .text(formatAxisTickLabelMaxTwoDecimals(tick, xAxisLabelsAsFloat));
     });
 
     // Y軸刻度
@@ -3679,7 +3764,7 @@
         .attr('dominant-baseline', 'middle')
         .attr('font-size', '10px')
         .attr('fill', '#666666')
-        .text(formatAxisTickLabel(tick, yRange, preferContinuousGridTicks));
+        .text(formatAxisTickLabelMaxTwoDecimals(tick, yAxisLabelsAsFloat));
     });
 
     // 創建線條生成器
@@ -4117,9 +4202,8 @@
         .attr('class', 'layout-uniform-station-grid-line')
         .attr('stroke', '#5c6b7a')
         .attr('fill', 'none')
-        .attr('stroke-width', 1.15)
+        .attr('stroke-width', '1pt')
         .attr('opacity', 0.88)
-        .attr('stroke-dasharray', '4 4')
         .attr('stroke-linecap', 'round')
         .style('pointer-events', 'none');
     };
@@ -5991,6 +6075,7 @@
         sn: layer.spaceNetworkGridJsonData,
         gj: layer.geojsonData,
         ug: layer.layoutUniformGridGeoJson,
+        um: layer.layoutUniformGridMeta,
       };
     },
     async () => {

@@ -335,6 +335,8 @@ export const useDataStore = defineStore(
             dataJson: null,
             /** space-layout-grid-viewer：均勻網格線（每軸 4→16→64… 遞增直至每格至多一站） */
             layoutUniformGridGeoJson: null,
+            /** space-layout-grid-viewer：網格模式（經緯外框細分數／壓縮後 nx、ny） */
+            layoutUniformGridMeta: null,
             upperViewTabs: ['space-layout-grid-viewer'],
           },
         ],
@@ -1917,9 +1919,12 @@ export const useDataStore = defineStore(
       derivedLayer.jsonData = arr;
       derivedLayer.dataJson = arr;
       derivedLayer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(
-        Array.isArray(raw) ? raw : []
+        Array.isArray(raw) ? raw : [],
+        { stationPoints: 'endpoints', routeLine: 'endpoints' }
       );
       derivedLayer.isLoaded = true;
+      derivedLayer.layoutUniformGridGeoJson = null;
+      derivedLayer.layoutUniformGridMeta = null;
     };
 
     const syncOsm2DataJsonMirrorFromParent = () => {
@@ -1933,6 +1938,7 @@ export const useDataStore = defineStore(
           dataJson: layoutViewer.dataJson,
           isLoaded: layoutViewer.isLoaded,
           layoutUniformGridGeoJson: layoutViewer.layoutUniformGridGeoJson ?? null,
+          layoutUniformGridMeta: layoutViewer.layoutUniformGridMeta ?? null,
         });
       }
     };
@@ -2048,6 +2054,7 @@ export const useDataStore = defineStore(
           dataJson: layer.dataJson,
           isLoaded: layer.isLoaded,
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
+          layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
         });
       }
 
@@ -3204,6 +3211,7 @@ export const useDataStore = defineStore(
           geojsonData: layer.geojsonData,
           dataJson: layer.dataJson,
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
+          layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
         });
         return;
       }

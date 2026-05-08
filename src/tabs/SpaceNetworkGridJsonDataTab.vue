@@ -71,7 +71,11 @@
    */
   import { useDataStore } from '@/stores/dataStore.js';
   import { copyToClipboard } from '@/utils/utils.js';
-  import { LAYER_ID as OSM_2_LAYER_ID, getOsm2GeojsonSessionOsmXml } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+  import {
+    LAYER_ID as OSM_2_LAYER_ID,
+    SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
+    getOsm2GeojsonSessionOsmXml,
+  } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
   import { minimalLineStringFeatureCollectionFromRouteExportRows } from '@/utils/mapDrawnRoutesImport.js';
 
   // ==================== 🏪 狀態管理初始化 (State Management Initialization) ====================
@@ -220,7 +224,12 @@
           return String(e);
         }
       }
-      const synth = minimalLineStringFeatureCollectionFromRouteExportRows(layer.jsonData || []);
+      const synth = minimalLineStringFeatureCollectionFromRouteExportRows(layer.jsonData || [], {
+        stationPoints:
+          layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ? 'endpoints' : 'all',
+        routeLine:
+          layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ? 'endpoints' : 'full',
+      });
       if (synth.features.length > 0) {
         try {
           return JSON.stringify(synth, null, 2);

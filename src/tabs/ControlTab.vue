@@ -60,7 +60,10 @@
     towardCenterMoveLabel,
   } from '../utils/gridNormalizationMinDistance.js';
   import { buildMapDrawnRoutesExport } from '@/utils/exportMapDrawnRoutesFromLayer.js';
-  import { buildMapDrawnStationUniformRefinementGridFeatureCollection } from '@/utils/stationUniformGridGeoJson.js';
+  import {
+    buildMapDrawnStationUniformRefinementGridWithMeta,
+    applyLayoutViewerCompressEmptyBands,
+  } from '@/utils/stationUniformGridGeoJson.js';
   import { isRegisteredNetworkDrawSketchSn4LayerId } from '@/utils/networkDrawSketchSn4PipelineLayers.js';
   import {
     getSchematicPlotBoundsFromLayer,
@@ -3656,7 +3659,7 @@
     if (el) el.click();
   };
 
-  /** json 繪製：全域均勻網格（每軸 4→16→64…），寫入 layoutUniformGridGeoJson（space-layout-grid-viewer） */
+  /** json 繪製：全域均勻網格（每軸 4→16→64…），寫入 layoutUniformGridGeoJson + meta（space-layout-grid-viewer） */
   const onGenerateJsonDrawUniformGridClick = () => {
     dataStore.syncOsm2DataJsonMirrorFromParent();
     const lay = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
@@ -3668,9 +3671,46 @@
       );
       return;
     }
-    const fc = buildMapDrawnStationUniformRefinementGridFeatureCollection(rows);
-    lay.layoutUniformGridGeoJson = fc;
-    dataStore.saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, { layoutUniformGridGeoJson: fc });
+    const { geojson, meta } = buildMapDrawnStationUniformRefinementGridWithMeta(rows);
+    lay.layoutUniformGridGeoJson = geojson;
+    lay.layoutUniformGridMeta = meta;
+    dataStore.saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
+      layoutUniformGridGeoJson: geojson,
+      layoutUniformGridMeta: meta,
+    });
+  };
+
+  /** 刪除整條無站之列／欄後，將路段與均勻格線重整到壓縮座標（僅適用經緯細分網格、尚未壓縮） */
+  const onCompressJsonDrawUniformGridEmptyBandsClick = () => {
+    const lay = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+    if (!lay) return;
+    const divBefore =
+      lay.layoutUniformGridMeta?.mode === 'wgs84'
+        ? Math.max(1, Math.floor(Number(lay.layoutUniformGridMeta.divisionsPerAxis)) || 1)
+        : null;
+    const r = applyLayoutViewerCompressEmptyBands(lay);
+    if (!r) {
+      window.alert(
+        '無法壓縮：請先按「產生均勻細分網格」，且須為經緯模式（尚未壓縮過空列／欄）。'
+      );
+      return;
+    }
+    if (
+      divBefore != null &&
+      typeof r.nx === 'number' &&
+      typeof r.ny === 'number' &&
+      r.nx === divBefore &&
+      r.ny === divBefore
+    ) {
+      window.alert('目前沒有「整欄或整列皆無站點」的條帶可刪除；資料與格線維持不變。');
+    }
+    dataStore.saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
+      jsonData: lay.jsonData,
+      dataJson: lay.dataJson,
+      geojsonData: lay.geojsonData,
+      layoutUniformGridGeoJson: lay.layoutUniformGridGeoJson,
+      layoutUniformGridMeta: lay.layoutUniformGridMeta,
+    });
   };
 
   const onTaipeiOsmSpaceGridLocalFileInputChange = async (event) => {
@@ -6387,6 +6427,13 @@
             @click="onGenerateJsonDrawUniformGridClick"
           >
             產生均勻細分網格（每格至多一站）
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
+            @click="onCompressJsonDrawUniformGridEmptyBandsClick"
+          >
+            刪除無站之整列／欄並重整格線與座標
           </button>
           <div class="text-muted" style="font-size: 11px; line-height: 1.45">
             自父圖層同步之 <code class="small">jsonData</code> 取路段

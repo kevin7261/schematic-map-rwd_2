@@ -243,9 +243,15 @@ function lonLatStationDedupKey(lo, la) {
  * 由地圖路段匯出列還原 LineString FeatureCollection，並附與 MapTab 對齊之車站 Point（terminal 藍／intersection 紅／normal 黑）。
  *
  * @param {unknown[]} rows
+ * @param {{ stationPoints?: 'all'|'endpoints', routeLine?: 'full'|'endpoints' }} [options] — json 繪製層：`endpoints` 僅繪製起迄直線與起迄站（不繪中段 stations）。
  * @returns {{ type: 'FeatureCollection', features: object[] }}
  */
-export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
+export function minimalLineStringFeatureCollectionFromRouteExportRows(rows, options = {}) {
+  const stationPointsMode =
+    /** @type {'all'|'endpoints'} */ (options.stationPoints === 'endpoints' ? 'endpoints' : 'all');
+  const routeLineMode =
+    /** @type {'full'|'endpoints'} */ (options.routeLine === 'endpoints' ? 'endpoints' : 'full');
+
   if (!Array.isArray(rows)) return { type: 'FeatureCollection', features: [] };
   const features = [];
   /** @type {Map<string, { lon: number, lat: number, mergedType: string, meta: Record<string, unknown> }>} */
@@ -271,8 +277,7 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
         mergedType: candT,
         meta: {
           station_id: node.station_id ?? node.tags?.station_id ?? '',
-          station_name:
-            node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? '',
+          station_name: node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? '',
           connect_number: node.connect_number,
           route_name_list: rn,
         },
@@ -289,8 +294,7 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
         mergedType: candT,
         meta: {
           station_id: node.station_id ?? node.tags?.station_id ?? '',
-          station_name:
-            node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? '',
+          station_name: node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? '',
           connect_number: node.connect_number,
           route_name_list: rn,
         },
@@ -313,8 +317,31 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
 
   for (const row of rows) {
     if (!row || typeof row !== 'object' || !Array.isArray(row.routeCoordinates)) continue;
-    const chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
+    const seg = row.segment && typeof row.segment === 'object' ? row.segment : null;
+    let chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
     if (!chain || chain.length < 2) continue;
+
+    if (routeLineMode === 'endpoints') {
+      let a = chain[0];
+      let b = chain[chain.length - 1];
+      if (seg) {
+        const lo0 = segmentNodeLon(seg.start);
+        const la0 = segmentNodeLat(seg.start);
+        const lo1 = segmentNodeLon(seg.end);
+        const la1 = segmentNodeLat(seg.end);
+        if (
+          Number.isFinite(lo0) &&
+          Number.isFinite(la0) &&
+          Number.isFinite(lo1) &&
+          Number.isFinite(la1)
+        ) {
+          a = [lo0, la0];
+          b = [lo1, la1];
+        }
+      }
+      chain = [a, b];
+    }
+
     const lineCol =
       typeof row.color === 'string' && row.color.trim() !== '' ? row.color.trim() : '#666666';
     features.push({
@@ -326,10 +353,9 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
       },
       geometry: { type: 'LineString', coordinates: chain },
     });
-    const seg = row.segment && typeof row.segment === 'object' ? row.segment : null;
     if (seg) {
       ingestStationNode(seg.start, 'normal');
-      if (Array.isArray(seg.stations)) {
+      if (stationPointsMode === 'all' && Array.isArray(seg.stations)) {
         for (const st of seg.stations) ingestStationNode(st, 'normal');
       }
       ingestStationNode(seg.end, 'normal');
@@ -343,15 +369,13 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
         station_name: meta.station_name ?? '',
       },
       lon,
-      lat,
+      lat
     );
     const rn = Array.isArray(meta.route_name_list)
       ? [...new Set(meta.route_name_list.filter((s) => String(s).trim()))]
       : [];
     const cn =
-      meta.connect_number != null && meta.connect_number !== ''
-        ? meta.connect_number
-        : undefined;
+      meta.connect_number != null && meta.connect_number !== '' ? meta.connect_number : undefined;
     features.push({
       type: 'Feature',
       properties: {
@@ -380,12 +404,10 @@ function normalizeNodeStationStrings(o, px, py) {
   const ens = ensureSegmentStationStrings(
     {
       station_id: o.station_id ?? o.tags?.station_id ?? '',
-      station_name:
-        (o.station_name ?? o.tags?.station_name ?? o.tags?.name ?? '') ||
-        '',
+      station_name: (o.station_name ?? o.tags?.station_name ?? o.tags?.name ?? '') || '',
     },
     px,
-    py,
+    py
   );
   o.station_id = ens.station_id;
   o.station_name = ens.station_name;
@@ -592,7 +614,9 @@ function rowIsLonLatPolylineMapDrawnExport(row) {
 /** @param {*} jsonData - 解析後 JSON 根 */
 export function isNetworkDrawSketchRoutesExportJsonArray(jsonData) {
   if (!Array.isArray(jsonData) || jsonData.length === 0) return false;
-  return jsonData.every((row) => rowIsClassicMapDrawnExport(row) || rowIsLonLatPolylineMapDrawnExport(row));
+  return jsonData.every(
+    (row) => rowIsClassicMapDrawnExport(row) || rowIsLonLatPolylineMapDrawnExport(row)
+  );
 }
 
 /**
