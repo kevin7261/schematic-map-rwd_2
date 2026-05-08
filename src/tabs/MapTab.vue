@@ -15,6 +15,10 @@
     isMapDrawnRoutesExportArray,
   } from '@/utils/mapDrawnRoutesImport.js';
   import {
+    enumerateCrossingCandidates,
+    applyCrossingToRows,
+  } from '@/utils/routeSegmentIntersections.js';
+  import {
     LAYER_ID as OSM_PIPELINE_LAYER_ID,
     setOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
@@ -335,11 +339,11 @@
 
       // ==================== 畫線模式 (Draw Mode) ====================
 
-      const drawMode = ref(false);          // 是否在畫線模式
-      const drawPoints = ref([]);           // 當前正在畫的折線頂點 [[lon,lat], ...]
-      let drawPreviewPolyline = null;       // Leaflet Polyline 預覽圖層
-      let drawPreviewDot = null;            // 當前最後一點的圓點
-      let dblClickPending = false;          // 防止 dblclick 觸發兩次 click 的 flag
+      const drawMode = ref(false); // 是否在畫線模式
+      const drawPoints = ref([]); // 當前正在畫的折線頂點 [[lon,lat], ...]
+      let drawPreviewPolyline = null; // Leaflet Polyline 預覽圖層
+      let drawPreviewDot = null; // 當前最後一點的圓點
+      let dblClickPending = false; // 防止 dblclick 觸發兩次 click 的 flag
 
       /** 將 drawPoints 渲染成預覽折線 */
       const refreshDrawPreview = () => {
@@ -383,8 +387,14 @@
       /** 清除預覽圖層 */
       const clearDrawPreview = () => {
         if (!map) return;
-        if (drawPreviewPolyline) { map.removeLayer(drawPreviewPolyline); drawPreviewPolyline = null; }
-        if (drawPreviewDot) { map.removeLayer(drawPreviewDot); drawPreviewDot = null; }
+        if (drawPreviewPolyline) {
+          map.removeLayer(drawPreviewPolyline);
+          drawPreviewPolyline = null;
+        }
+        if (drawPreviewDot) {
+          map.removeLayer(drawPreviewDot);
+          drawPreviewDot = null;
+        }
       };
 
       /** 完成當前一段折線，轉成路段格式寫入 layer.jsonData */
@@ -449,7 +459,9 @@
       const undoLastDrawnLine = () => {
         const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
         if (!currentLayer || !Array.isArray(currentLayer.jsonData)) return;
-        const idx = [...currentLayer.jsonData].map((r, i) => r._drawn ? i : -1).filter(i => i >= 0);
+        const idx = [...currentLayer.jsonData]
+          .map((r, i) => (r._drawn ? i : -1))
+          .filter((i) => i >= 0);
         if (idx.length === 0) return;
         const rows = [...currentLayer.jsonData];
         rows.splice(idx[idx.length - 1], 1);
@@ -472,7 +484,9 @@
         if (pts.length > 0) pts.pop();
         drawPoints.value = pts;
         finishCurrentLine();
-        setTimeout(() => { dblClickPending = false; }, 50);
+        setTimeout(() => {
+          dblClickPending = false;
+        }, 50);
         L.DomEvent.stopPropagation(e);
       };
 
@@ -514,14 +528,219 @@
 
       const toggleDrawMode = () => {
         if (drawMode.value) exitDrawMode();
-        else enterDrawMode();
+        else {
+          if (intersectMode.value) exitIntersectMode();
+          enterDrawMode();
+        }
       };
 
       const hasDrawnLines = computed(() => {
         const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
-        return currentLayer && Array.isArray(currentLayer.jsonData) &&
-          currentLayer.jsonData.some((r) => r._drawn);
+        return (
+          currentLayer &&
+          Array.isArray(currentLayer.jsonData) &&
+          currentLayer.jsonData.some((r) => r._drawn)
+        );
       });
+
+      // ==================== 新增交叉點模式（兩線段內部相交處打斷並加入 intersection） ====================
+
+      const crossingCandidatesCache = ref([]);
+      const intersectMode = ref(false);
+      let intersectionHintMarker = null;
+      let intersectCaptureMove = null;
+      let intersectCaptureClick = null;
+      let intersectionPulseTimer = null;
+      let activeSnapCrossingCandidate = null;
+      let intersectEscHandler = null;
+      const SNAP_CROSSING_PX = 32;
+
+      function refreshCrossingCandidatesCache() {
+        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        if (
+          !ly ||
+          !Array.isArray(ly.jsonData) ||
+          ly.jsonData.length < 2 ||
+          !isMapDrawnRoutesExportArray(ly.jsonData)
+        ) {
+          crossingCandidatesCache.value = [];
+          return;
+        }
+        crossingCandidatesCache.value = enumerateCrossingCandidates(ly.jsonData);
+      }
+
+      const canUseCrossingTool = computed(() => {
+        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        return Boolean(
+          ly &&
+            Array.isArray(ly.jsonData) &&
+            ly.jsonData.length >= 2 &&
+            isMapDrawnRoutesExportArray(ly.jsonData)
+        );
+      });
+
+      const findNearestCrossingByPixel = (latlng) => {
+        if (!map || !latlng || !crossingCandidatesCache.value.length) return null;
+        const pM = map.latLngToContainerPoint(latlng);
+        let best = null;
+        let bestD = SNAP_CROSSING_PX + 1;
+        for (const c of crossingCandidatesCache.value) {
+          const pC = map.latLngToContainerPoint(L.latLng(c.lat, c.lon));
+          const dx = pM.x - pC.x;
+          const dy = pM.y - pC.y;
+          const d = Math.hypot(dx, dy);
+          if (d < bestD && d <= SNAP_CROSSING_PX) {
+            bestD = d;
+            best = c;
+          }
+        }
+        return best;
+      };
+
+      const stopIntersectionPulse = () => {
+        if (intersectionPulseTimer != null) {
+          clearInterval(intersectionPulseTimer);
+          intersectionPulseTimer = null;
+        }
+      };
+
+      const hideIntersectionHint = () => {
+        stopIntersectionPulse();
+        if (intersectionHintMarker && map?.hasLayer(intersectionHintMarker)) {
+          intersectionHintMarker.closeTooltip();
+          map.removeLayer(intersectionHintMarker);
+        }
+      };
+
+      const ensureIntersectionHintMarker = () => {
+        if (intersectionHintMarker) return;
+        intersectionHintMarker = L.circleMarker([0, 0], {
+          radius: 11,
+          color: '#ffc107',
+          weight: 4,
+          fillColor: '#dc3545',
+          fillOpacity: 0.85,
+          pane: 'markerPane',
+        });
+        if (intersectionHintMarker.setPane) intersectionHintMarker.setPane('markerPane');
+        intersectionHintMarker.bindTooltip('可點擊新增交叉點（紅）', {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -14],
+          opacity: 0.92,
+          className: 'map-tab-intersection-hint-tooltip',
+        });
+      };
+
+      const showIntersectionHintAt = (cand) => {
+        if (!map || !cand) return;
+        ensureIntersectionHintMarker();
+        intersectionHintMarker.setLatLng([cand.lat, cand.lon]);
+        intersectionHintMarker.addTo(map);
+        intersectionHintMarker.openTooltip();
+        if (typeof intersectionHintMarker.bringToFront === 'function') {
+          intersectionHintMarker.bringToFront();
+        }
+        stopIntersectionPulse();
+        let t = 0;
+        intersectionPulseTimer = window.setInterval(() => {
+          if (!map?.hasLayer(intersectionHintMarker)) return;
+          t += 1;
+          intersectionHintMarker.setRadius(9 + Math.sin(t / 3) * 3.5);
+        }, 42);
+      };
+
+      const onIntersectCaptureMove = (ev) => {
+        if (!intersectMode.value || !map) return;
+        let latlng;
+        try {
+          latlng = map.mouseEventToLatLng(ev);
+        } catch (err) {
+          void err;
+          return;
+        }
+        const snap = findNearestCrossingByPixel(latlng);
+        activeSnapCrossingCandidate = snap;
+        if (snap) {
+          showIntersectionHintAt(snap);
+          if (mapEl.value) mapEl.value.style.cursor = 'pointer';
+        } else {
+          hideIntersectionHint();
+          if (mapEl.value && !drawMode.value) mapEl.value.style.cursor = '';
+        }
+      };
+
+      const onIntersectCaptureClick = (ev) => {
+        if (!intersectMode.value || !map || !activeSnapCrossingCandidate) return;
+        const ly = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
+        if (
+          !ly ||
+          !Array.isArray(ly.jsonData) ||
+          !isMapDrawnRoutesExportArray(ly.jsonData)
+        ) {
+          return;
+        }
+        const cand = activeSnapCrossingCandidate;
+        const next = applyCrossingToRows(ly.jsonData, cand);
+        if (!next) return;
+        ev.stopPropagation();
+        ev.preventDefault();
+        ly.jsonData = next;
+        refreshCrossingCandidatesCache();
+        activeSnapCrossingCandidate = null;
+        hideIntersectionHint();
+        loadOrSyncLayers();
+      };
+
+      const exitIntersectMode = () => {
+        if (intersectEscHandler) {
+          window.removeEventListener('keydown', intersectEscHandler);
+          intersectEscHandler = null;
+        }
+        intersectMode.value = false;
+        activeSnapCrossingCandidate = null;
+        stopIntersectionPulse();
+        hideIntersectionHint();
+        if (mapEl.value && !drawMode.value) mapEl.value.style.cursor = '';
+        if (map) {
+          const el = map.getContainer();
+          if (intersectCaptureMove) {
+            el.removeEventListener('mousemove', intersectCaptureMove, true);
+            intersectCaptureMove = null;
+          }
+          if (intersectCaptureClick) {
+            el.removeEventListener('click', intersectCaptureClick, true);
+            intersectCaptureClick = null;
+          }
+        } else {
+          intersectCaptureMove = null;
+          intersectCaptureClick = null;
+        }
+      };
+
+      const enterIntersectMode = () => {
+        if (!map) return;
+        intersectMode.value = true;
+        refreshCrossingCandidatesCache();
+        intersectCaptureMove = onIntersectCaptureMove;
+        intersectCaptureClick = onIntersectCaptureClick;
+        map.getContainer().addEventListener('mousemove', intersectCaptureMove, true);
+        map.getContainer().addEventListener('click', intersectCaptureClick, true);
+        const esc = (e) => {
+          if (e.key !== 'Escape') return;
+          exitIntersectMode();
+        };
+        intersectEscHandler = esc;
+        window.addEventListener('keydown', intersectEscHandler);
+      };
+
+      const toggleIntersectMode = () => {
+        if (intersectMode.value) exitIntersectMode();
+        else {
+          if (drawMode.value) exitDrawMode();
+          enterIntersectMode();
+        }
+      };
 
       /** 目前圖層是否有可清空之地圖幾何（線／點／未完成的預覽） */
       const hasRenderableGeometryOnActiveLayer = computed(() => {
@@ -545,6 +764,7 @@
           return;
         }
         if (drawMode.value) exitDrawMode();
+        if (intersectMode.value) exitIntersectMode();
         drawPoints.value = [];
         clearDrawPreview();
 
@@ -589,8 +809,9 @@
         // Only load the layer for the current active tab
         const currentLayer = allVisibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
 
-        // Remove all geojson layers from map
         try {
+          // Remove all geojson layers from map
+          try {
           map.eachLayer((layer) => {
             if (layer && layer.options && layer.options.layerId) {
               map.removeLayer(layer);
@@ -846,8 +1067,7 @@
               const hoverStationStyle = circleStyleForJsonEndpointType(ptType, true);
 
               const stationLayer = L.geoJSON(feature, {
-                pointToLayer: (feature, latlng) =>
-                  L.circleMarker(latlng, { ...baseStationStyle }),
+                pointToLayer: (feature, latlng) => L.circleMarker(latlng, { ...baseStationStyle }),
               });
 
               const applyStationStyle = (style) => {
@@ -900,6 +1120,12 @@
             console.error('Load GeoJSON from jsonData failed:', currentLayer.layerId, e);
           }
         }
+        } finally {
+          await nextTick();
+          if (intersectMode.value && map) {
+            refreshCrossingCandidatesCache();
+          }
+        }
       };
 
       const invalidateSize = () => {
@@ -944,8 +1170,9 @@
       );
 
       onUnmounted(() => {
-        // 清理畫線模式
+        // 清理畫線／交叉點模式
         if (drawMode.value) exitDrawMode();
+        if (intersectMode.value) exitIntersectMode();
 
         // 清理地圖實例
         if (map) {
@@ -1036,6 +1263,9 @@
         if (activeLayerTab.value === layerId) {
           return;
         }
+
+        if (drawMode.value) exitDrawMode();
+        if (intersectMode.value) exitIntersectMode();
 
         // 保存當前地圖狀態
         if (map && currentLayerId) {
@@ -1194,6 +1424,9 @@
         hasDrawnLines,
         clearActiveLayerLinesAndPoints,
         hasRenderableGeometryOnActiveLayer,
+        intersectMode,
+        toggleIntersectMode,
+        canUseCrossingTool,
       };
     },
   };
@@ -1247,10 +1480,25 @@
           <button
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
             :class="drawMode ? 'btn-warning' : 'my-btn-transparent'"
-            :title="drawMode ? '退出畫線模式（ESC / 再按一次）' : '進入畫線模式（在地圖上點擊畫線，雙擊完成）'"
+            :title="
+              drawMode
+                ? '退出畫線模式（ESC / 再按一次）'
+                : '進入畫線模式（在地圖上點擊畫線，雙擊完成）'
+            "
             @click="toggleDrawMode"
           >
             {{ drawMode ? '畫線中…' : '畫線' }}
+          </button>
+
+          <!-- 交叉點：於兩線段內部相交處打斷並加入 intersection -->
+          <button
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
+            :class="intersectMode ? 'btn-danger' : 'my-btn-transparent'"
+            title="於兩線交叉處點擊，打斷路線並新增交叉點（紅）；靠近交叉處會出現提示"
+            :disabled="!canUseCrossingTool"
+            @click="toggleIntersectMode"
+          >
+            {{ intersectMode ? '交叉點…' : '交叉點' }}
           </button>
 
           <!-- 撤銷最後一段手繪線 -->
@@ -1277,7 +1525,11 @@
             單擊加點・雙擊完成・ESC 取消
           </span>
 
-          <div v-if="!drawMode" class="d-flex align-items-center">
+          <span v-if="intersectMode" class="my-font-size-xs text-danger-emphasis text-nowrap px-1">
+            靠近兩線交叉處可看見提示・點擊打斷並新增交叉點・ESC 結束
+          </span>
+
+          <div v-if="!drawMode && !intersectMode" class="d-flex align-items-center">
             <div class="dropdown dropup">
               <button
                 class="btn rounded-pill border-0 my-btn-transparent my-font-size-xs text-nowrap"
@@ -1365,5 +1617,23 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 2000;
+  }
+</style>
+
+<!-- Leaflet 工具提示掛在 body，需非 scoped -->
+<style>
+  .leaflet-tooltip.map-tab-intersection-hint-tooltip {
+    background: rgba(220, 53, 69, 0.95);
+    color: #fff;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+
+  .leaflet-tooltip.map-tab-intersection-hint-tooltip::before {
+    border-top-color: rgba(220, 53, 69, 0.95);
   }
 </style>
