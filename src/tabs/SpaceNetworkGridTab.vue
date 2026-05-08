@@ -64,6 +64,10 @@
   } from '@/utils/taipeiTestPipeline.js';
   import { refreshTaipeiL3BlackDotHighlightFromLayer } from '@/utils/taipeiL3BlackDotReductionStep.js';
   import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
+  import {
+    getGeoJsonFeatureTagProps,
+    normalizeRouteSegmentEndpointType,
+  } from '@/utils/geojsonRouteHelpers.js';
 
   import * as d3 from 'd3';
   import {
@@ -78,6 +82,31 @@
     snapCoarseGridStepToMultipleOf5,
     formatAxisTickLabelMaxTwoDecimals,
   } from '@/utils/gridAxisTicks.js';
+
+  /** 與 MapTab circleStyleForJsonEndpointType 非 hover 狀之色塊對應（D3 無 pane／半徑略同 Leaflet px） */
+  function mapTabApproxBaseSvgForEndpoint(normType) {
+    const t = normalizeRouteSegmentEndpointType(normType);
+    if (t === 'terminal') {
+      return { fill: '#9ec5fe', stroke: '#0d6efd', r: 4, strokeW: 2 };
+    }
+    if (t === 'intersection') {
+      return { fill: '#f1aeb5', stroke: '#dc3545', r: 4, strokeW: 2 };
+    }
+    return { fill: '#1a1a1a', stroke: '#000000', r: 3, strokeW: 1 };
+  }
+
+  /** 與 MapTab circleStyleForJsonEndpointType hover 對應 */
+  function mapTabApproxHoverSvgForEndpoint(normType) {
+    const t = normalizeRouteSegmentEndpointType(normType);
+    if (t === 'terminal') {
+      return { fill: '#6ea8fe', stroke: '#052c65', r: 7, strokeW: 3 };
+    }
+    if (t === 'intersection') {
+      return { fill: '#f5c2c7', stroke: '#58151c', r: 7, strokeW: 3 };
+    }
+    return { fill: '#555555', stroke: '#000000', r: 6, strokeW: 2 };
+  }
+
   const emit = defineEmits(['active-layer-change']);
 
   /** taipei_f／taipei_g：與邊緣欄／列最大權重標籤同源，供權重比例格寬／列高用 */
@@ -3852,8 +3881,13 @@
       isHvZTest3E3F3Highlight = false,
       l3BlackDotReducedWeightGreen = false
     ) => {
-      // 獲取顏色（參考 MapTab / Python 規則）
-      const routeColor = tags?.colour || tags?.color || '#2c7bb6';
+      // 與 MapTab 一致：tags.color／tags.colour，否則 feature.properties.color（如路段匯出列），預設 #666666
+      const trimColour = (s) => (typeof s === 'string' && s.trim() !== '' ? s.trim() : '');
+      const routeColor =
+        trimColour(tags?.colour) ||
+        trimColour(tags?.color) ||
+        trimColour(color) ||
+        '#666666';
       const pathData = lineGenerator(coords);
       if (!pathData) return;
 
@@ -4227,10 +4261,13 @@
       )
         return;
 
-      // 有疊加網格時：紅點對齊網格單元中心；黑點依重分配表畫在兩交叉點間平均位置
+      // 經緯度路段（MapTab／json-derived）之站點：與 Map 分頁 terminal／intersection／normal 同色
+      const mapLonLatEndpoints = props.endpointFromRouteLonLatSegment === true;
+
+      // 有疊加網格時：紅點對齊網格單元中心；黑點依重分配表畫在兩交叉點間平均位置（勿套用於經緯度路段點）
       let drawX = x;
       let drawY = y;
-      if (overlayForSnap) {
+      if (overlayForSnap && !mapLonLatEndpoints) {
         if (isConnect) {
           [drawX, drawY] = overlayCellCenter(x, y);
         } else {
@@ -4246,50 +4283,74 @@
         props.y_grid !== undefined && Number.isFinite(Number(props.y_grid))
           ? Number(props.y_grid)
           : Number(y);
-      const fillColor =
-        isConnect && connectBlueFromTaggedTerminal(props, tags)
-          ? '#1565c0'
-          : (taipeiTest3ConnectFill(isConnect, degGx, degGy) ??
-            (isConnect ? '#ff0000' : '#000000'));
-      const cn = props.connect_number ?? tags.connect_number;
-      const sidLine = props.station_id ?? tags.station_id;
-      const gxLine = props.x_grid !== undefined ? Number(props.x_grid) : Number(x);
-      const gyLine = props.y_grid !== undefined ? Number(props.y_grid) : Number(y);
-      const isConnectHl =
-        isConnect &&
-        dataStore.highlightedConnectNumber != null &&
-        cn === dataStore.highlightedConnectNumber;
-      const isH2ConnectHl = isConnect && matchH2TrafficConnect(cn);
-      const isH2BlackHl = !isConnect && matchH2TrafficBlack(gxLine, gyLine, sidLine);
-      const hbL3 = dataStore.highlightedBlackStation;
-      const coordEpsL3 = 0.08;
-      const hbSidL3 = hbL3?.stationId;
-      const isL3ReductionBlackHl =
-        !isConnect &&
-        hbL3 &&
-        hbL3.layerId === layerTab &&
-        (layerTab === 'taipei_l3' ||
-          layerTab === 'taipei_sn4_l' ||
-          layerTab === 'taipei_l3_dp' ||
-          layerTab === 'taipei_l3_dp_2') &&
-        (hbSidL3 != null && String(hbSidL3).trim() !== ''
-          ? String(sidLine ?? '').trim() === String(hbSidL3).trim()
-          : Math.abs(Number(gxLine) - Number(hbL3.x)) < coordEpsL3 &&
-            Math.abs(Number(gyLine) - Number(hbL3.y)) < coordEpsL3);
-      const isHighlighted = isConnectHl || isH2ConnectHl;
-      const isOnOtherRoute = isHighlighted || isH2BlackHl || isL3ReductionBlackHl;
-      const radius =
-        isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? 5 : isConnect ? 2.5 : 1.5;
-      const strokeWidth = isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? 2.5 : 1;
-      const hlStroke =
-        isL3ReductionBlackHl &&
-        hbL3?.color &&
-        typeof hbL3.color === 'string' &&
-        hbL3.color.trim() !== ''
-          ? hbL3.color.trim()
-          : '#ff6600';
-      const strokeColor =
-        isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? hlStroke : fillColor;
+      let fillColor;
+      let radius;
+      let strokeWidth;
+      /** @type {'terminal'|'intersection'|'normal'} */
+      let endpointNormForHover = 'normal';
+      let strokeColor;
+      let isHighlighted = false;
+      let isOnOtherRoute = false;
+      const hlStroke = '#ff6600';
+      let cn;
+
+      if (mapLonLatEndpoints) {
+        const tagMerged = getGeoJsonFeatureTagProps(feature);
+        endpointNormForHover = normalizeRouteSegmentEndpointType(
+          props.type ?? tagMerged.type ?? 'normal'
+        );
+        const b = mapTabApproxBaseSvgForEndpoint(endpointNormForHover);
+        fillColor = b.fill;
+        strokeColor = b.stroke;
+        radius = b.r;
+        strokeWidth = b.strokeW;
+        cn = props.connect_number ?? tags.connect_number;
+      } else {
+        fillColor =
+          isConnect && connectBlueFromTaggedTerminal(props, tags)
+            ? '#1565c0'
+            : (taipeiTest3ConnectFill(isConnect, degGx, degGy) ??
+              (isConnect ? '#ff0000' : '#000000'));
+        cn = props.connect_number ?? tags.connect_number;
+        const sidLine = props.station_id ?? tags.station_id;
+        const gxLine = props.x_grid !== undefined ? Number(props.x_grid) : Number(x);
+        const gyLine = props.y_grid !== undefined ? Number(props.y_grid) : Number(y);
+        const isConnectHl =
+          isConnect &&
+          dataStore.highlightedConnectNumber != null &&
+          cn === dataStore.highlightedConnectNumber;
+        const isH2ConnectHl = isConnect && matchH2TrafficConnect(cn);
+        const isH2BlackHl = !isConnect && matchH2TrafficBlack(gxLine, gyLine, sidLine);
+        const hbL3 = dataStore.highlightedBlackStation;
+        const coordEpsL3 = 0.08;
+        const hbSidL3 = hbL3?.stationId;
+        const isL3ReductionBlackHl =
+          !isConnect &&
+          hbL3 &&
+          hbL3.layerId === layerTab &&
+          (layerTab === 'taipei_l3' ||
+            layerTab === 'taipei_sn4_l' ||
+            layerTab === 'taipei_l3_dp' ||
+            layerTab === 'taipei_l3_dp_2') &&
+          (hbSidL3 != null && String(hbSidL3).trim() !== ''
+            ? String(sidLine ?? '').trim() === String(hbSidL3).trim()
+            : Math.abs(Number(gxLine) - Number(hbL3.x)) < coordEpsL3 &&
+              Math.abs(Number(gyLine) - Number(hbL3.y)) < coordEpsL3);
+        isHighlighted = isConnectHl || isH2ConnectHl;
+        isOnOtherRoute = isHighlighted || isH2BlackHl || isL3ReductionBlackHl;
+        radius =
+          isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? 5 : isConnect ? 2.5 : 1.5;
+        strokeWidth = isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? 2.5 : 1;
+        strokeColor =
+          isHighlighted || isH2BlackHl || isL3ReductionBlackHl
+            ? isL3ReductionBlackHl &&
+              hbL3?.color &&
+              typeof hbL3.color === 'string' &&
+              hbL3.color.trim() !== ''
+              ? hbL3.color.trim()
+              : hlStroke
+            : fillColor;
+      }
 
       const circleElement = zoomGroup
         .append('circle')
@@ -4351,9 +4412,17 @@
       // 添加 hover 效果
       circleElement
         .on('mouseover', function (event) {
-          // 高亮站點
-          const highlightRadius = isConnect ? 4 : 3;
-          d3.select(this).attr('r', highlightRadius).attr('stroke-width', 2);
+          if (mapLonLatEndpoints) {
+            const hov = mapTabApproxHoverSvgForEndpoint(endpointNormForHover);
+            d3.select(this)
+              .attr('r', hov.r)
+              .attr('stroke-width', hov.strokeW)
+              .attr('fill', hov.fill)
+              .attr('stroke', hov.stroke);
+          } else {
+            const highlightRadius = isConnect ? 4 : 3;
+            d3.select(this).attr('r', highlightRadius).attr('stroke-width', 2);
+          }
 
           // 顯示 tooltip（包含座標和標籤）
           const gridGx =
@@ -4396,6 +4465,10 @@
             tooltipParts.push(`<strong>站點名稱:</strong> ${stationName}`);
           }
 
+          if (mapLonLatEndpoints) {
+            tooltipParts.push(`<strong>節點類型:</strong> ${endpointNormForHover}`);
+          }
+
           // 顯示 connect_number（如果存在，用紅色標示）
           if (props.connect_number !== undefined) {
             tooltipParts.push(
@@ -4429,8 +4502,15 @@
           tooltip.style('left', event.pageX + 10 + 'px').style('top', event.pageY - 10 + 'px');
         })
         .on('mouseout', function () {
-          // 恢復站點樣式
-          d3.select(this).attr('r', radius).attr('stroke-width', 1);
+          if (mapLonLatEndpoints) {
+            d3.select(this)
+              .attr('r', radius)
+              .attr('stroke-width', strokeWidth)
+              .attr('fill', fillColor)
+              .attr('stroke', strokeColor);
+          } else {
+            d3.select(this).attr('r', radius).attr('stroke-width', 1);
+          }
 
           // 隱藏 tooltip
           tooltip.style('opacity', 0);

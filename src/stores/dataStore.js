@@ -153,7 +153,6 @@ import { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../utils/layers/osm_2_ge
 import { assignOsm2LayerViewerFields } from '../utils/layers/osm_2_geojson_2_json/layerMerge.js';
 import {
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
-  SPACE_LAYOUT_GRID_VIEWER_LAYER_ID as OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
 import {
@@ -300,8 +299,8 @@ export const useDataStore = defineStore(
             upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
           },
           {
-            layerId: OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
-            layerName: '路段 JSON 網格示意（dataJson／D3）',
+            layerId: 'json_draw',
+            layerName: 'json繪製',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -1922,11 +1921,11 @@ export const useDataStore = defineStore(
     };
 
     const syncOsm2DataJsonMirrorFromParent = () => {
-      const layoutViewer = findLayerById(OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+      const layoutViewer = findLayerById('json_draw');
       if (!layoutViewer) return;
       applyOsm2DataJsonSyncedLayerFromParent(layoutViewer);
       if (layoutViewer.visible) {
-        saveLayerState(OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
+        saveLayerState('json_draw', {
           jsonData: layoutViewer.jsonData,
           geojsonData: layoutViewer.geojsonData,
           dataJson: layoutViewer.dataJson,
@@ -2038,7 +2037,7 @@ export const useDataStore = defineStore(
       // 保存圖層的可見性狀態
       saveLayerState(layerId, { visible: layer.visible });
 
-      if (layer.visible && layer.layerId === OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+      if (layer.visible && layer.layerId === 'json_draw') {
         applyOsm2DataJsonSyncedLayerFromParent(layer);
         saveLayerState(layerId, {
           jsonData: layer.jsonData,
@@ -2280,7 +2279,7 @@ export const useDataStore = defineStore(
           /** OSM／可空載入圖層：維持使用者已開啟之可見狀態，不因無檔／請求失敗而自動關閉 */
           if (
             layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID &&
-            layerId !== OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID &&
+            layerId !== 'json_draw' &&
             layerId !== 'taipei_osm_geojson_sn4'
           ) {
             layer.visible = false;
@@ -3190,7 +3189,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === OSM_2_SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+      if (layerId === 'json_draw') {
         applyOsm2DataJsonSyncedLayerFromParent(layer);
         layer.isLoaded = true;
         layer.isLoading = false;

@@ -29,6 +29,29 @@
     syncOsm2LayerDerivedGeoJsonAndScheduleArtifactsPersist,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
 
+  /** 每條手繪折線開始（第一個頂點）時使用，與底色對比清楚的隨機 sRGB hex */
+  function pickRandomRouteDrawHexColor() {
+    const h = Math.random() * 360;
+    let s = 0.72;
+    let l = 0.44;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const hh = ((h % 360) / 360) * 6;
+    const x = c * (1 - Math.abs((hh % 2) - 1));
+    const m = l - c / 2;
+    let rp = 0;
+    let gp = 0;
+    let bp = 0;
+    if (hh < 1) [rp, gp, bp] = [c, x, 0];
+    else if (hh < 2) [rp, gp, bp] = [x, c, 0];
+    else if (hh < 3) [rp, gp, bp] = [0, c, x];
+    else if (hh < 4) [rp, gp, bp] = [0, x, c];
+    else if (hh < 5) [rp, gp, bp] = [x, 0, c];
+    else [rp, gp, bp] = [c, 0, x];
+    const clamp255 = (t) =>
+      Math.max(0, Math.min(255, Math.round((t + m) * 255)));
+    return `#${clamp255(rp).toString(16).padStart(2, '0')}${clamp255(gp).toString(16).padStart(2, '0')}${clamp255(bp).toString(16).padStart(2, '0')}`;
+  }
+
   export default {
     name: 'MapTab',
     emits: ['active-layer-change'],
@@ -397,6 +420,8 @@
 
       const drawMode = ref(false); // 是否在畫線模式
       const drawPoints = ref([]); // 當前正在畫的折線頂點 [[lon,lat], ...]
+      /** 本次折線之色（在第一個頂點置入時選定，並用於預覽與寫入 jsonData.color） */
+      let currentDrawStrokeColor = '#666666';
       let drawPreviewPolyline = null; // Leaflet Polyline 預覽圖層
       let drawPreviewDot = null; // 當前最後一點的圓點
       let dblClickPending = false; // 防止 dblclick 觸發兩次 click 的 flag
@@ -409,7 +434,7 @@
           drawPreviewPolyline.setLatLngs(pts);
         } else if (pts.length >= 2) {
           drawPreviewPolyline = L.polyline(pts, {
-            color: '#e07000',
+            color: currentDrawStrokeColor,
             weight: 3,
             opacity: 0.9,
             dashArray: '6 4',
@@ -431,7 +456,7 @@
           const last = drawPoints.value[drawPoints.value.length - 1];
           drawPreviewDot = L.circleMarker([last[1], last[0]], {
             radius: 5,
-            color: '#e07000',
+            color: currentDrawStrokeColor,
             weight: 2,
             fillColor: '#fff3cd',
             fillOpacity: 1,
@@ -480,7 +505,7 @@
         const newRow = {
           route_id: '',
           routeName: '',
-          color: '#e07000',
+          color: currentDrawStrokeColor,
           segment: {
             start: {
               station_id: sid(idx),
@@ -539,6 +564,10 @@
       /** click 事件：加一個頂點 */
       const onDrawMapClick = (e) => {
         if (dblClickPending) return;
+        const prevLen = drawPoints.value.length;
+        if (prevLen === 0) {
+          currentDrawStrokeColor = pickRandomRouteDrawHexColor();
+        }
         drawPoints.value = [...drawPoints.value, [e.latlng.lng, e.latlng.lat]];
         refreshDrawPreview();
       };

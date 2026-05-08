@@ -2,8 +2,8 @@
 
 export const LAYER_ID = 'osm_2_geojson_2_json';
 
-/** Upper 專用 D3 示意：內容自 {@link LAYER_ID} 之 dataJson／jsonData 同步；不上地圖 */
-export const SPACE_LAYOUT_GRID_VIEWER_LAYER_ID = 'osm_2_geojson_2_json__space_layout_grid';
+/** Upper「json 繪製」子圖層：內容自 {@link LAYER_ID} 之 dataJson／jsonData 同步；不上地圖 */
+export const SPACE_LAYOUT_GRID_VIEWER_LAYER_ID = 'json_draw';
 
 let sessionOsmXmlSourceText = '';
 

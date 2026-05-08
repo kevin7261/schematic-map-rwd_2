@@ -1,4 +1,9 @@
-import { ensureSegmentStationStrings } from './geojsonRouteHelpers.js';
+import {
+  ensureSegmentStationStrings,
+  segmentNodeLon,
+  segmentNodeLat,
+  normalizeRouteSegmentEndpointType,
+} from './geojsonRouteHelpers.js';
 
 /**
  * 將 e 層「地圖路段匯出」JSON 陣列還原為 spaceNetworkGridJsonData 扁平 segments，
@@ -220,8 +225,22 @@ export function expandLonLatChainFromRouteCoordinates(routeCoordinates) {
   return out;
 }
 
+function endpointTypeMergeRank(tp) {
+  const t = normalizeRouteSegmentEndpointType(tp);
+  if (t === 'intersection') return 2;
+  if (t === 'terminal') return 1;
+  return 0;
+}
+
+function lonLatStationDedupKey(lo, la) {
+  const x = num(lo);
+  const y = num(la);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return `${x.toFixed(7)},${y.toFixed(7)}`;
+}
+
 /**
- * 由地圖路段匯出列還原僅 LineString 之 FeatureCollection（MapTab 手繪只寫 jsonData、geojsonData 未必更新時預覽用）。
+ * 由地圖路段匯出列還原 LineString FeatureCollection，並附與 MapTab 對齊之車站 Point（terminal 藍／intersection 紅／normal 黑）。
  *
  * @param {unknown[]} rows
  * @returns {{ type: 'FeatureCollection', features: object[] }}
@@ -229,20 +248,131 @@ export function expandLonLatChainFromRouteCoordinates(routeCoordinates) {
 export function minimalLineStringFeatureCollectionFromRouteExportRows(rows) {
   if (!Array.isArray(rows)) return { type: 'FeatureCollection', features: [] };
   const features = [];
+  /** @type {Map<string, { lon: number, lat: number, mergedType: string, meta: Record<string, unknown> }>} */
+  const stationsByKey = new Map();
+
+  const ingestStationNode = (node, fallbackType) => {
+    if (!node || typeof node !== 'object') return;
+    const lo = segmentNodeLon(node);
+    const la = segmentNodeLat(node);
+    const ek = lonLatStationDedupKey(lo, la);
+    if (!ek) return;
+
+    const candT = normalizeRouteSegmentEndpointType(node.type ?? fallbackType ?? 'normal');
+    const rn = Array.isArray(node.route_name_list)
+      ? node.route_name_list.map((x) => String(x ?? '').trim()).filter(Boolean)
+      : [];
+
+    const prev = stationsByKey.get(ek);
+    if (!prev) {
+      stationsByKey.set(ek, {
+        lon: lo,
+        lat: la,
+        mergedType: candT,
+        meta: {
+          station_id: node.station_id ?? node.tags?.station_id ?? '',
+          station_name:
+            node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? '',
+          connect_number: node.connect_number,
+          route_name_list: rn,
+        },
+      });
+      return;
+    }
+
+    const rOld = endpointTypeMergeRank(prev.mergedType);
+    const rNew = endpointTypeMergeRank(candT);
+    if (rNew > rOld) {
+      stationsByKey.set(ek, {
+        lon: lo,
+        lat: la,
+        mergedType: candT,
+        meta: {
+          station_id: node.station_id ?? node.tags?.station_id ?? '',
+          station_name:
+            node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? '',
+          connect_number: node.connect_number,
+          route_name_list: rn,
+        },
+      });
+      return;
+    }
+
+    if (rNew === rOld) {
+      const acc = [...new Set([...(prev.meta.route_name_list || []), ...rn])];
+      prev.meta.route_name_list = acc;
+      if (
+        prev.meta.connect_number == null &&
+        node.connect_number != null &&
+        node.connect_number !== ''
+      ) {
+        prev.meta.connect_number = node.connect_number;
+      }
+    }
+  };
+
   for (const row of rows) {
     if (!row || typeof row !== 'object' || !Array.isArray(row.routeCoordinates)) continue;
     const chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
     if (!chain || chain.length < 2) continue;
+    const lineCol =
+      typeof row.color === 'string' && row.color.trim() !== '' ? row.color.trim() : '#666666';
     features.push({
       type: 'Feature',
       properties: {
         name: row.routeName ?? '',
-        color: row.color ?? '#000000',
+        color: lineCol,
         route_id: row.route_id != null ? String(row.route_id) : '',
       },
       geometry: { type: 'LineString', coordinates: chain },
     });
+    const seg = row.segment && typeof row.segment === 'object' ? row.segment : null;
+    if (seg) {
+      ingestStationNode(seg.start, 'normal');
+      if (Array.isArray(seg.stations)) {
+        for (const st of seg.stations) ingestStationNode(st, 'normal');
+      }
+      ingestStationNode(seg.end, 'normal');
+    }
   }
+
+  for (const { lon, lat, mergedType, meta } of stationsByKey.values()) {
+    const ens = ensureSegmentStationStrings(
+      {
+        station_id: meta.station_id ?? '',
+        station_name: meta.station_name ?? '',
+      },
+      lon,
+      lat,
+    );
+    const rn = Array.isArray(meta.route_name_list)
+      ? [...new Set(meta.route_name_list.filter((s) => String(s).trim()))]
+      : [];
+    const cn =
+      meta.connect_number != null && meta.connect_number !== ''
+        ? meta.connect_number
+        : undefined;
+    features.push({
+      type: 'Feature',
+      properties: {
+        type: mergedType,
+        station_id: ens.station_id,
+        station_name: ens.station_name,
+        ...(cn !== undefined ? { connect_number: cn } : {}),
+        ...(rn.length ? { route_name_list: rn } : {}),
+        endpointFromRouteLonLatSegment: true,
+        tags: {
+          type: mergedType,
+          station_id: ens.station_id,
+          station_name: ens.station_name,
+          ...(cn !== undefined ? { connect_number: cn } : {}),
+          ...(rn.length ? { route_name_list: rn } : {}),
+        },
+      },
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+    });
+  }
+
   return { type: 'FeatureCollection', features };
 }
 
