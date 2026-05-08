@@ -3082,7 +3082,9 @@ export const useDataStore = defineStore(
 
       try {
         const fc = sketchPolylinesWgs84ToGeoJsonFeatureCollection(lines, { markersWgs84: markers });
-        const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(fc);
+        const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(fc, {
+          compactStationNumericIds: true,
+        });
         sketchLayer.processedJsonData = derived.processedJsonData;
         sketchLayer.spaceNetworkGridJsonData = derived.spaceNetworkGridJsonData;
         sketchLayer.spaceNetworkGridJsonData_SectionData =

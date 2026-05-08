@@ -67,21 +67,85 @@ export function routeIdFromGeoJsonWayTags(tags) {
   return raw != null && String(raw).trim() !== '' ? String(raw).trim() : '';
 }
 
-/** 無正式站碼時，用座標百萬分度當穩定後備 id */
-export function fallbackStationIdFromLonLat(lon, lat) {
-  const x = Number(lon);
-  const y = Number(lat);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return 's_unknown';
-  return `s_${Math.round(x * 1e6)}_${Math.round(y * 1e6)}`;
-}
-
-/** 無站名時之預設顯示字串 */
-export function fallbackStationNameFromLonLat(lon, lat) {
-  return `未命名站_${fallbackStationIdFromLonLat(lon, lat)}`;
+/**
+ * 與路由聚合／匯出相同之座標鍵（7 位小數），供站點去重編號。
+ * @param {number} lon
+ * @param {number} lat
+ */
+export function coordKeyLonLatDecimals(lon, lat) {
+  const f = 1e7;
+  const x = Math.round(Number(lon) * f) / f;
+  const y = Math.round(Number(lat) * f) / f;
+  return `${x},${y}`;
 }
 
 /**
- * 路段 JSON 之每個站點皆應帶齊 station_id、station_name（非空字串；缺則依座標後備）。
+ * 將路段列上各 segment.start／stations／end 改為：`station_id` 為數字字串、
+ * `station_name` 為 `站點_{id}`；同一座標共用同一編號（依本陣列出現順序遞增）。
+ * @param {Array<object>} rows
+ * @returns {Array<object>}
+ */
+export function compactNumericStationFieldsInExportRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  const keyToNum = new Map();
+  let next = 1;
+
+  const idForCoord = (lon, lat) => {
+    const lo = Number(lon);
+    const la = Number(lat);
+    if (!Number.isFinite(lo) || !Number.isFinite(la)) return null;
+    const k = coordKeyLonLatDecimals(lo, la);
+    if (!keyToNum.has(k)) {
+      keyToNum.set(k, next);
+      next += 1;
+    }
+    return keyToNum.get(k);
+  };
+
+  const visitNodes = () => {
+    const out = [];
+    for (const row of rows) {
+      const sm = row?.segment;
+      if (!sm) continue;
+      const push = (n) => {
+        if (!n || typeof n !== 'object') return;
+        const lo = Number(n.lon ?? n.x_grid);
+        const la = Number(n.lat ?? n.y_grid);
+        if (!Number.isFinite(lo) || !Number.isFinite(la)) return;
+        out.push({ node: n, lon: lo, lat: la });
+      };
+      push(sm.start);
+      for (const st of Array.isArray(sm.stations) ? sm.stations : []) push(st);
+      push(sm.end);
+    }
+    return out;
+  };
+
+  for (const { node, lon, lat } of visitNodes()) {
+    const id = idForCoord(lon, lat);
+    if (id == null) continue;
+    Object.assign(node, {
+      station_id: String(id),
+      station_name: `站點_${id}`,
+      lon,
+      lat,
+    });
+  }
+  return rows;
+}
+
+/** 無正式站碼：匯出前列未壓縮前可為空字串，最後由 {@link compactNumericStationFieldsInExportRows} 填數字 id。 */
+export function fallbackStationIdFromLonLat() {
+  return '';
+}
+
+/** 無站名：同上，壓縮後為「站點_{id}」。 */
+export function fallbackStationNameFromLonLat() {
+  return '';
+}
+
+/**
+ * 路段 JSON 之每個站點皆應帶齊 station_id、station_name（手繪／壓縮流程末端為數字 id 與「站點_{id}」）。
  */
 export function ensureSegmentStationStrings(partial = {}, lon, lat) {
   const lo = Number(lon);

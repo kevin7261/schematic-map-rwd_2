@@ -6,6 +6,7 @@
 
 import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
 import {
+  compactNumericStationFieldsInExportRows,
   getGeoJsonFeatureTagProps,
   getGeoJsonRouteStableId,
   isGeoJsonWayLineFeature,
@@ -17,6 +18,9 @@ import { hydrateExportRowsFromWayPropertyStations } from './hydrateExportRowsFro
 function computeTaipeiA3NetworkFromGeojson(geojson, exportOptions) {
   const { rows, colabMeta, linearizeAlgorithm } = exportTaipeiA3GeojsonToB3Rows(geojson, exportOptions);
   hydrateExportRowsFromWayPropertyStations(geojson, rows);
+  if (exportOptions?.compactStationNumericIds) {
+    compactNumericStationFieldsInExportRows(rows);
+  }
   const flatSegs = mapDrawnExportRowsToFlatSegmentsLonLat(rows);
   const computed = computeStationDataFromRoutes(flatSegs);
   return { rows, flatSegs, computed, colabMeta, linearizeAlgorithm };
@@ -81,7 +85,11 @@ export function buildTaipeiA3LoadLayerFieldsFromGeojson(geojson) {
 /**
  * executeTaipeiTest3_A3_To_B3 專用（僅原寫入 b3 之欄位）
  * @param {*} geojson - FeatureCollection
- * @param {{ renameEachEmittedSegment?: boolean, emittedSegmentNamePrefix?: string }} [extraExportOptions]
+ * @param {{
+ *   renameEachEmittedSegment?: boolean,
+ *   emittedSegmentNamePrefix?: string,
+ *   compactStationNumericIds?: boolean,
+ * }} [extraExportOptions]
  */
 export function buildTaipeiB3ExecuteLayerFieldsFromGeojson(geojson, extraExportOptions = {}) {
   const { rows, flatSegs, computed, colabMeta, linearizeAlgorithm } = computeTaipeiA3NetworkFromGeojson(geojson, {

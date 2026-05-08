@@ -27,7 +27,7 @@ export function buildNormalizeSegmentsFromSketchPolylinesNorm(
   const { xMin, xMax, yMin, yMax } = b;
   const xSpan = xMax - xMin || 1;
   const ySpan = yMax - yMin || 1;
-  const prefix = options.routeNamePrefix ?? '手繪';
+  const prefix = options.routeNamePrefix ?? '路線';
   const colorIdxArr = options.strokeColorIndices;
   const segments = [];
   let idx = 0;
@@ -182,8 +182,8 @@ function appendSketchMarkerPointFeaturesTaipeiShape(markersWgs84, features) {
  * @returns {{ type: 'FeatureCollection', features: object[] }}
  */
 export function sketchPolylinesWgs84ToGeoJsonFeatureCollection(polylines, options = {}) {
-  const prefix = options.routeNamePrefix ?? '手繪';
-  const routeCompany = options.routeCompany ?? '手繪';
+  const prefix = options.routeNamePrefix ?? '路線';
+  const routeCompany = options.routeCompany ?? '路線';
   const features = [];
 
   appendSketchMarkerPointFeaturesTaipeiShape(options.markersWgs84, features);
@@ -230,7 +230,7 @@ export function sketchPolylinesWgs84ToGeoJsonFeatureCollection(polylines, option
         color,
         railway: 'other',
         route_company: routeCompany,
-        route_id: `S${String(idx).padStart(2, '0')}`,
+        route_id: String(idx),
         route_name: routeName,
       },
     });

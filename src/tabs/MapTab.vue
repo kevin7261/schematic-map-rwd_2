@@ -452,9 +452,9 @@
         /** 繪製順序：已存在之手繪列（含本次將寫入前）數量 + 1 — 僅用於 station_id 編號 */
         const drawnRoutesSoFar = existing.filter((r) => r && r._drawn).length;
         const routeSeq = drawnRoutesSoFar + 1;
-        /** 站點依折線順序 1…n：`station_id`=「路線序-站序」，`station_name`=「手繪站{路線序}-{站序}」 */
-        const sid = (stationIdx) => `${routeSeq}-${stationIdx}`;
-        const sname = (stationIdx) => `手繪站${routeSeq}-${stationIdx}`;
+        /** 站點依折線順序：`station_id`／`station_name` 皆為 `站點_{路線序}_{站序}` */
+        const sid = (stationIdx) => `站點_${routeSeq}_${stationIdx}`;
+        const sname = (stationIdx) => `站點_${routeSeq}_${stationIdx}`;
 
         const startPt = pts[0];
         const endPt = pts[pts.length - 1];
@@ -591,7 +591,7 @@
         );
       });
 
-      // ==================== 新增交叉點模式（兩線段內部相交處打斷並加入 intersection） ====================
+      // ==================== 新增交叉點模式（一路線自交或兩路線相交之線段內部打斷並加入 intersection） ====================
 
       const crossingCandidatesCache = ref([]);
       const intersectMode = ref(false);
@@ -608,7 +608,7 @@
         if (
           !ly ||
           !Array.isArray(ly.jsonData) ||
-          ly.jsonData.length < 2 ||
+          ly.jsonData.length < 1 ||
           !isMapDrawnRoutesExportArray(ly.jsonData)
         ) {
           crossingCandidatesCache.value = [];
@@ -622,7 +622,7 @@
         return Boolean(
           ly &&
             Array.isArray(ly.jsonData) &&
-            ly.jsonData.length >= 2 &&
+            ly.jsonData.length >= 1 &&
             isMapDrawnRoutesExportArray(ly.jsonData)
         );
       });
@@ -1559,11 +1559,11 @@
             {{ drawMode ? '畫線中…' : '畫線' }}
           </button>
 
-          <!-- 交叉點：於兩線段內部相交處打斷並加入 intersection -->
+          <!-- 交叉點：同線自交或兩線相交之內部打斷 -->
           <button
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer"
             :class="intersectMode ? 'btn-danger' : 'my-btn-transparent'"
-            title="於兩線交叉處點擊，打斷路線並新增交叉點（紅）；靠近交叉處會出現提示"
+            title="於交叉處（同一路線自交或兩線相交）點擊打斷並新增交叉點（紅）；靠近會出現提示"
             :disabled="!canUseCrossingTool"
             @click="toggleIntersectMode"
           >

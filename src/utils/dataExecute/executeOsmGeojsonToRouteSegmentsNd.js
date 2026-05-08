@@ -58,7 +58,7 @@ function executeOsmGeojsonToRouteSegmentsNdWithPair(sketchLayerId, targetB3Layer
     sketchLayer.networkDrawSketchExportWgs84GeoJson = JSON.parse(JSON.stringify(fc));
   }
 
-  const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(fc);
+  const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(fc, { compactStationNumericIds: true });
   tgt.processedJsonData = derived.processedJsonData;
   tgt.spaceNetworkGridJsonData = derived.spaceNetworkGridJsonData;
   tgt.spaceNetworkGridJsonData_SectionData = derived.spaceNetworkGridJsonData_SectionData;

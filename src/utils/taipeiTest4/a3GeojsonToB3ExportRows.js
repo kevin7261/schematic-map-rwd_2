@@ -11,7 +11,12 @@ import {
 
 /**
  * @param {*} geojson - FeatureCollection
- * @param {{ forceCoordinateRouteSegments?: boolean, renameEachEmittedSegment?: boolean, emittedSegmentNamePrefix?: string }} [options]
+ * @param {{
+ *   forceCoordinateRouteSegments?: boolean,
+ *   renameEachEmittedSegment?: boolean,
+ *   emittedSegmentNamePrefix?: string,
+ *   compactStationNumericIds?: boolean,
+ * }} [options]
  * @returns {{ rows: Array, colabMeta: object | null, linearizeAlgorithm: string }}
  */
 export function exportTaipeiA3GeojsonToB3Rows(geojson, options = {}) {

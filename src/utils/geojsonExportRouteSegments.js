@@ -49,12 +49,12 @@ function coordTupleKey(coord) {
  * @param {{ emittedSegmentNamePrefix?: string }} [renameOpts]
  */
 function applyEmittedSegmentRenamingAndRouteLists(segments, renameOpts) {
-  const prefix = renameOpts?.emittedSegmentNamePrefix ?? '手繪';
+  const prefix = renameOpts?.emittedSegmentNamePrefix ?? '路線';
   let i = 0;
   for (const seg of segments) {
     i += 1;
-    seg.routeName = `${prefix}_${String(i).padStart(2, '0')}`;
-    seg.route_id = `S${String(i).padStart(2, '0')}`;
+    seg.routeName = `${prefix}_${i}`;
+    seg.route_id = String(i);
   }
   /** @type {Map<string, Set<string>>} */
   const keyToNames = new Map();
@@ -180,7 +180,7 @@ function snapStation(s) {
  * @param {{
  *   renameEachEmittedSegment?: boolean,
  *   emittedSegmentNamePrefix?: string,
- * }} [options] — `renameEachEmittedSegment`：交叉點切段後每段為獨立路線名與 S01… 編號，不再沿用輸入之 routeName
+ * }} [options] — `renameEachEmittedSegment`：交叉點切段後每段為獨立路線名（預設 `路線_1`…）與數字 `route_id`，不再沿用輸入之 routeName
  * @returns {Array<Object>}
  */
 export function exportRouteSegmentsFromGeoJson(geojson, options = {}) {

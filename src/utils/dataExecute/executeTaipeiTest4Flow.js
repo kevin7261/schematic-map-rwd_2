@@ -42,10 +42,12 @@ export async function executeTaipeiTest4_A3_To_B3() {
   }
 
   let geojsonForExport = a3?.geojsonData;
+  let compactStationNumericIds = false;
   if (!geojsonForExport?.features?.length && a3) {
     try {
       geojsonForExport = resolveTaipeiSn4ASketchFeatureCollection(dataStore, a3, 'taipei_sn4_a');
       if (geojsonForExport?.features?.length) {
+        compactStationNumericIds = true;
         if (a3.networkDrawSketchExportWgs84GeoJson == null) {
           a3.networkDrawSketchExportWgs84GeoJson = JSON.parse(JSON.stringify(geojsonForExport));
         }
@@ -61,7 +63,9 @@ export async function executeTaipeiTest4_A3_To_B3() {
     return;
   }
 
-  const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(geojsonForExport);
+  const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(geojsonForExport, {
+    compactStationNumericIds,
+  });
   b3.processedJsonData = derived.processedJsonData;
   b3.spaceNetworkGridJsonData = derived.spaceNetworkGridJsonData;
   b3.spaceNetworkGridJsonData_SectionData = derived.spaceNetworkGridJsonData_SectionData;

@@ -1,6 +1,6 @@
 import { expandLonLatChainFromRouteCoordinates } from '@/utils/mapDrawnRoutesImport.js';
 import {
-  fallbackStationIdFromLonLat,
+  compactNumericStationFieldsInExportRows,
   ensureSegmentStationStrings,
   normalizeRouteSegmentEndpointType,
 } from '@/utils/geojsonRouteHelpers.js';
@@ -52,10 +52,9 @@ function cloneNode(obj) {
 export function makeIntersectionStation(lon, lat) {
   const lo = Number(lon);
   const la = Number(lat);
-  const fb = fallbackStationIdFromLonLat(lo, la);
   return {
-    station_id: fb,
-    station_name: `交叉點_${fb}`,
+    station_id: '',
+    station_name: '',
     route_name_list: [],
     lon: lo,
     lat: la,
@@ -158,12 +157,13 @@ function isNearAnyChainVertex(lon, lat, chains) {
 }
 
 /**
- * 列舉「兩條不同折線」之線段在內部相交、且附近尚無頂點」的候選
+ * 列舉「兩線段在內部相交、且附近尚無頂點」之候選
+ * — 含不同路線（兩列）之交錯，以及同一路線上兩條不相鄰邊之自交。
  * @param {Array<object>} rows
  * @returns {Array<{ lon: number, lat: number, rowIndexA: number, edgeIndexA: number, rowIndexB: number, edgeIndexB: number }>}
  */
 export function enumerateCrossingCandidates(rows) {
-  if (!Array.isArray(rows) || rows.length < 2) return [];
+  if (!Array.isArray(rows) || rows.length < 1) return [];
   const chains = rows.map((r) => expandLonLatChainFromRouteCoordinates(r?.routeCoordinates));
   const valid = chains.map((c) => Array.isArray(c) && c.length >= 2);
   const merged = [];
@@ -186,6 +186,24 @@ export function enumerateCrossingCandidates(rows) {
   for (let i = 0; i < rows.length; i++) {
     if (!valid[i]) continue;
     const ci = chains[i];
+
+    // 同列自交：邊 a 與邊 b 須相隔至少一邊（|a−b|≥2），否則共端點不會有「內部」交點
+    for (let a = 0; a < ci.length - 1; a++) {
+      const ax = ci[a][0];
+      const ay = ci[a][1];
+      const bx = ci[a + 1][0];
+      const by = ci[a + 1][1];
+      for (let b = a + 2; b < ci.length - 1; b++) {
+        const cx = ci[b][0];
+        const cy = ci[b][1];
+        const dx = ci[b + 1][0];
+        const dy = ci[b + 1][1];
+        const hit = segmentIntersectionInterior2D(ax, ay, bx, by, cx, cy, dx, dy);
+        if (!hit) continue;
+        pushMerged(hit.x, hit.y, i, a, i, b);
+      }
+    }
+
     for (let j = i + 1; j < rows.length; j++) {
       if (!valid[j]) continue;
       const cj = chains[j];
@@ -210,7 +228,35 @@ export function enumerateCrossingCandidates(rows) {
 }
 
 /**
- * 依陣列順序重新指定 routeName（手繪_01…）與 route_id（S01…），並遍歷各路線折線頂點
+ * 同一路線上兩邊內部相交：先於較大邊索引處切開，再在左段上對較小邊索引切開，產出三列。
+ * @returns {Array<object>|null}
+ */
+function applySameRowCrossingToRows(rows, cand) {
+  const i = cand.rowIndexA;
+  let ea = cand.edgeIndexA;
+  let eb = cand.edgeIndexB;
+  if (ea > eb) [ea, eb] = [eb, ea];
+  if (eb - ea < 2) return null;
+
+  const row = rows[i];
+  const splitEb = splitRouteRowAtEdgeInterior(row, eb, cand.lon, cand.lat);
+  if (!splitEb || splitEb.length !== 2) return null;
+  const [leftAfterEb, rightAfterEb] = splitEb;
+
+  const splitEa = splitRouteRowAtEdgeInterior(leftAfterEb, ea, cand.lon, cand.lat);
+  if (!splitEa || splitEa.length !== 2) return null;
+  const [part1, part2] = splitEa;
+
+  const out = [];
+  for (let k = 0; k < rows.length; k++) {
+    if (k === i) out.push(part1, part2, rightAfterEb);
+    else out.push(rows[k]);
+  }
+  return renumberAndRecomputeRouteExportRows(out);
+}
+
+/**
+ * 依陣列順序重新指定 routeName（路線_1、路線_2…）與 route_id（「1」起之數字字串），並遍歷各路線折線頂點
  * 聚合每座標之 route_name_list／connect_number／type（type=intersection 時 route_name_list 至少兩線）。
  * 交叉點打斷後須呼叫此函式，避免新舊路段沿用相同名稱或遺漏轉乘列表。
  *
@@ -219,15 +265,15 @@ export function enumerateCrossingCandidates(rows) {
  * @returns {Array<object>}
  */
 export function renumberAndRecomputeRouteExportRows(rows, opts = {}) {
-  const prefix = opts.emittedSegmentNamePrefix ?? '手繪';
+  const prefix = opts.emittedSegmentNamePrefix ?? '路線';
   if (!Array.isArray(rows) || rows.length === 0) return [];
 
   const renamed = rows.map((row, idx) => {
     const i = idx + 1;
     return {
       ...row,
-      routeName: `${prefix}_${String(i).padStart(2, '0')}`,
-      route_id: `S${String(i).padStart(2, '0')}`,
+      routeName: `${prefix}_${i}`,
+      route_id: String(i),
     };
   });
 
@@ -254,7 +300,7 @@ export function renumberAndRecomputeRouteExportRows(rows, opts = {}) {
     return Array.from(keyToNames.get(k) ?? []).sort();
   };
 
-  return renamed.map((row) => {
+  const rebuilt = renamed.map((row) => {
     const chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
     if (!chain || chain.length < 2) return row;
     const seg = row.segment || {};
@@ -304,10 +350,13 @@ export function renumberAndRecomputeRouteExportRows(rows, opts = {}) {
       },
     };
   });
+
+  compactNumericStationFieldsInExportRows(rebuilt);
+  return rebuilt;
 }
 
 /**
- * 對候選做一次打斷：兩線各拆成兩段，共用交點 type=intersection
+ * 對候選做一次打斷：兩不同路線各拆成兩段；或同一路線兩邊內交則拆成三段，共用交點 type=intersection
  * @returns {Array<object>|null} 新 rows 或失敗為 null
  */
 export function applyCrossingToRows(rows, cand) {
@@ -315,7 +364,11 @@ export function applyCrossingToRows(rows, cand) {
   const { rowIndexA, edgeIndexA, rowIndexB, edgeIndexB, lon, lat } = cand;
   const ia = rowIndexA;
   const ib = rowIndexB;
-  if (ia === ib || ia < 0 || ib < 0 || ia >= rows.length || ib >= rows.length) return null;
+  if (ia < 0 || ib < 0 || ia >= rows.length || ib >= rows.length) return null;
+
+  if (ia === ib) {
+    return applySameRowCrossingToRows(rows, cand);
+  }
   const rowA = rows[ia];
   const rowB = rows[ib];
   const splitA = splitRouteRowAtEdgeInterior(rowA, edgeIndexA, lon, lat);
