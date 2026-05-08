@@ -17,5 +17,6 @@ export {
   mergeOsm2GeojsonLoaderResultIntoLayer,
   getOsm2GeojsonPersistPatchAfterLoaderMerge,
   applyOsm2GeojsonRouteFieldsFromGeojsonData,
+  syncOsm2LayerDerivedGeoJsonAndScheduleArtifactsPersist,
 } from './layerMerge.js';
 export { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from './executeOsmGeojsonToTaipeiSn4ASpaceGrid.js';

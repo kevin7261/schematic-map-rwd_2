@@ -1,3 +1,5 @@
+import { minimalLineStringFeatureCollectionFromRouteExportRows } from '@/utils/mapDrawnRoutesImport.js';
+
 import { schedulePersistOsm2GeojsonArtifacts } from './artifactPersist.js';
 import { LAYER_ID } from './sessionOsmXml.js';
 import { geojson_2_json } from './pipeline.js';
@@ -67,4 +69,22 @@ export function applyOsm2GeojsonRouteFieldsFromGeojsonData(layer) {
     layerInfoData: layer.layerInfoData,
     jsonData: layer.jsonData,
   };
+}
+
+/**
+ * MapTab 手繪／交叉後：依 jsonData 還原路線 LineString GeoJSON，`schedulePersist…` 仍會附帶 session 內之 OSM（若有）。
+ *
+ * @param {object} layer
+ * @param {string|null|undefined} groupName
+ */
+export function syncOsm2LayerDerivedGeoJsonAndScheduleArtifactsPersist(layer, groupName) {
+  if (!layer || layer.layerId !== LAYER_ID || !groupName || String(groupName).trim() === '') {
+    return null;
+  }
+  const gj = minimalLineStringFeatureCollectionFromRouteExportRows(
+    Array.isArray(layer.jsonData) ? layer.jsonData : []
+  );
+  layer.geojsonData = gj;
+  schedulePersistOsm2GeojsonArtifacts({ groupName, layer });
+  return { geojsonData: gj };
 }

@@ -82,6 +82,16 @@ module.exports = defineConfig({
     host: '0.0.0.0',
 
     /**
+     * 勿監聽 `public/data/`：本專案 dev API 會往該處寫檔，監聽會觸發 live reload 造成整頁重載／看似當機。
+     */
+    static: {
+      directory: path.join(__dirname, 'public'),
+      watch: {
+        ignored: [path.join(__dirname, 'public', 'data')],
+      },
+    },
+
+    /**
      * 📁 儲存 API：開發環境下 POST /api/save-result 可將 JSON 寫入 public/data/result/
      */
     setupMiddlewares: (middlewares, devServer) => {

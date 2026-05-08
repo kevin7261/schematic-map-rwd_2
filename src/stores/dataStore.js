@@ -149,12 +149,12 @@ import {
   execute_B6_To_C6,
   executeOsmGeojsonToTaipeiSn4A,
 } from '../utils/dataExecute/index.js';
+import { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../utils/layers/osm_2_geojson_2_json/executeOsmGeojsonToTaipeiSn4ASpaceGrid.js';
+import { schedulePersistOsm2GeojsonArtifacts } from '../utils/layers/osm_2_geojson_2_json/artifactPersist.js';
 import {
-  executeOsmGeojsonToTaipeiSn4ASpaceGrid,
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
-  schedulePersistOsm2GeojsonArtifacts,
-} from '../utils/layers/osm_2_geojson_2_json/index.js';
+} from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
@@ -2116,9 +2116,11 @@ export const useDataStore = defineStore(
           layer.dataTableData = result.dataTableData;
           layer.dashboardData = result.dashboardData;
           layer.layerInfoData = result.layerInfoData;
+          /** 空字串載入（無 osmFileName）不可覆寫本機載入尚在 session 的 XML，否則 dev 持久化會少寫 source.osm */
           if (
             layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID &&
-            typeof result.sourceOsmXmlText === 'string'
+            typeof result.sourceOsmXmlText === 'string' &&
+            result.sourceOsmXmlText.length > 0
           ) {
             setOsm2GeojsonSessionOsmXml(result.sourceOsmXmlText);
           }
@@ -2187,8 +2189,14 @@ export const useDataStore = defineStore(
           }
         } catch (error) {
           console.error(`❌ 載入圖層 "${layer.layerName}" 失敗:`, error);
-          layer.visible = false; // 載入失敗時恢復可見性狀態
-          saveLayerState(layerId, { visible: false });
+          /** OSM／可空載入圖層：維持使用者已開啟之可見狀態，不因無檔／請求失敗而自動關閉 */
+          if (
+            layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID &&
+            layerId !== 'taipei_osm_geojson_sn4'
+          ) {
+            layer.visible = false;
+            saveLayerState(layerId, { visible: false });
+          }
         } finally {
           layer.isLoading = false;
           saveLayerState(layerId, { isLoading: false });

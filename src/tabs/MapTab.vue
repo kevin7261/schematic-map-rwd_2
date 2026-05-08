@@ -26,7 +26,8 @@
   import {
     LAYER_ID as OSM_PIPELINE_LAYER_ID,
     setOsm2GeojsonSessionOsmXml,
-  } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+    syncOsm2LayerDerivedGeoJsonAndScheduleArtifactsPersist,
+  } from '@/utils/layers/osm_2_geojson_2_json/index.js';
 
   export default {
     name: 'MapTab',
@@ -41,6 +42,16 @@
 
       const mapEl = ref(null);
       let map = null;
+
+      const persistOsmPipelineLayerArtifactsIfApplicable = (ly) => {
+        if (!ly || ly.layerId !== OSM_PIPELINE_LAYER_ID) return;
+        const g = dataStore.findGroupNameByLayerId(OSM_PIPELINE_LAYER_ID);
+        if (!g || syncOsm2LayerDerivedGeoJsonAndScheduleArtifactsPersist(ly, g) == null) return;
+        dataStore.saveLayerState(OSM_PIPELINE_LAYER_ID, {
+          jsonData: ly.jsonData,
+          geojsonData: ly.geojsonData,
+        });
+      };
       // 為每個圖層存儲獨立的地圖狀態
       const layerStates = new Map(); // layerId -> { center, zoom, tileLayer, townshipLayer, isTownshipVisible, geojsonLayers }
       let currentLayerId = null;
@@ -496,6 +507,7 @@
         // 寫入 layer.jsonData
         if (currentLayer) {
           currentLayer.jsonData = renumberAndRecomputeRouteExportRows([...existing, newRow]);
+          persistOsmPipelineLayerArtifactsIfApplicable(currentLayer);
         }
         drawPoints.value = [];
         clearDrawPreview();
@@ -514,6 +526,7 @@
         const rows = [...currentLayer.jsonData];
         rows.splice(idx[idx.length - 1], 1);
         currentLayer.jsonData = renumberAndRecomputeRouteExportRows(rows);
+        persistOsmPipelineLayerArtifactsIfApplicable(currentLayer);
         loadOrSyncLayers();
       };
 
@@ -734,6 +747,7 @@
         ev.stopPropagation();
         ev.preventDefault();
         ly.jsonData = next;
+        persistOsmPipelineLayerArtifactsIfApplicable(ly);
         refreshCrossingCandidatesCache();
         activeSnapCrossingCandidate = null;
         hideIntersectionHint();
@@ -825,6 +839,7 @@
 
         if (ly.layerId === OSM_PIPELINE_LAYER_ID) {
           setOsm2GeojsonSessionOsmXml('');
+          persistOsmPipelineLayerArtifactsIfApplicable(ly);
         }
 
         loadOrSyncLayers();

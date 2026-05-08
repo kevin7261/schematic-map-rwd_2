@@ -1,0 +1,218 @@
+[
+  {
+    "route_id": "1",
+    "routeName": "路線_1",
+    "color": "#e07000",
+    "segment": {
+      "start": {
+        "station_id": "1",
+        "station_name": "站點_1",
+        "lon": 120.1849365234375,
+        "lat": 23.594050104560726,
+        "route_name_list": [
+          "路線_1"
+        ],
+        "connect_number": 1,
+        "type": "terminal"
+      },
+      "stations": [
+        {
+          "station_id": "2",
+          "station_name": "站點_2",
+          "lon": 120.89904785156251,
+          "lat": 23.5084331725693,
+          "type": "normal",
+          "route_name_list": [
+            "路線_1"
+          ],
+          "connect_number": 1
+        },
+        {
+          "station_id": "3",
+          "station_name": "站點_3",
+          "lon": 121.50329589843751,
+          "lat": 23.83549009310137,
+          "type": "normal",
+          "route_name_list": [
+            "路線_1"
+          ],
+          "connect_number": 1
+        }
+      ],
+      "end": {
+        "station_id": "4",
+        "station_name": "站點_4",
+        "route_name_list": [
+          "路線_1",
+          "路線_2",
+          "路線_3",
+          "路線_4"
+        ],
+        "lon": 121.24949194876429,
+        "lat": 24.05715471930936,
+        "type": "intersection",
+        "connect_number": 4
+      }
+    },
+    "routeCoordinates": [
+      [
+        120.1849365234375,
+        23.594050104560726
+      ],
+      [
+        [
+          120.89904785156251,
+          23.5084331725693
+        ],
+        [
+          121.50329589843751,
+          23.83549009310137
+        ]
+      ],
+      [
+        121.24949194876429,
+        24.05715471930936
+      ]
+    ],
+    "_drawn": true,
+    "_drawnAt": 1778239868076
+  },
+  {
+    "route_id": "2",
+    "routeName": "路線_2",
+    "color": "#e07000",
+    "segment": {
+      "start": {
+        "station_id": "4",
+        "station_name": "站點_4",
+        "route_name_list": [
+          "路線_1",
+          "路線_2",
+          "路線_3",
+          "路線_4"
+        ],
+        "lon": 121.24949194876429,
+        "lat": 24.05715471930936,
+        "type": "intersection",
+        "connect_number": 4
+      },
+      "stations": [],
+      "end": {
+        "station_id": "5",
+        "station_name": "站點_5",
+        "lon": 121.12976074218751,
+        "lat": 24.161724302191914,
+        "route_name_list": [
+          "路線_2"
+        ],
+        "connect_number": 1,
+        "type": "terminal"
+      }
+    },
+    "routeCoordinates": [
+      [
+        121.24949194876429,
+        24.05715471930936
+      ],
+      [],
+      [
+        121.12976074218751,
+        24.161724302191914
+      ]
+    ],
+    "_drawn": true,
+    "_drawnAt": 1778239868076
+  },
+  {
+    "route_id": "3",
+    "routeName": "路線_3",
+    "color": "#e07000",
+    "segment": {
+      "start": {
+        "station_id": "6",
+        "station_name": "站點_6",
+        "lon": 121.33026123046875,
+        "lat": 24.101567694274173,
+        "route_name_list": [
+          "路線_3"
+        ],
+        "connect_number": 1,
+        "type": "terminal"
+      },
+      "stations": [],
+      "end": {
+        "station_id": "4",
+        "station_name": "站點_4",
+        "route_name_list": [
+          "路線_1",
+          "路線_2",
+          "路線_3",
+          "路線_4"
+        ],
+        "lon": 121.24949194876429,
+        "lat": 24.05715471930936,
+        "type": "intersection",
+        "connect_number": 4
+      }
+    },
+    "routeCoordinates": [
+      [
+        121.33026123046875,
+        24.101567694274173
+      ],
+      [],
+      [
+        121.24949194876429,
+        24.05715471930936
+      ]
+    ],
+    "_drawn": true,
+    "_drawnAt": 1778239873060
+  },
+  {
+    "route_id": "4",
+    "routeName": "路線_4",
+    "color": "#e07000",
+    "segment": {
+      "start": {
+        "station_id": "4",
+        "station_name": "站點_4",
+        "route_name_list": [
+          "路線_1",
+          "路線_2",
+          "路線_3",
+          "路線_4"
+        ],
+        "lon": 121.24949194876429,
+        "lat": 24.05715471930936,
+        "type": "intersection",
+        "connect_number": 4
+      },
+      "stations": [],
+      "end": {
+        "station_id": "7",
+        "station_name": "站點_7",
+        "lon": 121.04736328125001,
+        "lat": 23.946009302877016,
+        "route_name_list": [
+          "路線_4"
+        ],
+        "connect_number": 1,
+        "type": "terminal"
+      }
+    },
+    "routeCoordinates": [
+      [
+        121.24949194876429,
+        24.05715471930936
+      ],
+      [],
+      [
+        121.04736328125001,
+        23.946009302877016
+      ]
+    ],
+    "_drawn": true,
+    "_drawnAt": 1778239873060
+  }
+]
