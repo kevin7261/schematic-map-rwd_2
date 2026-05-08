@@ -13,6 +13,7 @@ import {
   buildC3NetworkForCoordNormalize,
   writeLayoutNormalizedLayerDataOsmFromNetwork,
 } from './jsonGridCoordNormalizeHelpers.js';
+import { analyzeCoordNormalizeTopology } from './coordNormalizeTopology.js';
 
 export function executeJsonGridCoordNormalize() {
   const dataStore = useDataStore();
@@ -27,6 +28,7 @@ export function executeJsonGridCoordNormalize() {
 
   const { c3Network, resolved } = c3Prep;
   const out = buildTaipeiD3FromC3Network(c3Network);
+  const topologyCheck = analyzeCoordNormalizeTopology(c3Network, out.flatSegs);
 
   layer.spaceNetworkGridJsonData = out.flatSegs;
   layer.spaceNetworkGridJsonData_SectionData = out.sectionData;
@@ -50,6 +52,7 @@ export function executeJsonGridCoordNormalize() {
     coordNormalize: true,
     straightened: true,
     ...out.meta,
+    topologyCheck,
   };
 
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, out.flatSegs);

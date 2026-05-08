@@ -285,32 +285,24 @@ function findStationNameAtLonLat(segments, lon, lat) {
 }
 
 /**
- * @param {Array} c3FlatSegments - taipei_sn4_c spaceNetworkGridJsonData（扁平 segments）
- * @returns {{ rawSegments: Array, rows: Array, flatSegs: Array, sectionData: Array, connectData: Array, stationData: Array, meta: object }}
+ * 與座標正規化相同之四分樹網格對齊函式（供 `buildTaipeiD3FromC3Network`、拓撲檢查共用）。
+ * @param {Array} c3FlatSegments
+ * @returns {null | {
+ *   segments: Array,
+ *   snapLonLat: (lon: number, lat: number) => [number, number],
+ *   sortedX: number[],
+ *   sortedY: number[],
+ *   connectCoords: Array,
+ *   uniqueReds: Array,
+ *   qtRoot: object,
+ *   leaves: Array,
+ *   nearestPairSource: object | null,
+ *   bounds: { minLon: number, maxLon: number, minLat: number, maxLat: number },
+ * }}
  */
-export function buildTaipeiD3FromC3Network(c3FlatSegments) {
+export function buildSnapLonLatFromC3Segments(c3FlatSegments) {
   const segments = Array.isArray(c3FlatSegments) ? c3FlatSegments : [];
-  if (segments.length === 0) {
-    return {
-      rawSegments: [],
-      rows: [],
-      flatSegs: [],
-      sectionData: [],
-      connectData: [],
-      stationData: [],
-      meta: {
-        gridUnit: null,
-        coordNormalizeMode: 'quadtree',
-        quadtree: null,
-        connectPointCount: 0,
-        bounds: null,
-        segmentCount: 0,
-        sourceLayerId: 'taipei_sn4_c',
-        gridSizeCells: null,
-        nearestPairSource: null,
-      },
-    };
-  }
+  if (segments.length === 0) return null;
 
   const connectCoords = extractConnectCoords(segments);
   const uniqueReds = dedupeConnectCoords(connectCoords);
@@ -357,8 +349,66 @@ export function buildTaipeiD3FromC3Network(c3FlatSegments) {
     valueToStripIndex(num(lat), sortedY),
   ];
 
+  return {
+    segments,
+    snapLonLat,
+    sortedX,
+    sortedY,
+    connectCoords,
+    uniqueReds,
+    qtRoot,
+    leaves,
+    nearestPairSource,
+    bounds: { minLon, maxLon, minLat, maxLat },
+  };
+}
+
+/**
+ * @param {Array} c3FlatSegments - taipei_sn4_c spaceNetworkGridJsonData（扁平 segments）
+ * @returns {{ rawSegments: Array, rows: Array, flatSegs: Array, sectionData: Array, connectData: Array, stationData: Array, meta: object }}
+ */
+export function buildTaipeiD3FromC3Network(c3FlatSegments) {
+  const segments = Array.isArray(c3FlatSegments) ? c3FlatSegments : [];
+  if (segments.length === 0) {
+    return {
+      rawSegments: [],
+      rows: [],
+      flatSegs: [],
+      sectionData: [],
+      connectData: [],
+      stationData: [],
+      meta: {
+        gridUnit: null,
+        coordNormalizeMode: 'quadtree',
+        quadtree: null,
+        connectPointCount: 0,
+        bounds: null,
+        segmentCount: 0,
+        sourceLayerId: 'taipei_sn4_c',
+        gridSizeCells: null,
+        nearestPairSource: null,
+      },
+    };
+  }
+
+  const pack = buildSnapLonLatFromC3Segments(segments);
+
+  const {
+    snapLonLat,
+    sortedX,
+    sortedY,
+    segments: segs,
+    connectCoords,
+    uniqueReds,
+    qtRoot,
+    leaves,
+    nearestPairSource,
+    bounds,
+  } = pack;
+  const { minLon, maxLon, minLat, maxLat } = bounds;
+
   const rawSegments = [];
-  for (const seg of segments) {
+  for (const seg of segs) {
     const pts = seg.points || [];
     if (pts.length < 2) continue;
     const n = pts.length;
@@ -454,12 +504,12 @@ export function buildTaipeiD3FromC3Network(c3FlatSegments) {
             pointA: roundCoord(nearestPairSource.pointA),
             pointB: roundCoord(nearestPairSource.pointB),
             stationNameA: findStationNameAtLonLat(
-              segments,
+              segs,
               nearestPairSource.pointA[0],
               nearestPairSource.pointA[1]
             ),
             stationNameB: findStationNameAtLonLat(
-              segments,
+              segs,
               nearestPairSource.pointB[0],
               nearestPairSource.pointB[1]
             ),

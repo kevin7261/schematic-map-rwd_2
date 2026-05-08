@@ -3668,6 +3668,12 @@
         window.alert(
           '座標正規化失敗：請先在左側開啟「JSON·網格·座標正規化」圖層（會自動自「OSM → GeoJSON → JSON」複製 dataJson），或將路網貼入 spaceNetworkGridJsonData 後再試。'
         );
+      } else {
+        const layNorm = dataStore.findLayerById('json_grid_coord_normalized');
+        const tc = layNorm?.dashboardData?.topologyCheck;
+        if (tc && !tc.skipped && !tc.topologyPreserved) {
+          window.alert(`座標正規化已完成。\n\n${tc.summaryZh}`);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -6460,6 +6466,41 @@
             <code class="small">buildTaipeiD3FromC3Network</code>）；成功後將 d3 路網經
             <code class="small">minimalOsmXmlFromLonLatFeatureCollection</code> 寫入本層
             <code class="small">dataOSM</code>。
+          </div>
+          <div
+            v-if="layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped"
+            class="mt-2 rounded px-2 py-2"
+            style="font-size: 11px; line-height: 1.5"
+            :class="
+              layer.dashboardData.topologyCheck.topologyPreserved
+                ? 'bg-success bg-opacity-10 text-success'
+                : 'bg-danger bg-opacity-10 text-danger'
+            "
+          >
+            <strong>拓撲比對（c3 vs d3）</strong>
+            <div class="mt-1">{{ layer.dashboardData.topologyCheck.summaryZh }}</div>
+            <div
+              v-if="layer.dashboardData.topologyCheck.reasons?.length"
+              class="mt-1 mb-0 ps-2 text-body"
+              style="font-size: 10.5px"
+            >
+              <div
+                v-for="(r, idx) in layer.dashboardData.topologyCheck.reasons"
+                :key="'top-reason-' + idx"
+                class="mb-1 border-start border-2 ps-2"
+                :class="
+                  layer.dashboardData.topologyCheck.topologyPreserved
+                    ? 'border-warning'
+                    : 'border-danger'
+                "
+                style="white-space: pre-wrap; word-break: break-all"
+              >
+                {{ r }}
+              </div>
+            </div>
+            <div class="mt-1 text-muted" style="font-size: 10px">
+              {{ layer.dashboardData.topologyCheck.statsCaptionZh }}
+            </div>
           </div>
         </div>
 
