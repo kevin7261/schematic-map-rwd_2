@@ -1,6 +1,6 @@
-/** 網格繪製_2：nd 管線複製（圖層 id 尾碼 _dp_nd_2）
+/**
  * 網絡繪製群組（taipei_*_dp_nd）：空間網絡網格測試_3 之分檔複製，import 與邏輯對齊 executeTaipeiTest3Flow／@/utils/taipeiTest3（非 taipeiDataProcTest3）。
- * b3…→m3 圖層 id 尾碼 _dp_nd；入口為 network_draw_sketch「執行下一步」→ taipei_b3_dp_nd_2（同測試_3 之 b3 建構函式）。
+ * b3…→m3 圖層 id 尾碼 _dp_nd；入口為 network_draw_sketch「執行下一步」→ taipei_b3_dp_nd（同測試_3 之 b3 建構函式）。
  */
 
 /* eslint-disable no-console */
@@ -30,10 +30,10 @@ import { splitFlatH3SegmentsAtBlackVerticesOnly } from '@/utils/taipeiTest3/h3To
 import { applyTaipeiL3BlackDotReductionWhileMinDiffLessThan } from '@/utils/taipeiL3BlackDotReductionStep.js';
 
 /** b3：交叉點直線化 → 寫入 c3 */
-export function executeTaipeiTest3_B3_To_C3_Nd_Grid2() {
+export function executeTaipeiTest3_B3_To_C3_Nd() {
   const dataStore = useDataStore();
-  const b3 = dataStore.findLayerById('taipei_b3_dp_nd_2');
-  const c3 = dataStore.findLayerById('taipei_c3_dp_nd_2');
+  const b3 = dataStore.findLayerById('taipei_b3_dp_nd');
+  const c3 = dataStore.findLayerById('taipei_c3_dp_nd');
   if (!b3?.spaceNetworkGridJsonData?.length || !c3) {
     console.warn('executeTaipeiTest3_B3_To_C3_Nd：缺少 b3 路網或 c3 圖層');
     return;
@@ -55,15 +55,15 @@ export function executeTaipeiTest3_B3_To_C3_Nd_Grid2() {
   c3.isLoaded = true;
   if (!c3.visible) {
     c3.visible = true;
-    dataStore.saveLayerState('taipei_c3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_c3_dp_nd', { visible: true });
   }
 }
 
 /** c3：座標正規化 → 寫入 d3 */
-export function executeTaipeiTest3_C3_To_D3_Nd_Grid2() {
+export function executeTaipeiTest3_C3_To_D3_Nd() {
   const dataStore = useDataStore();
-  const c3 = dataStore.findLayerById('taipei_c3_dp_nd_2');
-  const d3Layer = dataStore.findLayerById('taipei_d3_dp_nd_2');
+  const c3 = dataStore.findLayerById('taipei_c3_dp_nd');
+  const d3Layer = dataStore.findLayerById('taipei_d3_dp_nd');
   if (!c3?.spaceNetworkGridJsonData?.length || !d3Layer) {
     console.warn('executeTaipeiTest3_C3_To_D3_Nd：缺少 c3 路網或 d3 圖層');
     return;
@@ -85,21 +85,21 @@ export function executeTaipeiTest3_C3_To_D3_Nd_Grid2() {
   d3Layer.dashboardData = {
     segmentCount: out.flatSegs.length,
     exportRowCount: Array.isArray(d3Layer.processedJsonData) ? d3Layer.processedJsonData.length : 0,
-    sourceLayerId: 'taipei_c3_dp_nd_2',
+    sourceLayerId: 'taipei_c3_dp_nd',
     coordNormalize: true,
     ...out.meta,
   };
   if (!d3Layer.visible) {
     d3Layer.visible = true;
-    dataStore.saveLayerState('taipei_d3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_d3_dp_nd', { visible: true });
   }
 }
 
 /** d3：刪除無紅／藍（connect）之整欄／整列並壓縮座標 → 寫入 e3 */
-export function executeTaipeiTest3_D3_To_E3_Nd_Grid2() {
+export function executeTaipeiTest3_D3_To_E3_Nd() {
   const dataStore = useDataStore();
-  const d3Layer = dataStore.findLayerById('taipei_d3_dp_nd_2');
-  const e3Layer = dataStore.findLayerById('taipei_e3_dp_nd_2');
+  const d3Layer = dataStore.findLayerById('taipei_d3_dp_nd');
+  const e3Layer = dataStore.findLayerById('taipei_e3_dp_nd');
   if (!d3Layer?.spaceNetworkGridJsonData?.length || !e3Layer) {
     console.warn('executeTaipeiTest3_D3_To_E3_Nd：缺少 d3 路網或 e3 圖層');
     return;
@@ -131,7 +131,7 @@ export function executeTaipeiTest3_D3_To_E3_Nd_Grid2() {
   }
   e3Layer.dashboardData = {
     segmentCount: S_strokes.length,
-    sourceLayerId: 'taipei_d3_dp_nd_2',
+    sourceLayerId: 'taipei_d3_dp_nd',
     removedColCount: colCount,
     removedRowCount: rowCount,
     removedCols,
@@ -141,15 +141,15 @@ export function executeTaipeiTest3_D3_To_E3_Nd_Grid2() {
   };
   if (!e3Layer.visible) {
     e3Layer.visible = true;
-    dataStore.saveLayerState('taipei_e3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_e3_dp_nd', { visible: true });
   }
 }
 
 /** e3：對角線轉水平垂直（applyHVToE3Network）→ 寫入 f3 */
-export function executeTaipeiTest3_E3_To_F3_Nd_Grid2() {
+export function executeTaipeiTest3_E3_To_F3_Nd() {
   const dataStore = useDataStore();
-  const e3Layer = dataStore.findLayerById('taipei_e3_dp_nd_2');
-  const f3Layer = dataStore.findLayerById('taipei_f3_dp_nd_2');
+  const e3Layer = dataStore.findLayerById('taipei_e3_dp_nd');
+  const f3Layer = dataStore.findLayerById('taipei_f3_dp_nd');
   if (!e3Layer?.spaceNetworkGridJsonData?.length || !f3Layer) {
     console.warn('executeTaipeiTest3_E3_To_F3_Nd：缺少 e3 路網或 f3 圖層');
     return;
@@ -175,7 +175,7 @@ export function executeTaipeiTest3_E3_To_F3_Nd_Grid2() {
   }
   f3Layer.dashboardData = {
     segmentCount: S_strokes.length,
-    sourceLayerId: 'taipei_e3_dp_nd_2',
+    sourceLayerId: 'taipei_e3_dp_nd',
     hvConvertedCount: converted,
     hvFailedDiagonalEdges: failed,
     inputSegments: e3Layer.spaceNetworkGridJsonData.length,
@@ -183,17 +183,17 @@ export function executeTaipeiTest3_E3_To_F3_Nd_Grid2() {
   };
   if (!f3Layer.visible) {
     f3Layer.visible = true;
-    dataStore.saveLayerState('taipei_f3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_f3_dp_nd', { visible: true });
   }
 }
 
 /**
  * f3→g3（單一圖層按鈕）：先 ㄈ縮減為 L（紅／藍 connect 隨折線一併變換），再 Flip L 減轉折 → 寫入 g3
  */
-export function executeTaipeiTest3_F3_To_G3_Nd_Grid2() {
+export function executeTaipeiTest3_F3_To_G3_Nd() {
   const dataStore = useDataStore();
-  const f3Layer = dataStore.findLayerById('taipei_f3_dp_nd_2');
-  const g3Layer = dataStore.findLayerById('taipei_g3_dp_nd_2');
+  const f3Layer = dataStore.findLayerById('taipei_f3_dp_nd');
+  const g3Layer = dataStore.findLayerById('taipei_g3_dp_nd');
   if (!f3Layer?.spaceNetworkGridJsonData?.length || !g3Layer) {
     console.warn('executeTaipeiTest3_F3_To_G3_Nd：缺少 f3 路網或 g3 圖層');
     return;
@@ -227,7 +227,7 @@ export function executeTaipeiTest3_F3_To_G3_Nd_Grid2() {
   }
   g3Layer.dashboardData = {
     segmentCount: routesData.length,
-    sourceLayerId: 'taipei_f3_dp_nd_2',
+    sourceLayerId: 'taipei_f3_dp_nd',
     nShapePassesRun,
     nShapeReducedAny,
     flipAcceptedCount,
@@ -237,7 +237,7 @@ export function executeTaipeiTest3_F3_To_G3_Nd_Grid2() {
   };
   if (!g3Layer.visible) {
     g3Layer.visible = true;
-    dataStore.saveLayerState('taipei_g3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_g3_dp_nd', { visible: true });
   }
 
   // NEW：不改前述流程。Z 形紅色內轉折線按整數→0.5→…（保拓撲、轉折不重疊）平移軸座標
@@ -268,14 +268,14 @@ export function executeTaipeiTest3_F3_To_G3_Nd_Grid2() {
   };
 }
 
-/** g3→h3：路段匯出列來自 taipei_b3_dp_nd_2（network_draw_sketch／a 語意已由手繪或前步寫入 b）。 */
-export function executeTaipeiTest3_G3_To_H3_Nd_Grid2() {
+/** g3→h3：路段匯出列來自 taipei_b3_dp_nd（network_draw_sketch／a 語意已由手繪或前步寫入 b）。 */
+export function executeTaipeiTest3_G3_To_H3_Nd() {
   const dataStore = useDataStore();
-  const b3ForRows = dataStore.findLayerById('taipei_b3_dp_nd_2');
-  const g3Layer = dataStore.findLayerById('taipei_g3_dp_nd_2');
-  const h3Layer = dataStore.findLayerById('taipei_h3_dp_nd_2');
+  const b3ForRows = dataStore.findLayerById('taipei_b3_dp_nd');
+  const g3Layer = dataStore.findLayerById('taipei_g3_dp_nd');
+  const h3Layer = dataStore.findLayerById('taipei_h3_dp_nd');
   if (!g3Layer?.spaceNetworkGridJsonData?.length || !h3Layer) {
-    console.warn('executeTaipeiTest3_G3_To_H3_Nd：缺少 g3 路網或 taipei_h3_dp_nd_2 圖層');
+    console.warn('executeTaipeiTest3_G3_To_H3_Nd：缺少 g3 路網或 taipei_h3_dp_nd 圖層');
     return;
   }
 
@@ -285,7 +285,7 @@ export function executeTaipeiTest3_G3_To_H3_Nd_Grid2() {
     return;
   }
 
-  const exportRowsSourceLayerId = 'taipei_b3_dp_nd_2';
+  const exportRowsSourceLayerId = 'taipei_b3_dp_nd';
   const inputSegs = JSON.parse(JSON.stringify(g3Layer.spaceNetworkGridJsonData));
   const { redistributedRoutesData, placedBlackSectionCount, skippedSectionCount, routeMismatches } =
     mergeConnectSpansPlaceBlackStationsAndSplit(inputSegs, check.rows);
@@ -314,7 +314,7 @@ export function executeTaipeiTest3_G3_To_H3_Nd_Grid2() {
   }
   h3Layer.dashboardData = {
     segmentCount: redistributedRoutesData.length,
-    sourceLayerId: 'taipei_g3_dp_nd_2',
+    sourceLayerId: 'taipei_g3_dp_nd',
     a3SourceLayerId: exportRowsSourceLayerId,
     placedBlackSectionCount,
     skippedSectionCount,
@@ -322,17 +322,17 @@ export function executeTaipeiTest3_G3_To_H3_Nd_Grid2() {
   };
   if (!h3Layer.visible) {
     h3Layer.visible = true;
-    dataStore.saveLayerState('taipei_h3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_h3_dp_nd', { visible: true });
   }
 }
 
 /** h3：僅在既有頂點依黑點切段（不改座標、不重算紅黑站別、無線上權重數字）→ 寫入 taipei_i3 */
-export function executeTaipeiTest3_H3_To_I3_Nd_Grid2() {
+export function executeTaipeiTest3_H3_To_I3_Nd() {
   const dataStore = useDataStore();
-  const h3Layer = dataStore.findLayerById('taipei_h3_dp_nd_2');
-  const i3Layer = dataStore.findLayerById('taipei_i3_dp_nd_2');
+  const h3Layer = dataStore.findLayerById('taipei_h3_dp_nd');
+  const i3Layer = dataStore.findLayerById('taipei_i3_dp_nd');
   if (!h3Layer?.spaceNetworkGridJsonData?.length || !i3Layer) {
-    console.warn('executeTaipeiTest3_H3_To_I3_Nd：缺少 h3 路網或 taipei_i3_dp_nd_2 圖層');
+    console.warn('executeTaipeiTest3_H3_To_I3_Nd：缺少 h3 路網或 taipei_i3_dp_nd 圖層');
     return;
   }
 
@@ -358,7 +358,7 @@ export function executeTaipeiTest3_H3_To_I3_Nd_Grid2() {
   i3Layer.trafficData = null;
   i3Layer.dataTableData = dataTableData;
   i3Layer.layerInfoData = {
-    splitSourceLayerId: 'taipei_h3_dp_nd_2',
+    splitSourceLayerId: 'taipei_h3_dp_nd',
     segmentsBeforeSplit: priorCount,
     segmentsAfterSplit: flatOut.length,
   };
@@ -373,22 +373,22 @@ export function executeTaipeiTest3_H3_To_I3_Nd_Grid2() {
   }
   i3Layer.dashboardData = {
     segmentCount: flatOut.length,
-    sourceLayerId: 'taipei_h3_dp_nd_2',
+    sourceLayerId: 'taipei_h3_dp_nd',
     segmentsBeforeSplit: priorCount,
   };
   if (!i3Layer.visible) {
     i3Layer.visible = true;
-    dataStore.saveLayerState('taipei_i3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_i3_dp_nd', { visible: true });
   }
 }
 
 /** i3：讀 mrt_link_volume CSV → 對應切段 station_weights → 寫入 taipei_j3（含 dataTableData） */
-export async function executeTaipeiTest3_I3_To_J3_Nd_Grid2() {
+export async function executeTaipeiTest3_I3_To_J3_Nd() {
   const dataStore = useDataStore();
-  const i3Layer = dataStore.findLayerById('taipei_i3_dp_nd_2');
-  const j3Layer = dataStore.findLayerById('taipei_j3_dp_nd_2');
+  const i3Layer = dataStore.findLayerById('taipei_i3_dp_nd');
+  const j3Layer = dataStore.findLayerById('taipei_j3_dp_nd');
   if (!i3Layer?.spaceNetworkGridJsonData?.length || !j3Layer) {
-    console.warn('executeTaipeiTest3_I3_To_J3_Nd：缺少 i3 路網或 taipei_j3_dp_nd_2 圖層');
+    console.warn('executeTaipeiTest3_I3_To_J3_Nd：缺少 i3 路網或 taipei_j3_dp_nd 圖層');
     return;
   }
 
@@ -444,14 +444,14 @@ export async function executeTaipeiTest3_I3_To_J3_Nd_Grid2() {
   }
   j3Layer.dashboardData = {
     segmentCount: flatSegs.length,
-    sourceLayerId: 'taipei_i3_dp_nd_2',
+    sourceLayerId: 'taipei_i3_dp_nd',
     trafficCsvFile: csvFileName,
     trafficMatched: trafficStats.matched,
     trafficUnmatched: trafficStats.unmatched,
   };
   if (!j3Layer.visible) {
     j3Layer.visible = true;
-    dataStore.saveLayerState('taipei_j3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_j3_dp_nd', { visible: true });
   }
 }
 
@@ -467,17 +467,17 @@ function deepCloneState(value) {
 /**
  * k3→l3：將 taipei_k3 目前已載入之路網（含 K3 分頁專用欄位）與儀表板等深拷貝至 taipei_l3（l3 另有獨立 jsonLoader／Vue 分頁，此函式僅負責複製）。
  */
-export function executeTaipeiTest3_K3_To_L3_Nd_Grid2() {
+export function executeTaipeiTest3_K3_To_L3_Nd() {
   const dataStore = useDataStore();
-  const k3Layer = dataStore.findLayerById('taipei_k3_dp_nd_2');
-  const l3Layer = dataStore.findLayerById('taipei_l3_dp_nd_2');
+  const k3Layer = dataStore.findLayerById('taipei_k3_dp_nd');
+  const l3Layer = dataStore.findLayerById('taipei_l3_dp_nd');
   if (!k3Layer || !l3Layer) {
-    console.warn('executeTaipeiTest3_K3_To_L3_Nd：缺少 taipei_k3_dp_nd_2 或 taipei_l3_dp_nd_2 圖層');
+    console.warn('executeTaipeiTest3_K3_To_L3_Nd：缺少 taipei_k3_dp_nd 或 taipei_l3_dp_nd 圖層');
     return;
   }
   const k3Routes = k3Layer.spaceNetworkGridJsonDataK3Tab;
   if (!Array.isArray(k3Routes) || k3Routes.length === 0) {
-    console.warn('executeTaipeiTest3_K3_To_L3_Nd：taipei_k3_dp_nd_2 尚無 K3 分頁路網（請先載入 k3 之 JSON）');
+    console.warn('executeTaipeiTest3_K3_To_L3_Nd：taipei_k3_dp_nd 尚無 K3 分頁路網（請先載入 k3 之 JSON）');
     return;
   }
 
@@ -509,8 +509,8 @@ export function executeTaipeiTest3_K3_To_L3_Nd_Grid2() {
   const baseInfo = c(k3Layer.layerInfoData);
   l3Layer.layerInfoData =
     baseInfo && typeof baseInfo === 'object'
-      ? { ...baseInfo, copiedFromLayerId: 'taipei_k3_dp_nd_2' }
-      : { copiedFromLayerId: 'taipei_k3_dp_nd_2' };
+      ? { ...baseInfo, copiedFromLayerId: 'taipei_k3_dp_nd' }
+      : { copiedFromLayerId: 'taipei_k3_dp_nd' };
   l3Layer.dashboardData = c(k3Layer.dashboardData);
   l3Layer.trafficData = c(k3Layer.trafficData);
   l3Layer.showStationPlacement = k3Layer.showStationPlacement !== false;
@@ -519,10 +519,10 @@ export function executeTaipeiTest3_K3_To_L3_Nd_Grid2() {
 
   if (!l3Layer.visible) {
     l3Layer.visible = true;
-    dataStore.saveLayerState('taipei_l3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_l3_dp_nd', { visible: true });
   }
 
-  dataStore.saveLayerState('taipei_l3_dp_nd_2', {
+  dataStore.saveLayerState('taipei_l3_dp_nd', {
     isLoaded: l3Layer.isLoaded,
     jsonData: l3Layer.jsonData,
     spaceNetworkGridJsonData: l3Layer.spaceNetworkGridJsonData,
@@ -552,18 +552,18 @@ export function executeTaipeiTest3_K3_To_L3_Nd_Grid2() {
  * l3→m3：先依 dataStore 之 n 連續縮減黑點至「候選最小 weight 差 ≥ n」，再將 taipei_l3 路網等深拷至 taipei_m3。
  * ControlTab 會傳入 jsonData 作為第一參數；此流程改讀圖層 store，不使用該參數。
  */
-export async function executeTaipeiTest3_L3_To_M3_Nd_Grid2() {
+export async function executeTaipeiTest3_L3_To_M3_Nd() {
   const dataStore = useDataStore();
-  const l3Layer = dataStore.findLayerById('taipei_l3_dp_nd_2');
-  const m3Layer = dataStore.findLayerById('taipei_m3_dp_nd_2');
+  const l3Layer = dataStore.findLayerById('taipei_l3_dp_nd');
+  const m3Layer = dataStore.findLayerById('taipei_m3_dp_nd');
   if (!l3Layer || !m3Layer) {
-    console.warn('executeTaipeiTest3_L3_To_M3_Nd：缺少 taipei_l3_dp_nd_2 或 taipei_m3_dp_nd_2 圖層');
+    console.warn('executeTaipeiTest3_L3_To_M3_Nd：缺少 taipei_l3_dp_nd 或 taipei_m3_dp_nd 圖層');
     return;
   }
   const l3Routes = l3Layer.spaceNetworkGridJsonDataL3Tab;
   if (!Array.isArray(l3Routes) || l3Routes.length === 0) {
     console.warn(
-      'executeTaipeiTest3_L3_To_M3_Nd：taipei_l3_dp_nd_2 尚無 L3 分頁路網（請先以 k3→l3 複製或載入 l3 之 JSON）'
+      'executeTaipeiTest3_L3_To_M3_Nd：taipei_l3_dp_nd 尚無 L3 分頁路網（請先以 k3→l3 複製或載入 l3 之 JSON）'
     );
     return;
   }
@@ -601,8 +601,8 @@ export async function executeTaipeiTest3_L3_To_M3_Nd_Grid2() {
   const baseInfo = c(l3Layer.layerInfoData);
   m3Layer.layerInfoData =
     baseInfo && typeof baseInfo === 'object'
-      ? { ...baseInfo, copiedFromLayerId: 'taipei_l3_dp_nd_2' }
-      : { copiedFromLayerId: 'taipei_l3_dp_nd_2' };
+      ? { ...baseInfo, copiedFromLayerId: 'taipei_l3_dp_nd' }
+      : { copiedFromLayerId: 'taipei_l3_dp_nd' };
   m3Layer.dashboardData = c(l3Layer.dashboardData);
   m3Layer.trafficData = c(l3Layer.trafficData);
   m3Layer.showStationPlacement = l3Layer.showStationPlacement !== false;
@@ -611,10 +611,10 @@ export async function executeTaipeiTest3_L3_To_M3_Nd_Grid2() {
 
   if (!m3Layer.visible) {
     m3Layer.visible = true;
-    dataStore.saveLayerState('taipei_m3_dp_nd_2', { visible: true });
+    dataStore.saveLayerState('taipei_m3_dp_nd', { visible: true });
   }
 
-  dataStore.saveLayerState('taipei_m3_dp_nd_2', {
+  dataStore.saveLayerState('taipei_m3_dp_nd', {
     isLoaded: m3Layer.isLoaded,
     jsonData: m3Layer.jsonData,
     spaceNetworkGridJsonData: m3Layer.spaceNetworkGridJsonData,
