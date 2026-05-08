@@ -49,7 +49,11 @@
     mapFlatSegmentsToExportRowsOrNull,
     exportRowToControlStationNodes,
   } from '@/utils/taipeiTest3/flatSegmentsToGeojsonStyleExportRows.js';
-  import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
+  import {
+    isMapDrawnRoutesExportArray,
+    mapDrawnExportRowsFromJsonDrawRoot,
+    wrapJsonDrawDataJsonWithUniformGrid,
+  } from '@/utils/mapDrawnRoutesImport.js';
   import { taipeiK4MapK3TabJsonToPlotPxForDisplay } from '@/utils/taipeiK4SpaceNetworkPlotPx.js';
   import { buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid } from '@/utils/taipeiK4ControlDiagnosticsSegments.js';
   import {
@@ -3664,7 +3668,7 @@
     dataStore.syncOsm2DataJsonMirrorFromParent();
     const lay = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
     if (!lay) return;
-    const rows = lay.jsonData ?? lay.dataJson;
+    const rows = mapDrawnExportRowsFromJsonDrawRoot(lay.jsonData, lay.dataJson);
     if (!isMapDrawnRoutesExportArray(rows) || rows.length === 0) {
       window.alert(
         '尚無路段匯出資料可用於網格。請先在「Map」對應圖層以畫線模式繪製路段，並確認上方「OSM → GeoJSON → JSON」已有路段 JSON。'
@@ -3674,9 +3678,11 @@
     const { geojson, meta } = buildMapDrawnStationUniformRefinementGridWithMeta(rows);
     lay.layoutUniformGridGeoJson = geojson;
     lay.layoutUniformGridMeta = meta;
+    lay.dataJson = wrapJsonDrawDataJsonWithUniformGrid(rows, geojson, meta);
     dataStore.saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
       layoutUniformGridGeoJson: geojson,
       layoutUniformGridMeta: meta,
+      dataJson: lay.dataJson,
     });
   };
 

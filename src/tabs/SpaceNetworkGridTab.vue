@@ -63,7 +63,10 @@
     isTaipeiTest3I3OrJ3LayerTab,
   } from '@/utils/taipeiTestPipeline.js';
   import { refreshTaipeiL3BlackDotHighlightFromLayer } from '@/utils/taipeiL3BlackDotReductionStep.js';
-  import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
+  import {
+    isMapDrawnRoutesExportArray,
+    mapDrawnExportRowsFromJsonDrawRoot,
+  } from '@/utils/mapDrawnRoutesImport.js';
   import {
     getGeoJsonFeatureTagProps,
     normalizeRouteSegmentEndpointType,
@@ -4103,7 +4106,7 @@
 
           if (layerTab === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
             const jl = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
-            const jr = jl?.jsonData ?? jl?.dataJson;
+            const jr = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
             if (Array.isArray(jr)) {
               const rid = routeFeatureRouteId != null ? String(routeFeatureRouteId) : '';
               const rnm = name != null ? String(name) : '';

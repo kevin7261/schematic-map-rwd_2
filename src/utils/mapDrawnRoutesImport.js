@@ -579,6 +579,44 @@ export function isMapDrawnRoutesExportArray(jsonData) {
   );
 }
 
+/** json 繪製 `dataJson` 封裝（均勻網格結果一併保存）時之 `kind` */
+export const JSON_DRAW_DATAJSON_WITH_UNIFORM_GRID_KIND = 'json_draw_with_layout_uniform_grid';
+
+/**
+ * 自 json 繪製層 root 取出路段匯出陣列：`jsonData`／`dataJson` 為陣列時直接用；為封裝時取 `routes`。
+ * @param {*} jsonData
+ * @param {*} dataJson
+ * @returns {unknown[] | null}
+ */
+export function mapDrawnExportRowsFromJsonDrawRoot(jsonData, dataJson) {
+  const routesFrom = (root) => {
+    if (!root) return null;
+    if (Array.isArray(root)) return root;
+    if (typeof root === 'object' && Array.isArray(root.routes)) return root.routes;
+    return null;
+  };
+  return routesFrom(jsonData) ?? routesFrom(dataJson);
+}
+
+/**
+ * 將均勻網格產物寫入 `dataJson`：含 routes 快照與格線／meta（與圖層欄位一致供持久化）。
+ * @param {unknown[]} rows
+ * @param {unknown|null} layoutUniformGridGeoJson
+ * @param {unknown|null} layoutUniformGridMeta
+ */
+export function wrapJsonDrawDataJsonWithUniformGrid(
+  rows,
+  layoutUniformGridGeoJson,
+  layoutUniformGridMeta
+) {
+  return {
+    kind: JSON_DRAW_DATAJSON_WITH_UNIFORM_GRID_KIND,
+    routes: JSON.parse(JSON.stringify(Array.isArray(rows) ? rows : [])),
+    layoutUniformGridGeoJson: layoutUniformGridGeoJson ?? null,
+    layoutUniformGridMeta: layoutUniformGridMeta ?? null,
+  };
+}
+
 /**
  * 手繪圖層 JSON 匯入：含既有 [起點, bends, 迄點] 三元組，或頂層為 [[lon,lat],…] 之折線（≥2 點）
  */

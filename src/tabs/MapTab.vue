@@ -14,10 +14,11 @@
     routeIdFromGeoJsonWayTags,
     ensureSegmentStationStrings,
   } from '@/utils/geojsonRouteHelpers.js';
-  import {
-    expandLonLatChainFromRouteCoordinates,
-    isMapDrawnRoutesExportArray,
-  } from '@/utils/mapDrawnRoutesImport.js';
+import {
+  expandLonLatChainFromRouteCoordinates,
+  isMapDrawnRoutesExportArray,
+  mapDrawnExportRowsFromJsonDrawRoot,
+} from '@/utils/mapDrawnRoutesImport.js';
   import {
     enumerateCrossingCandidates,
     applyCrossingToRows,
@@ -994,7 +995,10 @@
               }
 
               /** 有路段匯出 jsonData 時：只畫 segment 的 routeCoordinates（起–中–迄折線），端點依 type 上色 */
-              const exportRows = currentLayer.jsonData;
+              const exportRows = mapDrawnExportRowsFromJsonDrawRoot(
+                currentLayer.jsonData,
+                currentLayer.dataJson
+              );
               if (Array.isArray(exportRows) && isMapDrawnRoutesExportArray(exportRows)) {
                 const routeLayerGroup = L.layerGroup();
                 routeLayerGroup.options.layerId = currentLayer.layerId;

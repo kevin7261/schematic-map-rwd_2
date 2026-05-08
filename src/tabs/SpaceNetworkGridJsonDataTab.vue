@@ -76,7 +76,10 @@
     SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
     getOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
-  import { minimalLineStringFeatureCollectionFromRouteExportRows } from '@/utils/mapDrawnRoutesImport.js';
+  import {
+    minimalLineStringFeatureCollectionFromRouteExportRows,
+    mapDrawnExportRowsFromJsonDrawRoot,
+  } from '@/utils/mapDrawnRoutesImport.js';
 
   // ==================== 🏪 狀態管理初始化 (State Management Initialization) ====================
 
@@ -128,7 +131,16 @@
   const visibleLayers = computed(() => {
     const allLayers = dataStore.getAllLayers();
     if (props.osmViewerMode) {
-      return allLayers.filter((layer) => layer.visible && layer.layerId === OSM_2_LAYER_ID);
+      return allLayers.filter((layer) => {
+        if (!layer.visible) return false;
+        if (layer.layerId === OSM_2_LAYER_ID) return true;
+        /** json 繪製：與 OSM 管線共用 Upper 之 OSM／GeoJSON／json-viewer（有路段資料即顯示於分頁列） */
+        if (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+          const rows = mapDrawnExportRowsFromJsonDrawRoot(layer.jsonData, layer.dataJson);
+          return Array.isArray(rows) && rows.length > 0;
+        }
+        return false;
+      });
     }
     return allLayers.filter(
       (layer) =>
@@ -166,7 +178,7 @@
     }
     if (props.osmViewerMode === 'osm-xml') return '圖層 dataOSM（記憶體；手繪後為由路網還原之簡易 OSM XML）';
     if (props.osmViewerMode === 'osm-geojson') return '圖層 dataGeojson（記憶體）';
-    return '圖層 dataJson（記憶體）';
+    return '圖層 dataJson（含均勻網格封裝時與 jsonData 並存；記憶體）';
   });
 
   /** 空白狀態主文案（內容區） */
@@ -176,7 +188,7 @@
     if (props.osmViewerMode === 'osm-xml') return '此圖層尚無 dataOSM／可對應之 OSM XML';
     if (props.osmViewerMode === 'osm-geojson')
       return '此圖層尚無 dataGeojson（且無法由 jsonData 還原折線）';
-    return '此圖層尚無 dataJson 路段資料';
+    return '此圖層尚無 dataJson／jsonData 路段資料';
   });
 
   /** 無可見圖層時外層空狀態 */
@@ -184,7 +196,7 @@
     if (!props.osmViewerMode) {
       return '沒有開啟的圖層或沒有空間網絡網格 JSON 數據';
     }
-    return '請先開啟「OSM → GeoJSON → JSON」圖層';
+    return '請先開啟「OSM → GeoJSON → JSON」或「json 繪製」圖層（及其路段資料）';
   });
 
   /**
@@ -224,7 +236,9 @@
           return String(e);
         }
       }
-      const synth = minimalLineStringFeatureCollectionFromRouteExportRows(layer.jsonData || [], {
+      const routeRows =
+        mapDrawnExportRowsFromJsonDrawRoot(layer.jsonData, layer.dataJson) || [];
+      const synth = minimalLineStringFeatureCollectionFromRouteExportRows(routeRows, {
         stationPoints:
           layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ? 'endpoints' : 'all',
         routeLine:
@@ -233,6 +247,19 @@
       if (synth.features.length > 0) {
         try {
           return JSON.stringify(synth, null, 2);
+        } catch (e) {
+          return String(e);
+        }
+      }
+      return null;
+    }
+
+    /** json 繪製：json-viewer → dataJson（均勻網格封裝）優先，否則 jsonData */
+    if (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+      const jdraw = layer.dataJson ?? layer.jsonData;
+      if (jdraw != null) {
+        try {
+          return JSON.stringify(jdraw, null, 2);
         } catch (e) {
           return String(e);
         }

@@ -337,7 +337,7 @@ export const useDataStore = defineStore(
             layoutUniformGridGeoJson: null,
             /** space-layout-grid-viewer：網格模式（經緯外框細分數／壓縮後 nx、ny） */
             layoutUniformGridMeta: null,
-            upperViewTabs: ['space-layout-grid-viewer'],
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],
       },

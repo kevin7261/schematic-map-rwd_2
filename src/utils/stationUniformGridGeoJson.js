@@ -1,5 +1,9 @@
 import { segmentNodeLon, segmentNodeLat } from '@/utils/geojsonRouteHelpers.js';
-import { minimalLineStringFeatureCollectionFromRouteExportRows } from '@/utils/mapDrawnRoutesImport.js';
+import {
+  minimalLineStringFeatureCollectionFromRouteExportRows,
+  mapDrawnExportRowsFromJsonDrawRoot,
+  wrapJsonDrawDataJsonWithUniformGrid,
+} from '@/utils/mapDrawnRoutesImport.js';
 
 /** 每軸倍率：第一次 4×4＝16 格；之後每軸再 ×4（4→16→64→…） */
 const AXIS_SPLIT_FACTOR = 4;
@@ -363,7 +367,7 @@ export function applyLayoutViewerCompressEmptyBands(layer) {
   if (!meta || meta.mode !== 'wgs84' || !meta.bounds || !Number.isFinite(meta.divisionsPerAxis)) {
     return null;
   }
-  const rows = layer.jsonData ?? layer.dataJson;
+  const rows = mapDrawnExportRowsFromJsonDrawRoot(layer.jsonData, layer.dataJson);
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
   const { bounds, divisionsPerAxis } = meta;
@@ -387,7 +391,11 @@ export function applyLayoutViewerCompressEmptyBands(layer) {
   );
 
   layer.jsonData = newRows;
-  layer.dataJson = newRows;
+  layer.dataJson = wrapJsonDrawDataJsonWithUniformGrid(
+    newRows,
+    layer.layoutUniformGridGeoJson,
+    layer.layoutUniformGridMeta
+  );
 
   layer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(newRows, {
     stationPoints: 'endpoints',
