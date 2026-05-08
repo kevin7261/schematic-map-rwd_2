@@ -18,6 +18,5 @@ export function isRegisteredNetworkDrawSketchLayerId(layerId) {
  */
 export function isNetworkDrawSketchPipelineB3LayerId(layerId) {
   if (layerId == null) return false;
-  if (Object.values(NETWORK_DRAW_SKETCH_TO_B3_LAYER_ID).includes(layerId)) return true;
-  return typeof layerId === 'string' && /_dp_nd_2$/.test(layerId);
+  return Object.values(NETWORK_DRAW_SKETCH_TO_B3_LAYER_ID).includes(layerId);
 }

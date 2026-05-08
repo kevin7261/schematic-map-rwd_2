@@ -70,6 +70,8 @@
   import {
     getGeoJsonFeatureTagProps,
     normalizeRouteSegmentEndpointType,
+    segmentNodeLon,
+    segmentNodeLat,
   } from '@/utils/geojsonRouteHelpers.js';
 
   import * as d3 from 'd3';
@@ -85,7 +87,14 @@
     snapCoarseGridStepToMultipleOf5,
     formatAxisTickLabelMaxTwoDecimals,
   } from '@/utils/gridAxisTicks.js';
-  import { SPACE_LAYOUT_GRID_VIEWER_LAYER_ID } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+  import {
+    isSpaceLayoutUniformGridViewerLayerId,
+    OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID,
+    LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
+    getOsm2GeojsonSessionOsmXml,
+  } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+  import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
+  import { uniformGridCellFromLayoutMeta } from '@/utils/stationUniformGridGeoJson.js';
 
   /**
    * @param {*} meta — layoutUniformGridMeta（wgs84／compressed）
@@ -535,7 +544,8 @@
     const hasSpaceNetworkGridTab =
       Array.isArray(layer.upperViewTabs) && layer.upperViewTabs.includes('space-network-grid');
     const hasSpaceLayoutGridViewerTab =
-      Array.isArray(layer.upperViewTabs) && layer.upperViewTabs.includes('space-layout-grid-viewer');
+      Array.isArray(layer.upperViewTabs) &&
+      layer.upperViewTabs.includes('space-layout-grid-viewer');
 
     // 如果有數據，返回 dashboardData（如果存在）或一個標記物件
     return hasData || hasSpaceNetworkGridTab || hasSpaceLayoutGridViewerTab
@@ -569,6 +579,31 @@
   };
 
   /**
+   * 「版面網格·座標正規化」：自 OSM→GeoJSON 圖層（`osm_2_geojson_2_json`）之 dataOSM（或載入記憶之 session XML）解析路網 GeoJSON；
+   * 不依賴本圖層之 osm-viewer 分頁。
+   */
+  const backingGeoJsonFromOsm2DataOsmForCoordNormViewer = (layer) => {
+    if (!layer || layer.layerId !== OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) return null;
+    const osmLayer = dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
+    let xml = osmLayer?.dataOSM;
+    if (!xml || !String(xml).trim()) {
+      xml = getOsm2GeojsonSessionOsmXml();
+    }
+    if (xml && String(xml).trim()) {
+      try {
+        const { geojsonData } = osmXmlStringToGeojsonData(String(xml));
+        if (geojsonData?.features?.length) return geojsonData;
+      } catch (_) {
+        /* fallback 至圖層已快取之 GeoJSON */
+      }
+    }
+    const gj = osmLayer?.geojsonData || osmLayer?.dataGeojson;
+    return gj?.type === 'FeatureCollection' && Array.isArray(gj.features) && gj.features.length > 0
+      ? gj
+      : null;
+  };
+
+  /**
    * 📦 取得此分頁可用的主要示意圖資料
    * SpaceNetworkGridTab 只看 spaceNetworkGridJsonData
    */
@@ -598,15 +633,14 @@
     const schematic = getSchematicJsonData(layer);
     /** @type {{ type:'FeatureCollection', features: unknown[] }|null} */
     let base = null;
-    if (
-      schematic &&
-      schematic.type === 'FeatureCollection' &&
-      Array.isArray(schematic.features)
-    ) {
+    if (schematic && schematic.type === 'FeatureCollection' && Array.isArray(schematic.features)) {
       base = schematic;
     } else {
       const gj = layer.geojsonData;
       if (gj && gj.type === 'FeatureCollection' && Array.isArray(gj.features)) base = gj;
+      else {
+        base = backingGeoJsonFromOsm2DataOsmForCoordNormViewer(layer);
+      }
     }
     if (!base) return null;
     const ug = layer.layoutUniformGridGeoJson;
@@ -778,9 +812,6 @@
 
       if (layerId === 'taipei_sn4_l') {
         refreshTaipeiL3BlackDotHighlightFromLayer(dataStore.findLayerById('taipei_sn4_l'));
-      }
-      if (layerId === 'taipei_l3_dp_nd_2') {
-        refreshTaipeiL3BlackDotHighlightFromLayer(dataStore.findLayerById(layerId));
       }
     } catch (error) {
       console.error('❌ 無法載入圖層數據:', error.message);
@@ -3543,10 +3574,9 @@
       yRange > 1e-9 &&
       Math.max(xRange, yRange) <= 30;
 
-    const layoutUniformTickOverride =
-      layerTab === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID
-        ? buildLayoutViewerUniformAxisTicks(dataStore.findLayerById(layerTab)?.layoutUniformGridMeta)
-        : null;
+    const layoutUniformTickOverride = isSpaceLayoutUniformGridViewerLayerId(layerTab)
+      ? buildLayoutViewerUniformAxisTicks(dataStore.findLayerById(layerTab)?.layoutUniformGridMeta)
+      : null;
 
     // 縮減疊加／taipei_g：背景與軸皆每個整數一條線／一個刻度；其餘圖層網格與軸標籤可抽稀（粗步長為 5 的倍數）
     const xGridStep = isTaipeiD3CoordNormalizeLayer
@@ -3608,8 +3638,9 @@
       }
     }
 
-    const skipDefaultLightBackgroundGrid =
-      Boolean(layoutUniformTickOverride?.skipDefaultBackgroundGrid);
+    const skipDefaultLightBackgroundGrid = Boolean(
+      layoutUniformTickOverride?.skipDefaultBackgroundGrid
+    );
 
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
@@ -3974,7 +4005,7 @@
       ? buildRouteWeightStrokeScaleLinear(collectWeightsFromGeoRouteFeatures(routeFeatures))
       : null;
 
-    /** json 繪製路段 tooltip：segment.start→stations→end */
+    /** json 繪製路段 tooltip：segment.start→stations→end（與資料節點之 lon/lat、grid 鍵對齊） */
     const tooltipHtmlSegmentStationsOrdered = (seg) => {
       if (!seg || typeof seg !== 'object') return '';
       const esc = (t) =>
@@ -3991,7 +4022,19 @@
       if (!ordered.length) return '';
       let h = `<br><strong>stations（依序）</strong> ${ordered.length}<br>`;
       ordered.forEach((n, idx) => {
-        h += `<strong>#${idx + 1}</strong> station_id ${esc(
+        const lo = segmentNodeLon(n);
+        const la = segmentNodeLat(n);
+        let posFrag = '';
+        if (Number.isFinite(lo) && Number.isFinite(la)) {
+          posFrag = ` lon/lat (${formatPathCoordNumber(lo)}, ${formatPathCoordNumber(la)})`;
+        }
+        let gridFrag = '';
+        if (Number.isFinite(Number(n.grid_simp_x)) && Number.isFinite(Number(n.grid_simp_y))) {
+          gridFrag = ` · grid_simp (${n.grid_simp_x}, ${n.grid_simp_y})`;
+        } else if (Number.isFinite(Number(n.grid_x)) && Number.isFinite(Number(n.grid_y))) {
+          gridFrag = ` · grid (${n.grid_x}, ${n.grid_y})`;
+        }
+        h += `<strong>#${idx + 1}</strong>${posFrag}${gridFrag} · station_id ${esc(
           n.station_id ?? n.tags?.station_id ?? ''
         )} · station_name ${esc(n.station_name ?? n.tags?.station_name ?? n.tags?.name ?? '')}<br>`;
       });
@@ -4008,15 +4051,13 @@
       points,
       isHvZTest3E3F3Highlight = false,
       l3BlackDotReducedWeightGreen = false,
-      routeFeatureRouteId = ''
+      routeFeatureRouteId = '',
+      exportRowIndexHint = null
     ) => {
       // 與 MapTab 一致：tags.color／tags.colour，否則 feature.properties.color（如路段匯出列），預設 #666666
       const trimColour = (s) => (typeof s === 'string' && s.trim() !== '' ? s.trim() : '');
       const routeColor =
-        trimColour(tags?.colour) ||
-        trimColour(tags?.color) ||
-        trimColour(color) ||
-        '#666666';
+        trimColour(tags?.colour) || trimColour(tags?.color) || trimColour(color) || '#666666';
       const pathData = lineGenerator(coords);
       if (!pathData) return;
 
@@ -4104,19 +4145,33 @@
             });
           }
 
-          if (layerTab === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
-            const jl = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+          if (isSpaceLayoutUniformGridViewerLayerId(layerTab)) {
+            const jl = dataStore.findLayerById(layerTab);
             const jr = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
             if (Array.isArray(jr)) {
+              const idxHint =
+                exportRowIndexHint != null && Number.isFinite(Number(exportRowIndexHint))
+                  ? Number(exportRowIndexHint)
+                  : null;
+              let segMatch = null;
+              if (
+                idxHint != null &&
+                idxHint >= 0 &&
+                idxHint < jr.length &&
+                jr[idxHint] &&
+                typeof jr[idxHint] === 'object'
+              ) {
+                segMatch = jr[idxHint]?.segment ?? null;
+              }
               const rid = routeFeatureRouteId != null ? String(routeFeatureRouteId) : '';
               const rnm = name != null ? String(name) : '';
-              let segMatch = null;
-              if (rid !== '') {
-                const hit = jr.find((r) => r && String(r.route_id ?? '') === rid);
-                segMatch = hit?.segment;
+              if (!segMatch && rid !== '') {
+                const hits = jr.filter((r) => r && String(r.route_id ?? '') === rid);
+                segMatch = hits.length === 1 ? (hits[0]?.segment ?? null) : null;
               }
               if (!segMatch && rnm !== '') {
-                segMatch = jr.find((r) => r && String(r.routeName ?? '') === rnm)?.segment;
+                const hitsNm = jr.filter((r) => r && String(r.routeName ?? '') === rnm);
+                segMatch = hitsNm.length === 1 ? (hitsNm[0]?.segment ?? null) : null;
               }
               if (segMatch) {
                 tooltipContent += tooltipHtmlSegmentStationsOrdered(segMatch);
@@ -4183,10 +4238,7 @@
             if (refCoords.length >= 2) {
               const stationDists = refCoords.map((pt) => getStationDistOnPolyline(pt, coords));
               const useL3MergedWeightGreenFill =
-                (layerTab === 'taipei_l3_dp_nd_2' ||
-                  layerTab === 'taipei_sn4_l' ||
-                  layerTab === 'taipei_m3_dp_nd_2' ||
-                  layerTab === 'taipei_sn4_m') &&
+                (layerTab === 'taipei_sn4_l' || layerTab === 'taipei_sn4_m') &&
                 l3BlackDotReducedWeightGreen;
 
               const appendWeightLabel = (px, py) => {
@@ -4276,6 +4328,10 @@
 
       const routeFeatId =
         props.route_id != null && props.route_id !== '' ? String(props.route_id) : '';
+      const exportRowIdx =
+        props.export_row_index != null && Number.isFinite(Number(props.export_row_index))
+          ? Number(props.export_row_index)
+          : null;
 
       if (geom.type === 'LineString') {
         drawRoutePath(
@@ -4288,7 +4344,8 @@
           props.points,
           isHvZHl,
           Boolean(props.l3_black_dot_reduced_weight_green),
-          routeFeatId
+          routeFeatId,
+          exportRowIdx
         );
       } else if (geom.type === 'MultiLineString') {
         geom.coordinates.forEach((coords) => {
@@ -4302,7 +4359,8 @@
             props.points,
             isHvZHl,
             Boolean(props.l3_black_dot_reduced_weight_green),
-            routeFeatId
+            routeFeatId,
+            exportRowIdx
           );
         });
       }
@@ -4521,8 +4579,7 @@
               Math.abs(Number(gyLine) - Number(hbL3.y)) < coordEpsL3);
         isHighlighted = isConnectHl || isH2ConnectHl;
         isOnOtherRoute = isHighlighted || isH2BlackHl || isL3ReductionBlackHl;
-        radius =
-          isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? 5 : isConnect ? 2.5 : 1.5;
+        radius = isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? 5 : isConnect ? 2.5 : 1.5;
         strokeWidth = isHighlighted || isH2BlackHl || isL3ReductionBlackHl ? 2.5 : 1;
         strokeColor =
           isHighlighted || isH2BlackHl || isL3ReductionBlackHl
@@ -4636,6 +4693,20 @@
             ? minSpacingTooltipBlock(gridGx, gridGy, 'supplementOnly')
             : minSpacingTooltipBlock(gridGx, gridGy);
           let tooltipParts = [coordinateHtml + spacingBlock];
+
+          if (mapLonLatEndpoints && isSpaceLayoutUniformGridViewerLayerId(layerTab)) {
+            const layoutLyr = dataStore.findLayerById(layerTab);
+            const gc = uniformGridCellFromLayoutMeta(
+              layoutLyr?.layoutUniformGridMeta,
+              Number(x),
+              Number(y)
+            );
+            if (gc) {
+              tooltipParts.push(
+                `<strong>${gc.labelX}:</strong> ${gc.ix}<br><strong>${gc.labelY}:</strong> ${gc.iy}`
+              );
+            }
+          }
 
           // 優先顯示 station_id 和 station_name（同時支援 props 直屬與 props.tags）
           const stationId = props.station_id !== undefined ? props.station_id : tags.station_id;
@@ -6124,12 +6195,20 @@
       if (!activeLayerTab.value) return null;
       const layer = dataStore.findLayerById(activeLayerTab.value);
       if (!layer) return null;
+      const osmLay =
+        activeLayerTab.value === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID
+          ? dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID)
+          : null;
       /** OSM／a3 等僅有 geojsonData 時，異步載入完成須觸發重繪（原本只監聽 spaceNetworkGridJsonData） */
+      /** 版面網格·座標正規化：父層 dataOSM／GeoJSON 變動須連動重繪 */
       return {
         sn: layer.spaceNetworkGridJsonData,
         gj: layer.geojsonData,
         ug: layer.layoutUniformGridGeoJson,
         um: layer.layoutUniformGridMeta,
+        parentDataOsm: osmLay?.dataOSM,
+        parentGj: osmLay?.geojsonData,
+        parentDataGj: osmLay?.dataGeojson,
       };
     },
     async () => {
@@ -6149,7 +6228,11 @@
         ugFc.type === 'FeatureCollection' &&
         Array.isArray(ugFc.features) &&
         ugFc.features.length > 0;
-      if (!hasSn && !hasGj && !hasUg) return;
+      let hasOsmBackedMap = false;
+      if (layer.layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) {
+        hasOsmBackedMap = !!backingGeoJsonFromOsm2DataOsmForCoordNormViewer(layer);
+      }
+      if (!hasSn && !hasGj && !hasUg && !hasOsmBackedMap) return;
       const containerId = getContainerId();
       d3.select(`#${containerId}`).selectAll('svg').remove();
       d3.select('body').selectAll('.d3js-map-tooltip').remove();

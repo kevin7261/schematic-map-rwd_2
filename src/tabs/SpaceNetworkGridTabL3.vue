@@ -21,8 +21,8 @@
     isPanelDragging: { type: Boolean, default: false },
     activeMarkers: { type: Array, default: () => [] },
     isActive: { type: Boolean, default: false },
-    /** 綁定之圖層 id（taipei_l3_dp_nd_2／taipei_sn4_l 等） */
-    layerId: { type: String, default: 'taipei_l3_dp_nd_2' },
+    /** 綁定之圖層 id（例如 taipei_sn4_l） */
+    layerId: { type: String, default: 'taipei_sn4_l' },
   });
 
   const dataStore = useDataStore();

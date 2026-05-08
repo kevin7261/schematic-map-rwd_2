@@ -539,7 +539,6 @@
 
   /** k3／k4 在此分頁讀寫之獨立欄位（與主「空間網絡網格」分頁的 spaceNetworkGridJsonData 等互不共用） */
   const K3_GRID_TAB_K_TAB_LAYER_IDS = [
-    'taipei_k3_dp_nd_2',
     'taipei_sn4_k',
     'taipei_a6',
     'taipei_b6',
@@ -3940,7 +3939,6 @@
       !isTaipeiD3CoordNormalizeLayer &&
       !taipeiCReducedOverlayDraw &&
       !useSchematicCellCenterGrid &&
-      activeLayerTab.value !== 'taipei_k3_dp_nd_2' &&
       activeLayerTab.value !== 'taipei_sn4_k' &&
       Number.isFinite(xRange) &&
       Number.isFinite(yRange) &&
@@ -3978,11 +3976,7 @@
           : yGridStep;
 
     /** k3：網格／軸刻度每 10 的倍數一條（格座標）；k4 另於下方以繪區 px 每 10 一條 */
-    if (
-      (activeLayerTab.value === 'taipei_k3_dp_nd_2' ||
-        activeLayerTab.value === 'taipei_sn4_k') &&
-      !useSchematicCellCenterGrid
-    ) {
+    if (activeLayerTab.value === 'taipei_sn4_k' && !useSchematicCellCenterGrid) {
       xGridStep = 10;
       yGridStep = 10;
       tickXStep = 10;
@@ -4030,8 +4024,7 @@
      * 軸數字為自該角之位移（左下為 0），刻度線與格線對齊，與 taipei_k4 內繪 px 刻度慣例一致。
      */
     if (
-      (activeLayerTab.value === 'taipei_k3_dp_nd_2' ||
-        activeLayerTab.value === 'taipei_sn4_k') &&
+      activeLayerTab.value === 'taipei_sn4_k' &&
       !useSchematicCellCenterGrid &&
       !isTaipeiK4PxPlotCoordinateLayer
     ) {

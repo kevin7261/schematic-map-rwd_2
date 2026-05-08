@@ -22,7 +22,6 @@ const TAIPEI_L3_BLACK_DOT_REDUCTION_LAYER_IDS = new Set([
   'taipei_l3_dp',
   'taipei_l3_dp_2',
   'taipei_l3_dp_nd',
-  'taipei_l3_dp_nd_2',
 ]);
 
 function isTaipeiL3BlackDotReductionLayer(layer) {

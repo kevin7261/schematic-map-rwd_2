@@ -315,11 +315,11 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows, opti
     }
   };
 
-  for (const row of rows) {
-    if (!row || typeof row !== 'object' || !Array.isArray(row.routeCoordinates)) continue;
+  rows.forEach((row, exportRowIndex) => {
+    if (!row || typeof row !== 'object' || !Array.isArray(row.routeCoordinates)) return;
     const seg = row.segment && typeof row.segment === 'object' ? row.segment : null;
     let chain = expandLonLatChainFromRouteCoordinates(row.routeCoordinates);
-    if (!chain || chain.length < 2) continue;
+    if (!chain || chain.length < 2) return;
 
     if (routeLineMode === 'endpoints') {
       let a = chain[0];
@@ -350,6 +350,8 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows, opti
         name: row.routeName ?? '',
         color: lineCol,
         route_id: row.route_id != null ? String(row.route_id) : '',
+        /** 與 {@link mapDrawnExportRowsFromJsonDrawRoot} 傳入之 rows 索引一致，供 hover 對齊 segment */
+        export_row_index: exportRowIndex,
       },
       geometry: { type: 'LineString', coordinates: chain },
     });
@@ -360,7 +362,7 @@ export function minimalLineStringFeatureCollectionFromRouteExportRows(rows, opti
       }
       ingestStationNode(seg.end, 'normal');
     }
-  }
+  });
 
   for (const { lon, lat, mergedType, meta } of stationsByKey.values()) {
     const ens = ensureSegmentStationStrings(

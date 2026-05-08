@@ -136,7 +136,6 @@
   });
 
   const kTabLayerUsesK3JsonFields = (layerId) =>
-    layerId === 'taipei_k3_dp_nd_2' ||
     layerId === 'taipei_sn4_k' ||
     layerId === 'taipei_a6' ||
     layerId === 'taipei_b6' ||

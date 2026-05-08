@@ -109,10 +109,10 @@
       type: Boolean,
       default: false,
     },
-    /** 綁定之圖層 id（taipei_l3_dp_nd_2／taipei_sn4_l 等） */
+    /** 綁定之圖層 id（例如 taipei_sn4_l／taipei_sn4_m） */
     layerId: {
       type: String,
-      default: 'taipei_l3_dp_nd_2',
+      default: 'taipei_sn4_l',
     },
     activeMarkers: {
       type: Array,
@@ -126,7 +126,7 @@
     return allLayers.filter((layer) => {
       if (!layer.visible) return false;
       if (layer.layerId !== props.layerId) return false;
-      if (props.layerId === 'taipei_m3_dp_nd_2' || props.layerId === 'taipei_sn4_m') {
+      if (props.layerId === 'taipei_sn4_m') {
         return layer.processedJsonDataM3Tab != null || layer.spaceNetworkGridJsonDataM3Tab != null;
       }
       return layer.processedJsonDataL3Tab != null || layer.spaceNetworkGridJsonDataL3Tab != null;
@@ -149,11 +149,11 @@
     if (!activeLayerTab.value) return null;
     const layer = visibleLayers.value.find((l) => l.layerId === activeLayerTab.value);
     if (!layer) return null;
-    if (layer.layerId === 'taipei_m3_dp_nd_2' || layer.layerId === 'taipei_sn4_m') {
+    if (layer.layerId === 'taipei_sn4_m') {
       if (layer.processedJsonDataM3Tab != null) return layer.processedJsonDataM3Tab;
       return layer.spaceNetworkGridJsonDataM3Tab || null;
     }
-    if (layer.layerId === 'taipei_l3_dp_nd_2' || layer.layerId === 'taipei_sn4_l') {
+    if (layer.layerId === 'taipei_sn4_l') {
       if (layer.processedJsonDataL3Tab != null) return layer.processedJsonDataL3Tab;
       return layer.spaceNetworkGridJsonDataL3Tab || null;
     }

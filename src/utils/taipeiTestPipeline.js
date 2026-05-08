@@ -108,7 +108,7 @@ export function isTaipeiTestFghiLayerId(id) {
   return id != null && TAIPEI_TEST_FGHI_LAYER_IDS.includes(id);
 }
 
-/** 測試_4（sn4_*）／版面網格測試_3（a6／b6／c6）／網格繪製_2（*_dp_nd_2）：路網層（末端 connect 藍、交叉 connect 紅；j／k 為 CSV 流量權重語意） */
+/** 測試_4（sn4_*）／版面網格測試_3（a6／b6／c6）：路網層（末端 connect 藍、交叉 connect 紅；j／k 為 CSV 流量權重語意） */
 export const TAIPEI_TEST3_BCDEFG_LAYER_IDS = [
   'taipei_sn4_a',
   'taipei_sn4_b',
@@ -127,18 +127,6 @@ export const TAIPEI_TEST3_BCDEFG_LAYER_IDS = [
   'taipei_c6',
   'taipei_sn4_l',
   'taipei_sn4_m',
-  'taipei_b3_dp_nd_2',
-  'taipei_c3_dp_nd_2',
-  'taipei_d3_dp_nd_2',
-  'taipei_e3_dp_nd_2',
-  'taipei_f3_dp_nd_2',
-  'taipei_g3_dp_nd_2',
-  'taipei_h3_dp_nd_2',
-  'taipei_i3_dp_nd_2',
-  'taipei_j3_dp_nd_2',
-  'taipei_k3_dp_nd_2',
-  'taipei_l3_dp_nd_2',
-  'taipei_m3_dp_nd_2',
 ];
 
 /** @deprecated 請改用 TAIPEI_TEST3_BCDEFG_LAYER_IDS */
@@ -157,18 +145,13 @@ export function isTaipeiTest3I3OrJ3LayerTab(tab) {
     tab === 'taipei_sn4_j' ||
     tab === 'taipei_sn4_k' ||
     tab === 'taipei_sn4_l' ||
-    tab === 'taipei_sn4_m' ||
-    tab === 'taipei_i3_dp_nd_2' ||
-    tab === 'taipei_j3_dp_nd_2' ||
-    tab === 'taipei_k3_dp_nd_2' ||
-    tab === 'taipei_l3_dp_nd_2' ||
-    tab === 'taipei_m3_dp_nd_2'
+    tab === 'taipei_sn4_m'
   );
 }
 
 /** j：路段流量（CSV）；ControlTab 匯出 JSON */
 export function isTaipeiTest3J3TrafficExportLayerTab(tab) {
-  return tab === 'taipei_sn4_j' || tab === 'taipei_j3_dp_nd_2';
+  return tab === 'taipei_sn4_j';
 }
 
 export function isTaipeiTest3BcdeLayerTab(tab) {
@@ -207,18 +190,6 @@ export const TAIPEI_TEST_SPACE_NETWORK_STATION_TAB_IDS = [
   'taipei_c6',
   'taipei_sn4_l',
   'taipei_sn4_m',
-  'taipei_b3_dp_nd_2',
-  'taipei_c3_dp_nd_2',
-  'taipei_d3_dp_nd_2',
-  'taipei_e3_dp_nd_2',
-  'taipei_f3_dp_nd_2',
-  'taipei_g3_dp_nd_2',
-  'taipei_h3_dp_nd_2',
-  'taipei_i3_dp_nd_2',
-  'taipei_j3_dp_nd_2',
-  'taipei_k3_dp_nd_2',
-  'taipei_l3_dp_nd_2',
-  'taipei_m3_dp_nd_2',
   ...TAIPEI_TEST_FGHI_LAYER_IDS,
 ];
 

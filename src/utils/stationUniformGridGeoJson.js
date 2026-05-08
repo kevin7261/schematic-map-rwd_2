@@ -79,27 +79,71 @@ export function paddedRootBoundsForStations(stations) {
   return r;
 }
 
+/** @param {number} val @param {number} lo @param {number} hi */
+function clamp01Axis(val, lo, hi) {
+  if (!(hi >= lo)) return lo;
+  return Math.min(hi, Math.max(lo, val));
+}
+
+/**
+ * 將 [minV,maxV] 均分成 divisions 條（與 `uniformGridCellIndices` 軸分量相同 floor／邊界規則）；
+ * **必須**與 `computeOccupiedColRowSetsFromStations`、`scalarToCompressedStrips` 一致，
+ * 否則「刪無站之列／欄」後仍留白條或站點與格線錯位。
+ *
+ * @param {number} val
+ * @param {number} minV
+ * @param {number} maxV
+ * @param {number} divisions
+ * @returns {number}
+ */
+export function uniformAxisStripIndex(val, minV, maxV, divisions) {
+  const div = Math.max(1, Math.floor(Number(divisions)) || 1);
+  const span = Math.max(Number(maxV) - Number(minV), 0);
+  if (!(span > 0) || !Number.isFinite(val)) return 0;
+  const L = clamp01Axis(val, minV, maxV);
+  const t = ((L - Number(minV)) / span) * div;
+  let ix = Math.floor(t);
+  if (ix >= div) ix = div - 1;
+  if (ix < 0) ix = 0;
+  return ix;
+}
+
+/**
+ * 均勻網格格心投影：將 (lon,lat) 對應到 [0 … divX−1]×[0 … divY−1] 之欄列索引。
+ * @param {number} lon
+ * @param {number} lat
+ * @param {Bounds} bounds
+ * @param {number} divX
+ * @param {number} divY
+ * @returns {{ ix: number, iy: number }}
+ */
+export function uniformGridCellIndices(lon, lat, bounds, divX, divY) {
+  const b = bounds;
+  const minLon = Number(b.minLon);
+  const maxLon = Number(b.maxLon);
+  const minLat = Number(b.minLat);
+  const maxLat = Number(b.maxLat);
+  const nx = Math.max(1, Math.floor(Number(divX)) || 1);
+  const ny = Math.max(1, Math.floor(Number(divY)) || 1);
+  const lo = Number(lon);
+  const la = Number(lat);
+  let ix = 0;
+  let iy = 0;
+  if (Number.isFinite(lo) && maxLon > minLon) {
+    ix = uniformAxisStripIndex(lo, minLon, maxLon, nx);
+  }
+  if (Number.isFinite(la) && maxLat > minLat) {
+    iy = uniformAxisStripIndex(la, minLat, maxLat, ny);
+  }
+  return { ix, iy };
+}
+
 /**
  * @param {{ lon:number,lat:number }} p
  */
 function cellKeyForPoint(p, b, divisions) {
-  const spanLon = b.maxLon - b.minLon;
-  const spanLat = b.maxLat - b.minLat;
   const div = Math.max(1, Math.floor(divisions));
-  let ix = 0;
-  let iy = 0;
-  if (spanLon > 0) {
-    const t = ((p.lon - b.minLon) / spanLon) * div;
-    ix = Math.floor(t);
-    if (ix >= div) ix = div - 1;
-    if (ix < 0) ix = 0;
-  }
-  if (spanLat > 0) {
-    const t = ((p.lat - b.minLat) / spanLat) * div;
-    iy = Math.floor(t);
-    if (iy >= div) iy = div - 1;
-    if (iy < 0) iy = 0;
-  }
+  const { ix, iy } = uniformGridCellIndices(p.lon, p.lat, b, div, div);
   return `${ix},${iy}`;
 }
 
@@ -166,13 +210,10 @@ export function uniformGridLinesForAxisAlignedBounds(bounds, divX, divY) {
   return { type: 'FeatureCollection', features };
 }
 
-/** @param {number} val @param {number} lo @param {number} hi */
-function clamp01Axis(val, lo, hi) {
-  if (!(hi >= lo)) return lo;
-  return Math.min(hi, Math.max(lo, val));
-}
-
 /**
+ * 將標量壓縮到「保留條索引」對應之連續座標：**條號**與 `uniformAxisStripIndex`／`uniformGridCellIndices` 完全一致
+ * （舊版曾因「含右界」區間判定與 floor 不一致，導致留白條或站點與視覺格線對不齊）。
+ *
  * @param {number} val
  * @param {number} minV
  * @param {number} maxV
@@ -181,35 +222,28 @@ function clamp01Axis(val, lo, hi) {
  */
 export function scalarToCompressedStrips(val, minV, maxV, divisions, keptStripIndices) {
   const div = Math.max(1, Math.floor(Number(divisions)) || 1);
-  const span = maxV - minV;
+  const span = Math.max(maxV - minV, 0);
   const w = span > 0 ? span / div : 1e-14;
-  const L = span > 0 ? clamp01Axis(val, minV, maxV) : minV;
+  const Lc = span > 0 ? clamp01Axis(val, minV, maxV) : minV;
+  const stripIdx = uniformAxisStripIndex(val, minV, maxV, div);
 
-  let xc = 0;
-  let pos = minV;
-  for (let i = 0; i < div; i++) {
-    const left = pos;
-    const right = left + w;
-    const keep = keptStripIndices.has(i);
+  const keptSorted = [...keptStripIndices]
+    .map((x) => Number(x))
+    .filter((k) => Number.isFinite(k) && k >= 0 && k < div)
+    .sort((a, b) => a - b);
 
-    if (!keep) {
-      if (L >= left - 1e-12 && L <= right + 1e-12) {
-        return xc;
-      }
-      pos = right;
-      continue;
-    }
+  const numKeptBefore = keptSorted.filter((k) => k < stripIdx).length;
 
-    if (L < left - 1e-12) {
-      return xc;
-    }
-    if (L <= right + 1e-12) {
-      return xc + Math.max(0, Math.min(1, w > 1e-20 ? (L - left) / w : 0));
-    }
-    xc += 1;
-    pos = right;
+  if (!keptStripIndices.has(stripIdx)) {
+    return numKeptBefore;
   }
-  return xc;
+
+  const left = minV + stripIdx * w;
+  const denom = stripIdx >= div - 1 ? span - stripIdx * w : w;
+  const frac =
+    span > 0 && denom > 1e-24 ? Math.max(0, Math.min(1, (Lc - left) / denom)) : 0;
+
+  return numKeptBefore + frac;
 }
 
 /**
@@ -271,9 +305,115 @@ function writeNodeLonLat(node, lon, lat) {
   if (!node || typeof node !== 'object') return;
   node.lon = lon;
   node.lat = lat;
-  if (!node.tags || typeof node.tags !== 'object') node.tags = {};
-  node.tags.lon = lon;
-  node.tags.lat = lat;
+}
+
+/**
+ * @param {{ mode: string, bounds?: Bounds, divisionsPerAxis?: number, nx?: number, ny?: number }} meta
+ * @returns {{ bounds: Bounds, divX: number, divY: number, mode: string } | null}
+ */
+function resolveLayoutUniformGridBoundsAndDivs(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  if (meta.mode === 'wgs84' && meta.bounds != null && Number.isFinite(meta.divisionsPerAxis)) {
+    const d = Math.max(1, Math.floor(Number(meta.divisionsPerAxis)) || 1);
+    return {
+      bounds: meta.bounds,
+      divX: d,
+      divY: d,
+      mode: 'wgs84',
+    };
+  }
+  if (meta.mode === 'compressed' && Number.isFinite(meta.nx) && Number.isFinite(meta.ny)) {
+    const nx = Math.max(1, Math.floor(Number(meta.nx)));
+    const ny = Math.max(1, Math.floor(Number(meta.ny)));
+    return {
+      bounds: { minLon: 0, maxLon: nx, minLat: 0, maxLat: ny },
+      divX: nx,
+      divY: ny,
+      mode: 'compressed',
+    };
+  }
+  return null;
+}
+
+/**
+ * Hover／檢視用：依 {@link LayoutUniformGridMeta} 將 (lon,lat) 對應到與路段 JSON 相同語意之格索引鍵名。
+ *
+ * @param {{ mode: string, bounds?: Bounds, divisionsPerAxis?: number, nx?: number, ny?: number }|null|undefined} meta
+ * @param {number} lon
+ * @param {number} lat
+ * @returns {{ ix: number, iy: number, labelX: string, labelY: string } | null}
+ */
+export function uniformGridCellFromLayoutMeta(meta, lon, lat) {
+  const r = resolveLayoutUniformGridBoundsAndDivs(meta);
+  if (!r) return null;
+  const lo = Number(lon);
+  const la = Number(lat);
+  if (!Number.isFinite(lo) || !Number.isFinite(la)) return null;
+  const { ix, iy } = uniformGridCellIndices(lo, la, r.bounds, r.divX, r.divY);
+  const compressed = r.mode === 'compressed';
+  return {
+    ix,
+    iy,
+    labelX: compressed ? 'grid_simp_x' : 'grid_x',
+    labelY: compressed ? 'grid_simp_y' : 'grid_y',
+  };
+}
+
+/**
+ * 依 {@link LayoutUniformGridMeta} 為每個 segment 節點寫入網格索引（0-based）：
+ * - **wgs84**（產生均勻細分網格）：`grid_x`／`grid_y`
+ * - **compressed**（刪除無站之列／欄後）：`grid_simp_x`／`grid_simp_y`
+ *
+ * @param {unknown[]} exportRows
+ * @param {{ mode: string, bounds?: Bounds, divisionsPerAxis?: number, nx?: number, ny?: number }|null|undefined} meta
+ */
+export function annotateMapDrawnStationNodesWithUniformGridCellIndices(exportRows, meta) {
+  if (!Array.isArray(exportRows) || !meta || typeof meta !== 'object') return;
+
+  const resolved = resolveLayoutUniformGridBoundsAndDivs(meta);
+  if (!resolved) return;
+
+  const { bounds, divX, divY } = resolved;
+
+  /** wgs84 → grid_x/y；compressed → grid_simp_x/y */
+  const gxKey =
+    meta.mode === 'compressed' ? 'grid_simp_x' : 'grid_x';
+  const gyKey =
+    meta.mode === 'compressed' ? 'grid_simp_y' : 'grid_y';
+
+  const annotateNode = (n) => {
+    if (!n || typeof n !== 'object') return;
+    const lo = segmentNodeLon(n);
+    const la = segmentNodeLat(n);
+    if (!Number.isFinite(lo) || !Number.isFinite(la)) return;
+    const { ix, iy } = uniformGridCellIndices(lo, la, bounds, divX, divY);
+    /** @type {Record<string, unknown>} */
+    const o = /** @type {Record<string, unknown>} */ (n);
+    const rest = { ...o };
+    delete rest.lon;
+    delete rest.lat;
+    delete rest.grid_ix;
+    delete rest.grid_iy;
+    delete rest.grid_x;
+    delete rest.grid_y;
+    delete rest.grid_simp_x;
+    delete rest.grid_simp_y;
+    Object.assign(o, {
+      lon: lo,
+      lat: la,
+      [gxKey]: ix,
+      [gyKey]: iy,
+      ...rest,
+    });
+  };
+
+  for (const row of exportRows) {
+    const seg = row?.segment;
+    if (!seg || typeof seg !== 'object') continue;
+    annotateNode(seg.start);
+    for (const st of seg.stations || []) annotateNode(st);
+    annotateNode(seg.end);
+  }
 }
 
 /**
@@ -390,18 +530,6 @@ export function applyLayoutViewerCompressEmptyBands(layer) {
     keptRowsSet
   );
 
-  layer.jsonData = newRows;
-  layer.dataJson = wrapJsonDrawDataJsonWithUniformGrid(
-    newRows,
-    layer.layoutUniformGridGeoJson,
-    layer.layoutUniformGridMeta
-  );
-
-  layer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(newRows, {
-    stationPoints: 'endpoints',
-    routeLine: 'endpoints',
-  });
-
   layer.layoutUniformGridGeoJson = uniformGridLinesForAxisAlignedBounds(
     { minLon: 0, maxLon: nx, minLat: 0, maxLat: ny },
     nx,
@@ -414,6 +542,20 @@ export function applyLayoutViewerCompressEmptyBands(layer) {
     ny,
     sourceDivisions: div,
   };
+
+  annotateMapDrawnStationNodesWithUniformGridCellIndices(newRows, layer.layoutUniformGridMeta);
+
+  layer.jsonData = newRows;
+  layer.dataJson = wrapJsonDrawDataJsonWithUniformGrid(
+    newRows,
+    layer.layoutUniformGridGeoJson,
+    layer.layoutUniformGridMeta
+  );
+
+  layer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(newRows, {
+    stationPoints: 'endpoints',
+    routeLine: 'endpoints',
+  });
 
   return { nx, ny };
 }

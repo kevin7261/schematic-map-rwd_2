@@ -23,10 +23,13 @@
   import {
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
     SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
+    OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID,
     mergeOsm2GeojsonLoaderResultIntoLayer,
     osmXmlToOsm2GeojsonLoaderResult,
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
     setOsm2GeojsonSessionOsmXml,
+    executeOsmLayoutGridCoordNormalize,
+    executeOsmLayoutGridStraighten,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
   import { getIcon } from '@/utils/utils.js';
 
@@ -67,6 +70,7 @@
   import {
     buildMapDrawnStationUniformRefinementGridWithMeta,
     applyLayoutViewerCompressEmptyBands,
+    annotateMapDrawnStationNodesWithUniformGridCellIndices,
   } from '@/utils/stationUniformGridGeoJson.js';
   import { isRegisteredNetworkDrawSketchSn4LayerId } from '@/utils/networkDrawSketchSn4PipelineLayers.js';
   import {
@@ -246,7 +250,7 @@
     // 檢查圖層是否屬於可執行「下一步」之群組
     const groupName = dataStore.findGroupNameByLayerId(currentLayer.value.layerId);
     if (
-      groupName !== '網格繪製_2' &&
+      groupName !== '資料處理_2' &&
       groupName !== '空間網絡網格測試_4' &&
       groupName !== '版面網格測試_3'
     )
@@ -2491,7 +2495,6 @@
     if (!layer) return false;
     if (
       layer.layerId === 'taipei_sn4_k' ||
-      layer.layerId === 'taipei_k3_dp_nd_2' ||
       layer.layerId === 'taipei_a4' ||
       layer.layerId === 'taipei_b4' ||
       layer.layerId === 'taipei_c4' ||
@@ -2506,7 +2509,7 @@
         Array.isArray(layer.spaceNetworkGridJsonData) && layer.spaceNetworkGridJsonData.length > 0;
       return !!(layer.geojsonData || layer.layoutGridJsonData || hasSn || hasK3Tab);
     }
-    if (layer.layerId === 'taipei_sn4_l' || layer.layerId === 'taipei_l3_dp_nd_2') {
+    if (layer.layerId === 'taipei_sn4_l') {
       const hasL3Tab =
         Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) &&
         layer.spaceNetworkGridJsonDataL3Tab.length > 0;
@@ -2514,7 +2517,7 @@
         Array.isArray(layer.spaceNetworkGridJsonData) && layer.spaceNetworkGridJsonData.length > 0;
       return !!(layer.geojsonData || layer.layoutGridJsonData || hasSn || hasL3Tab);
     }
-    if (layer.layerId === 'taipei_sn4_m' || layer.layerId === 'taipei_m3_dp_nd_2') {
+    if (layer.layerId === 'taipei_sn4_m') {
       const hasM3Tab =
         Array.isArray(layer.spaceNetworkGridJsonDataM3Tab) &&
         layer.spaceNetworkGridJsonDataM3Tab.length > 0;
@@ -2569,12 +2572,14 @@
     return !currentLayerHasExecuteInputData.value;
   });
 
-  /** taipei_d3：c3→d3 座標正規化後之網格長寬、四分樹／Grid Unit、最近兩點（dashboard 由 executeTaipeiTest3_C3_To_D3 寫入） */
+  /** taipei_d3／taipei_sn4_d／版面網格·座標正規化：c3→d3 結果（dashboard 由對應 execute 寫入） */
   const taipeiD3CoordNormalizeReport = computed(() => {
     const layer = currentLayer.value;
     const d = layer?.dashboardData;
     if (
-      (layer?.layerId !== 'taipei_d3' && layer?.layerId !== 'taipei_sn4_d') ||
+      (layer?.layerId !== 'taipei_d3' &&
+        layer?.layerId !== 'taipei_sn4_d' &&
+        layer?.layerId !== OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) ||
       !d?.coordNormalize ||
       !d.gridSizeCells
     )
@@ -2803,7 +2808,6 @@
     if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID) return null;
     /** k／k4／l／m：黑點相銜權重改見 Data 分頁 dataTableData，此處不列節點清單 */
     if (
-      layer.layerId === 'taipei_k3_dp_nd_2' ||
       layer.layerId === 'taipei_sn4_k' ||
       layer.layerId === 'taipei_a4' ||
       layer.layerId === 'taipei_b4' ||
@@ -2811,9 +2815,7 @@
       layer.layerId === 'taipei_a6' ||
       layer.layerId === 'taipei_b6' ||
       layer.layerId === 'taipei_c6' ||
-      layer.layerId === 'taipei_l3_dp_nd_2' ||
       layer.layerId === 'taipei_sn4_l' ||
-      layer.layerId === 'taipei_m3_dp_nd_2' ||
       layer.layerId === 'taipei_sn4_m'
     ) {
       return null;
@@ -2850,13 +2852,8 @@
       };
     }
 
-    const isH3 =
-      layer.layerId === 'taipei_sn4_h' || layer.layerId === 'taipei_h3_dp_nd_2';
-    const a3Layer = isH3
-      ? dataStore.findLayerById(
-          layer.layerId === 'taipei_sn4_h' ? 'taipei_sn4_a' : 'taipei_b3_dp_nd_2',
-        )
-      : null;
+    const isH3 = layer.layerId === 'taipei_sn4_h';
+    const a3Layer = isH3 ? dataStore.findLayerById('taipei_sn4_a') : null;
     const a3Rows = a3Layer?.processedJsonData;
     const a3Ok = isH3 && isMapDrawnRoutesExportArray(a3Rows);
 
@@ -3192,7 +3189,6 @@
     },
     { immediate: true }
   );
-
 
   /**
    * 手繪「執行下一步」等由 store 指定圖層時，同步本頁選取；否則 activeLayerTab 仍停在 network_draw_sketch
@@ -3561,7 +3557,7 @@
       : L.geojsonData || L.layoutGridJsonData || L.spaceNetworkGridJsonData || L.jsonData;
     if (
       !jsonData &&
-      (L.layerId === 'taipei_sn4_l' || L.layerId === 'taipei_l3_dp_nd_2') &&
+      L.layerId === 'taipei_sn4_l' &&
       Array.isArray(L.spaceNetworkGridJsonDataL3Tab) &&
       L.spaceNetworkGridJsonDataL3Tab.length > 0
     ) {
@@ -3569,7 +3565,7 @@
     }
     if (
       !jsonData &&
-      (L.layerId === 'taipei_sn4_m' || L.layerId === 'taipei_m3_dp_nd_2') &&
+      L.layerId === 'taipei_sn4_m' &&
       Array.isArray(L.spaceNetworkGridJsonDataM3Tab) &&
       L.spaceNetworkGridJsonDataM3Tab.length > 0
     ) {
@@ -3663,6 +3659,48 @@
     if (el) el.click();
   };
 
+  /** 版面網格·路線直線化（B3→C3）：輸入只讀本圖層已複製之 dataJson／geojsonData 或現有 b3 */
+  const onOsmLayoutGridStraightenClick = async () => {
+    if (isExecuting.value) return;
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const ok = await Promise.resolve(executeOsmLayoutGridStraighten());
+      if (!ok) {
+        window.alert(
+          '路線直線化失敗：請先在左側開啟「版面網格·座標正規化」圖層（會自動自「OSM → GeoJSON → JSON」複製 dataJson）；或將 b3／spaceNetworkGridJsonData 貼入本圖層後再試。'
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
+  /** 版面網格·座標正規化（C3→D3）：請先完成路線直線化或自行貼入 c3 */
+  const onOsmLayoutGridCoordNormalizeClick = async () => {
+    if (isExecuting.value) return;
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const ok = await Promise.resolve(executeOsmLayoutGridCoordNormalize());
+      if (!ok) {
+        window.alert(
+          '座標正規化失敗：本圖層尚無可用的 spaceNetworkGridJsonData。請先按「路線直線化」，或將 c3／直線化後路網貼入後再試。'
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
   /** json 繪製：全域均勻網格（每軸 4→16→64…），寫入 layoutUniformGridGeoJson + meta（space-layout-grid-viewer） */
   const onGenerateJsonDrawUniformGridClick = () => {
     dataStore.syncOsm2DataJsonMirrorFromParent();
@@ -3676,6 +3714,7 @@
       return;
     }
     const { geojson, meta } = buildMapDrawnStationUniformRefinementGridWithMeta(rows);
+    if (meta) annotateMapDrawnStationNodesWithUniformGridCellIndices(rows, meta);
     lay.layoutUniformGridGeoJson = geojson;
     lay.layoutUniformGridMeta = meta;
     lay.dataJson = wrapJsonDrawDataJsonWithUniformGrid(rows, geojson, meta);
@@ -3683,6 +3722,7 @@
       layoutUniformGridGeoJson: geojson,
       layoutUniformGridMeta: meta,
       dataJson: lay.dataJson,
+      jsonData: lay.jsonData,
     });
   };
 
@@ -3696,9 +3736,7 @@
         : null;
     const r = applyLayoutViewerCompressEmptyBands(lay);
     if (!r) {
-      window.alert(
-        '無法壓縮：請先按「產生均勻細分網格」，且須為經緯模式（尚未壓縮過空列／欄）。'
-      );
+      window.alert('無法壓縮：請先按「產生均勻細分網格」，且須為經緯模式（尚未壓縮過空列／欄）。');
       return;
     }
     if (
@@ -6145,7 +6183,6 @@
   /** j：路段匯出（與 e／f 相同語意）＋ dataTableData／layerInfo／dashboard */
   const taipeiJ3TrafficExportFilename = (layerId) => {
     if (layerId === 'taipei_sn4_j') return 'j3_routes_traffic_taipei_test3_sn4.json';
-    if (layerId === 'taipei_j3_dp_nd_2') return 'j3_routes_traffic_taipei_test3_dp_nd_2.json';
     return 'j3_routes_traffic_taipei_test3.json';
   };
 
@@ -6179,7 +6216,7 @@
   const onTaipeiL3BlackDotReductionStep = () => {
     stopTaipeiL3ReductionAuto();
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
+    if (!layer || layer.layerId !== 'taipei_sn4_l') return;
     const r = applyTaipeiL3BlackDotReductionOneStep(layer);
     if (!r.changed && r.reason) {
       console.warn('[縮減黑點]', r.reason);
@@ -6205,7 +6242,7 @@
       return;
     }
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
+    if (!layer || layer.layerId !== 'taipei_sn4_l') return;
     if (
       !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
       layer.spaceNetworkGridJsonDataL3Tab.length === 0
@@ -6218,7 +6255,7 @@
       const lyr = currentLayer.value;
       if (
         !lyr ||
-        (lyr.layerId !== 'taipei_sn4_l' && lyr.layerId !== 'taipei_l3_dp_nd_2') ||
+        lyr.layerId !== 'taipei_sn4_l' ||
         !Array.isArray(lyr.spaceNetworkGridJsonDataL3Tab) ||
         lyr.spaceNetworkGridJsonDataL3Tab.length === 0
       ) {
@@ -6239,7 +6276,7 @@
   const runTaipeiL3ReductionAll = async () => {
     stopTaipeiL3ReductionAuto();
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
+    if (!layer || layer.layerId !== 'taipei_sn4_l') return;
     if (
       !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
       layer.spaceNetworkGridJsonDataL3Tab.length === 0
@@ -6248,7 +6285,7 @@
     }
     for (let i = 0; i < TAIPEI_L3_REDUCTION_ALL_MAX_STEPS; i++) {
       const lyr = currentLayer.value;
-      if (!lyr || (lyr.layerId !== 'taipei_sn4_l' && lyr.layerId !== 'taipei_l3_dp_nd_2')) break;
+      if (!lyr || lyr.layerId !== 'taipei_sn4_l') break;
       const r = applyTaipeiL3BlackDotReductionOneStep(lyr);
       if (!r.changed) break;
       if (i % 25 === 24) await nextTick();
@@ -6259,7 +6296,7 @@
   const runTaipeiL3ReductionUntilWeightDiffN = async () => {
     stopTaipeiL3ReductionAuto();
     const layer = currentLayer.value;
-    if (!layer || (layer.layerId !== 'taipei_sn4_l' && layer.layerId !== 'taipei_l3_dp_nd_2')) return;
+    if (!layer || layer.layerId !== 'taipei_sn4_l') return;
     if (
       !Array.isArray(layer.spaceNetworkGridJsonDataL3Tab) ||
       layer.spaceNetworkGridJsonDataL3Tab.length === 0
@@ -6355,10 +6392,7 @@
         </div>
 
         <!-- taipei_osm_geojson_sn4：本機 .osm -->
-        <div
-          v-if="layer.layerId === 'taipei_osm_geojson_sn4'"
-          class="pb-3 mb-3 border-bottom"
-        >
+        <div v-if="layer.layerId === 'taipei_osm_geojson_sn4'" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">OSM 來源（本機檔）</div>
           <button
             type="button"
@@ -6374,10 +6408,7 @@
         </div>
 
         <!-- osm_2_geojson_2_json：本機 .osm -->
-        <div
-          v-if="layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID"
-          class="pb-3 mb-3 border-bottom"
-        >
+        <div v-if="layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">OSM 來源（本機檔）</div>
           <button
             type="button"
@@ -6393,8 +6424,10 @@
           <div class="my-title-xs-gray pb-1">流程說明（本機選檔）</div>
           <ol class="my-font-size-xs text-muted mb-2 ps-3" style="line-height: 1.55">
             <li>
-              <strong>讀檔並快取 XML</strong>：<code class="small">setOsm2GeojsonSessionOsmXml</code> 寫入本次執行期間 OSM
-              字串；檔名寫入 <code class="small">osmFileName</code>。
+              <strong>讀檔並快取 XML</strong>：<code class="small"
+                >setOsm2GeojsonSessionOsmXml</code
+              >
+              寫入本次執行期間 OSM 字串；檔名寫入 <code class="small">osmFileName</code>。
             </li>
             <li>
               <strong>XML → GeoJSON + 表格 + 路段陣列</strong>：<code class="small"
@@ -6403,29 +6436,68 @@
               （<code class="small">osm_2_geojson_2_json/pipeline.js</code>）。
             </li>
             <li>
-              <strong>合併至圖層</strong>：<code class="small">mergeOsm2GeojsonLoaderResultIntoLayer</code>
+              <strong>合併至圖層</strong>：<code class="small"
+                >mergeOsm2GeojsonLoaderResultIntoLayer</code
+              >
               （<code class="small">layerMerge.js</code>）更新
               <code class="small">geojsonData</code>／<code class="small">jsonData</code>／儀表等。
             </li>
             <li>
-              <strong>持久化</strong>：<code class="small">getOsm2GeojsonPersistPatchAfterLoaderMerge</code> →
+              <strong>持久化</strong>：<code class="small"
+                >getOsm2GeojsonPersistPatchAfterLoaderMerge</code
+              >
+              →
               <code class="small">saveLayerState</code>
             </li>
           </ol>
           <div class="my-font-size-xs text-muted mb-1">圖層「執行下一步」</div>
           <ol class="my-font-size-xs text-muted mb-0 ps-3" style="line-height: 1.55" start="5">
             <li>
-              <strong>複製 GeoJSON 至下游圖層</strong>：<code class="small">executeOsmGeojsonToTaipeiSn4ASpaceGrid</code>（<code
-                class="small"
-                >executeOsmGeojsonToTaipeiSn4ASpaceGrid.js</code
-              >）將本層 <code class="small">geojsonData</code> 深拷貝到 <code class="small">taipei_sn4_a</code> 並清空其網格／衍生欄位，讓你在
+              <strong>複製 GeoJSON 至下游圖層</strong>：<code class="small"
+                >executeOsmGeojsonToTaipeiSn4ASpaceGrid</code
+              >（<code class="small">executeOsmGeojsonToTaipeiSn4ASpaceGrid.js</code>）將本層
+              <code class="small">geojsonData</code> 深拷貝到
+              <code class="small">taipei_sn4_a</code> 並清空其網格／衍生欄位，讓你在
               <code class="small">taipei_sn4_a</code> 繼續執行 a→b 流程。
             </li>
           </ol>
         </div>
 
+        <!-- 版面網格·座標正規化：直線化、正規化兩按鈕 -->
+        <div
+          v-if="layer.layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">路網處理（分兩步）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            @click="onOsmLayoutGridStraightenClick"
+          >
+            ① 路線直線化（同測試_4／b→c）
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue"
+            @click="onOsmLayoutGridCoordNormalizeClick"
+          >
+            ② 座標正規化（同測試_4／c→d）
+          </button>
+          <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.55">
+            <strong>開啟本圖層</strong>時會自動自「OSM → GeoJSON → JSON」複製 <code class="small">dataJson</code>／<code class="small">geojsonData</code>；之後<strong>①② 只跑本層這份資料</strong>。<br>
+            <strong>①</strong>：本圖層已有 <code class="small">spaceNetworkGridJsonData</code>（b）時優先用之；否則自本層 <code class="small">geojsonData</code>／<code class="small">dataJson</code> 建 b→直線化為 c；黑點不畫（<code class="small">showStationPlacement</code> 關）。<br>
+            <strong>②</strong>：只處理目前圖層之 c3 路網（請先按 ① 或手貼直線化後資料）。使用
+            <code class="small">buildTaipeiD3FromC3Network</code>。<br>
+            ①② 成功後皆會將<strong>當步路網</strong>經 <code class="small">minimalOsmXmlFromLonLatFeatureCollection</code> 寫入<strong>本圖層</strong>之
+            <code class="small">dataOSM</code>。
+          </div>
+        </div>
+
         <!-- json 繪製：經緯路段四元樹格（space-layout-grid-viewer） -->
-        <div v-if="layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID" class="pb-3 mb-3 border-bottom">
+        <div
+          v-if="layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID"
+          class="pb-3 mb-3 border-bottom"
+        >
           <div class="my-title-xs-gray pb-2">版面均勻網格</div>
           <button
             type="button"
@@ -6444,8 +6516,11 @@
           <div class="text-muted" style="font-size: 11px; line-height: 1.45">
             自父圖層同步之 <code class="small">jsonData</code> 取路段
             <strong>segment</strong>
-            內站點經緯度；先對全域外框<strong>每軸切 4 段</strong>（共 4×4＝16 格），若有格內多於一站則<strong>再每軸 ×4</strong>（16×16→256→…），直到每格至多一站或達細分上限。在
-            <code class="small">space-layout-grid-viewer</code> 繪製最終<strong>直角格線</strong>。重複按鈕會覆寫格線。
+            內站點經緯度；先對全域外框<strong>每軸切 4 段</strong>（共 4×4＝16
+            格），若有格內多於一站則<strong>再每軸 ×4</strong
+            >（16×16→256→…），直到每格至多一站或達細分上限。在
+            <code class="small">space-layout-grid-viewer</code>
+            繪製最終<strong>直角格線</strong>。重複按鈕會覆寫格線。
           </div>
         </div>
 
@@ -6576,10 +6651,7 @@
         </div>
 
         <!-- taipei_l3／taipei_sn4_l：縮減黑點（與 Data 分頁 dataTableData 候選一致，逐步合併） -->
-        <div
-          v-if="layer.layerId === 'taipei_sn4_l' || layer.layerId === 'taipei_l3_dp_nd_2'"
-          class="pb-3 mb-3 border-bottom"
-        >
+        <div v-if="layer.layerId === 'taipei_sn4_l'" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">縮減黑點（l3）</div>
           <button
             type="button"
@@ -8385,7 +8457,6 @@
           </button>
         </div>
 
-
         <!-- 空間網路主分頁／K3／L3 分頁共用：路線上權重數字（預設顯示）；taipei_f／g 用上方專區「顯示權重」 -->
         <div v-if="hasSpaceNetworkStandaloneRouteWeightToggle" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">空間網路圖（主分頁／K3／K4）</div>
@@ -8571,10 +8642,7 @@
           </div>
           <!-- taipei_b4：僅 a 產出與 b→c 複製；snap／近距／重疊診斷／手動合併等請在 taipei_c4 -->
           <template
-            v-if="
-              currentLayer?.layerId !== 'taipei_b4' &&
-              currentLayer?.layerId !== 'taipei_b6'
-            "
+            v-if="currentLayer?.layerId !== 'taipei_b4' && currentLayer?.layerId !== 'taipei_b6'"
           >
             <div class="text-muted" style="font-size: 11px; line-height: 1.4">
               權重數字同步 <code class="small">space-network-grid</code> 與
@@ -8625,9 +8693,7 @@
               class="mt-2 p-3 border rounded"
               style="font-size: 11px; line-height: 1.5; background: #f1f8f4"
             >
-              <div class="my-content-sm-black mb-2">
-                taipei_c6 手動處理（版面網格測試_3）
-              </div>
+              <div class="my-content-sm-black mb-2">taipei_c6 手動處理（版面網格測試_3）</div>
               <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="my-content-sm-black">
                   合併門檻（|Δweight| ≤ N）
@@ -8868,7 +8934,6 @@
                 </span>
                 <span
                   v-if="
-                    currentLayer?.layerId === 'taipei_k3_dp_nd_2' ||
                     currentLayer?.layerId === 'taipei_sn4_k' ||
                     currentLayer?.layerId === 'taipei_a4' ||
                     currentLayer?.layerId === 'taipei_b4' ||
@@ -8879,8 +8944,8 @@
                   "
                   class="text-muted"
                 >
-                  （taipei_c4／c6：內繪區 px 與主圖 layout-network-grid-k3 路徑 tooltip 一致，含
-                  k4 弧長重算後黑點與 snap；視窗尺寸依目前量測）
+                  （taipei_c4／c6：內繪區 px 與主圖 layout-network-grid-k3 路徑 tooltip 一致，含 k4
+                  弧長重算後黑點與 snap；視窗尺寸依目前量測）
                 </span>
               </div>
               <div v-if="k3JsonPointOverlapReport.total === 0" class="text-muted">
@@ -9004,10 +9069,7 @@
         <!-- taipei_l3／sn4_l／m3／sn4_m：json-data-l3／網格分頁動態示意之欄列與最小格寬／高（pt） -->
         <div
           v-if="
-            currentLayer?.layerId === 'taipei_l3_dp_nd_2' ||
-            currentLayer?.layerId === 'taipei_sn4_l' ||
-            currentLayer?.layerId === 'taipei_m3_dp_nd_2' ||
-            currentLayer?.layerId === 'taipei_sn4_m'
+            currentLayer?.layerId === 'taipei_sn4_l' || currentLayer?.layerId === 'taipei_sn4_m'
           "
           class="pb-3 mb-3 border-bottom"
         >
@@ -9061,16 +9123,11 @@
 
         <!-- 沒有可執行操作的提示（taipei_g／taipei_h 另有底部專區，不顯示此列） -->
         <div
-          v-else-if="
-            currentLayer &&
-            !isTaipeiF &&
-            !hasSpaceNetworkStandaloneRouteWeightToggle
-          "
+          v-else-if="currentLayer && !isTaipeiF && !hasSpaceNetworkStandaloneRouteWeightToggle"
           class="pb-3 mb-3"
         >
           <div class="my-title-xs-gray text-center">此圖層沒有可執行的操作</div>
         </div>
-
 
         <!-- taipei_c6：路線導航 -->
         <div

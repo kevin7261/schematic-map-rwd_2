@@ -108,12 +108,12 @@ import {
   loadDataLayerJson,
   loadGridSchematicJson,
   loadTaipeiK3J3RoutesTrafficJson,
+  loadTaipeiL3J3RoutesTrafficJson,
+  loadTaipeiM3J3RoutesTrafficJson,
   loadTaipeiSn4KJ3RoutesTrafficJson,
   loadTaipeiSn4LJ3RoutesTrafficJson,
   loadTaipeiSn4MJ3RoutesTrafficJson,
   loadTaipeiA6J3RoutesTrafficJson,
-  loadTaipeiL3J3RoutesTrafficJson,
-  loadTaipeiM3J3RoutesTrafficJson,
   processGridToDrawData,
   processMetroToDrawData,
   loadGeoJsonForRoutes,
@@ -135,16 +135,17 @@ import {
   executeTaipeiTest4_I3_To_J3,
   executeTaipeiTest4_K3_To_L3,
   executeTaipeiTest4_L3_To_M3,
-  executeTaipeiTest3_B3_To_C3_Nd_Grid2,
-  executeTaipeiTest3_C3_To_D3_Nd_Grid2,
-  executeTaipeiTest3_D3_To_E3_Nd_Grid2,
-  executeTaipeiTest3_E3_To_F3_Nd_Grid2,
-  executeTaipeiTest3_F3_To_G3_Nd_Grid2,
-  executeTaipeiTest3_G3_To_H3_Nd_Grid2,
-  executeTaipeiTest3_H3_To_I3_Nd_Grid2,
-  executeTaipeiTest3_I3_To_J3_Nd_Grid2,
-  executeTaipeiTest3_K3_To_L3_Nd_Grid2,
-  executeTaipeiTest3_L3_To_M3_Nd_Grid2,
+  executeOsmGeojsonToRouteSegmentsProc2,
+  executeTaipeiDataProcTest3_B3_To_C3_Proc2,
+  executeTaipeiDataProcTest3_C3_To_D3_Proc2,
+  executeTaipeiDataProcTest3_D3_To_E3_Proc2,
+  executeTaipeiDataProcTest3_E3_To_F3_Proc2,
+  executeTaipeiDataProcTest3_F3_To_G3_Proc2,
+  executeTaipeiDataProcTest3_G3_To_H3_Proc2,
+  executeTaipeiDataProcTest3_H3_To_I3_Proc2,
+  executeTaipeiDataProcTest3_I3_To_J3_Proc2,
+  executeTaipeiDataProcTest3_K3_To_L3_Proc2,
+  executeTaipeiDataProcTest3_L3_To_M3_Proc2,
   execute_A6_To_B6,
   execute_B6_To_C6,
   executeOsmGeojsonToTaipeiSn4A,
@@ -153,6 +154,9 @@ import { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../utils/layers/osm_2_ge
 import { assignOsm2LayerViewerFields } from '../utils/layers/osm_2_geojson_2_json/layerMerge.js';
 import {
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
+  JSON_DRAW_LAYOUT_READ_LAYER_ID,
+  SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
+  OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
 import {
@@ -299,6 +303,49 @@ export const useDataStore = defineStore(
             upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
           },
           {
+            layerId: 'osm_layout_grid_coord_normalized',
+            layerName: '版面網格·座標正規化',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'cyan',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
             layerId: 'json_draw',
             layerName: 'json繪製',
             visible: false,
@@ -336,6 +383,45 @@ export const useDataStore = defineStore(
             /** space-layout-grid-viewer：均勻網格線（每軸 4→16→64… 遞增直至每格至多一站） */
             layoutUniformGridGeoJson: null,
             /** space-layout-grid-viewer：網格模式（經緯外框細分數／壓縮後 nx、ny） */
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
+            layerId: 'json_draw_layout_read',
+            layerName: 'json繪製·讀檔',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
             layoutUniformGridMeta: null,
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
@@ -1074,10 +1160,45 @@ export const useDataStore = defineStore(
         ],
       },
       {
-        groupName: '網格繪製_2',
+        groupName: '資料處理_2',
         groupLayers: [
           {
-            layerId: 'taipei_b3_dp_nd_2',
+            layerId: 'taipei_osm_geojson_2',
+            layerName: 'Taipei OSM → GeoJSON（地圖）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'blue',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: loadOsmXmlAsGeoJsonForRoutes,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: 'taipei/taipei.osm',
+            jsonFileName: null,
+            executeFunction: executeOsmGeojsonToRouteSegmentsProc2,
+            isDataLayer: true,
+            hideFromMap: false,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            /** 與空間網絡網格測試_3 之 taipei_a3 相同分頁結構（路網示意／JSON 等顯示一致） */
+            upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
+          },
+          {
+            layerId: 'taipei_b3_dp_2',
             layerName: 'b 站點直線化',
             visible: false,
             isLoading: false,
@@ -1095,7 +1216,7 @@ export const useDataStore = defineStore(
             layoutGridJsonData_Test3: null,
             layoutGridJsonData_Test4: null,
             geojsonData: null,
-            /** 來源為前步「執行下一步」寫入之匯出列 */
+            /** 與 taipei_b3 相同：路段匯出陣列 [{ routeName, segment, routeCoordinates }, …]（來源為 OSM→GeoJSON 寫入） */
             processedJsonData: null,
             drawJsonData: null,
             dashboardData: null,
@@ -1106,7 +1227,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_B3_To_C3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_B3_To_C3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1115,7 +1236,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_c3_dp_nd_2',
+            layerId: 'taipei_c3_dp_2',
             layerName: 'c 交叉點直線化',
             visible: false,
             isLoading: false,
@@ -1143,7 +1264,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_C3_To_D3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_C3_To_D3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1152,7 +1273,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_d3_dp_nd_2',
+            layerId: 'taipei_d3_dp_2',
             layerName: 'd 座標正規化',
             visible: false,
             isLoading: false,
@@ -1180,7 +1301,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_D3_To_E3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_D3_To_E3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1189,7 +1310,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_e3_dp_nd_2',
+            layerId: 'taipei_e3_dp_2',
             layerName: 'e 刪空欄列',
             visible: false,
             isLoading: false,
@@ -1217,7 +1338,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_E3_To_F3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_E3_To_F3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1226,7 +1347,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_f3_dp_nd_2',
+            layerId: 'taipei_f3_dp_2',
             layerName: 'f 水平垂直',
             visible: false,
             isLoading: false,
@@ -1254,7 +1375,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_F3_To_G3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_F3_To_G3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1263,7 +1384,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_g3_dp_nd_2',
+            layerId: 'taipei_g3_dp_2',
             layerName: 'g Flip 減轉折',
             visible: false,
             isLoading: false,
@@ -1291,7 +1412,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_G3_To_H3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_G3_To_H3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1300,8 +1421,8 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_h3_dp_nd_2',
-            /** g3→h3 路段匯出列來源：taipei_b3_dp_nd（與測試_3 之「對 b3」對照） */
+            layerId: 'taipei_h3_dp_2',
+            /** 語意同 taipei_h3「對 a3」：此管線匯出列來自 taipei_b3_dp */
             layerName: 'h 黑點弧長均分（對 b3）',
             visible: false,
             isLoading: false,
@@ -1329,7 +1450,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_H3_To_I3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_H3_To_I3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1338,7 +1459,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_i3_dp_nd_2',
+            layerId: 'taipei_i3_dp_2',
             layerName: 'i 依黑點切段',
             visible: false,
             isLoading: false,
@@ -1367,7 +1488,7 @@ export const useDataStore = defineStore(
             processToDrawData: null,
             geojsonFileName: null,
             jsonFileName: null,
-            executeFunction: executeTaipeiTest3_I3_To_J3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_I3_To_J3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1376,7 +1497,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_j3_dp_nd_2',
+            layerId: 'taipei_j3_dp_2',
             layerName: 'j 路段流量（CSV）',
             visible: false,
             isLoading: false,
@@ -1416,7 +1537,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-network-grid', 'dashboard', 'space-network-grid-json-data'],
           },
           {
-            layerId: 'taipei_k3_dp_nd_2',
+            layerId: 'taipei_k3_dp_2',
             layerName: 'k 空間網絡網格起始',
             visible: false,
             isLoading: false,
@@ -1452,7 +1573,7 @@ export const useDataStore = defineStore(
             geojsonFileName: null,
             jsonFileName: 'taipei_city_2026/j3_routes_traffic_taipei_test3.json',
             csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
-            executeFunction: executeTaipeiTest3_K3_To_L3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_K3_To_L3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1467,7 +1588,7 @@ export const useDataStore = defineStore(
             ],
           },
           {
-            layerId: 'taipei_l3_dp_nd_2',
+            layerId: 'taipei_l3_dp_2',
             layerName: 'l 縮減黑點',
             visible: false,
             isLoading: false,
@@ -1503,7 +1624,7 @@ export const useDataStore = defineStore(
             geojsonFileName: null,
             jsonFileName: 'taipei_city_2026/j3_routes_traffic_taipei_test3.json',
             csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
-            executeFunction: executeTaipeiTest3_L3_To_M3_Nd_Grid2,
+            executeFunction: executeTaipeiDataProcTest3_L3_To_M3_Proc2,
             isDataLayer: true,
             hideFromMap: true,
             display: true,
@@ -1518,7 +1639,7 @@ export const useDataStore = defineStore(
             ],
           },
           {
-            layerId: 'taipei_m3_dp_nd_2',
+            layerId: 'taipei_m3_dp_2',
             layerName: 'm 黑點縮減後',
             visible: false,
             isLoading: false,
@@ -1570,6 +1691,7 @@ export const useDataStore = defineStore(
           },
         ],
       },
+
       {
         groupName: '測試圖層',
         groupLayers: [
@@ -1747,6 +1869,22 @@ export const useDataStore = defineStore(
         layerStates.value[layerId] = {};
       }
       Object.assign(layerStates.value[layerId], stateData);
+
+      /** 「json 繪製·讀檔」開啟時，隨主圖層 {@link SPACE_LAYOUT_GRID_VIEWER_LAYER_ID} 持久化一併更新鏡像 */
+      if (layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+        const readLay = findLayerById(JSON_DRAW_LAYOUT_READ_LAYER_ID);
+        if (readLay?.visible) {
+          applyJsonDrawLayoutReadLayerSyncedFromJsonDraw(readLay);
+          saveLayerState(JSON_DRAW_LAYOUT_READ_LAYER_ID, {
+            jsonData: readLay.jsonData,
+            geojsonData: readLay.geojsonData,
+            dataJson: readLay.dataJson,
+            isLoaded: readLay.isLoaded,
+            layoutUniformGridGeoJson: readLay.layoutUniformGridGeoJson ?? null,
+            layoutUniformGridMeta: readLay.layoutUniformGridMeta ?? null,
+          });
+        }
+      }
     };
 
     // ==================== 🔍 圖層搜尋函數 (Layer Search Functions) ====================
@@ -1906,6 +2044,28 @@ export const useDataStore = defineStore(
       return allLayers;
     };
 
+    /** 自「json 繪製」主圖層深拷 {@link SPACE_LAYOUT_GRID_VIEWER_LAYER_ID} 之 dataJson／jsonData／格線至讀檔圖層 */
+    const applyJsonDrawLayoutReadLayerSyncedFromJsonDraw = (viewerLayer) => {
+      const src = findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+      if (!viewerLayer || !src) return;
+      const cloneJson = (x) => {
+        if (x == null) return x;
+        try {
+          return typeof structuredClone === 'function'
+            ? structuredClone(x)
+            : JSON.parse(JSON.stringify(x));
+        } catch {
+          return x;
+        }
+      };
+      viewerLayer.jsonData = cloneJson(src.jsonData);
+      viewerLayer.dataJson = cloneJson(src.dataJson);
+      viewerLayer.geojsonData = cloneJson(src.geojsonData);
+      viewerLayer.layoutUniformGridGeoJson = cloneJson(src.layoutUniformGridGeoJson);
+      viewerLayer.layoutUniformGridMeta = cloneJson(src.layoutUniformGridMeta);
+      viewerLayer.isLoaded = true;
+    };
+
     /** 自 OSM 管線父圖層複製路段 JSON（dataJson）至 D3 示意等衍生圖層 */
     const applyOsm2DataJsonSyncedLayerFromParent = (derivedLayer) => {
       const parent = findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
@@ -1927,12 +2087,29 @@ export const useDataStore = defineStore(
       derivedLayer.layoutUniformGridMeta = null;
     };
 
+    /** 版面網格·座標正規化：清除直線化／正規化產物以改從新複製之 dataJson 重跑 */
+    const resetOsmLayoutGridCoordNormalizedPipelineFields = (lyr) => {
+      lyr.spaceNetworkGridJsonData = null;
+      lyr.spaceNetworkGridJsonData_SectionData = null;
+      lyr.spaceNetworkGridJsonData_ConnectData = null;
+      lyr.spaceNetworkGridJsonData_StationData = null;
+      lyr.processedJsonData = null;
+      lyr.dashboardData = null;
+      lyr.drawJsonData = null;
+      lyr.dataOSM = null;
+      lyr.dataTableData = null;
+      lyr.layerInfoData = null;
+      lyr.highlightedSegmentIndex = null;
+      lyr.showStationPlacement = true;
+      lyr.isLoaded = true;
+    };
+
     const syncOsm2DataJsonMirrorFromParent = () => {
-      const layoutViewer = findLayerById('json_draw');
+      const layoutViewer = findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
       if (!layoutViewer) return;
       applyOsm2DataJsonSyncedLayerFromParent(layoutViewer);
       if (layoutViewer.visible) {
-        saveLayerState('json_draw', {
+        saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
           jsonData: layoutViewer.jsonData,
           geojsonData: layoutViewer.geojsonData,
           dataJson: layoutViewer.dataJson,
@@ -2046,16 +2223,45 @@ export const useDataStore = defineStore(
       // 保存圖層的可見性狀態
       saveLayerState(layerId, { visible: layer.visible });
 
-      if (layer.visible && layer.layerId === 'json_draw') {
-        applyOsm2DataJsonSyncedLayerFromParent(layer);
-        saveLayerState(layerId, {
+      if (
+        layer.visible &&
+        (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ||
+          layer.layerId === JSON_DRAW_LAYOUT_READ_LAYER_ID ||
+          layer.layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID)
+      ) {
+        if (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+          applyOsm2DataJsonSyncedLayerFromParent(layer);
+        } else if (layer.layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) {
+          applyOsm2DataJsonSyncedLayerFromParent(layer);
+          resetOsmLayoutGridCoordNormalizedPipelineFields(layer);
+        } else {
+          applyJsonDrawLayoutReadLayerSyncedFromJsonDraw(layer);
+        }
+        const persist = {
           jsonData: layer.jsonData,
           geojsonData: layer.geojsonData,
           dataJson: layer.dataJson,
           isLoaded: layer.isLoaded,
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
           layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
-        });
+        };
+        if (layer.layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) {
+          Object.assign(persist, {
+            spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
+            spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
+            spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
+            spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
+            processedJsonData: layer.processedJsonData,
+            dashboardData: layer.dashboardData,
+            drawJsonData: layer.drawJsonData,
+            dataOSM: layer.dataOSM,
+            dataTableData: layer.dataTableData,
+            layerInfoData: layer.layerInfoData,
+            highlightedSegmentIndex: layer.highlightedSegmentIndex,
+            showStationPlacement: layer.showStationPlacement,
+          });
+        }
+        saveLayerState(layerId, persist);
       }
 
       // 🩹 修正：taipei_6_1_test2 的 dataTableData 欄位 schema 曾變更（改為 0-based，且由三連改為兩連，再改為單列/單行）
@@ -2290,7 +2496,8 @@ export const useDataStore = defineStore(
           /** OSM／可空載入圖層：維持使用者已開啟之可見狀態，不因無檔／請求失敗而自動關閉 */
           if (
             layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID &&
-            layerId !== 'json_draw' &&
+            layerId !== SPACE_LAYOUT_GRID_VIEWER_LAYER_ID &&
+            layerId !== JSON_DRAW_LAYOUT_READ_LAYER_ID &&
             layerId !== 'taipei_osm_geojson_sn4'
           ) {
             layer.visible = false;
@@ -3200,11 +3407,22 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === 'json_draw') {
-        applyOsm2DataJsonSyncedLayerFromParent(layer);
+      if (
+        layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ||
+        layerId === JSON_DRAW_LAYOUT_READ_LAYER_ID ||
+        layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID
+      ) {
+        if (layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
+          applyOsm2DataJsonSyncedLayerFromParent(layer);
+        } else if (layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) {
+          applyOsm2DataJsonSyncedLayerFromParent(layer);
+          resetOsmLayoutGridCoordNormalizedPipelineFields(layer);
+        } else {
+          applyJsonDrawLayoutReadLayerSyncedFromJsonDraw(layer);
+        }
         layer.isLoaded = true;
         layer.isLoading = false;
-        saveLayerState(layerId, {
+        const persist = {
           isLoaded: true,
           isLoading: false,
           jsonData: layer.jsonData,
@@ -3212,7 +3430,24 @@ export const useDataStore = defineStore(
           dataJson: layer.dataJson,
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
           layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
-        });
+        };
+        if (layerId === OSM_LAYOUT_GRID_COORD_NORMALIZE_LAYER_ID) {
+          Object.assign(persist, {
+            spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
+            spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
+            spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
+            spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
+            processedJsonData: layer.processedJsonData,
+            dashboardData: layer.dashboardData,
+            drawJsonData: layer.drawJsonData,
+            dataOSM: layer.dataOSM,
+            dataTableData: layer.dataTableData,
+            layerInfoData: layer.layerInfoData,
+            highlightedSegmentIndex: layer.highlightedSegmentIndex,
+            showStationPlacement: layer.showStationPlacement,
+          });
+        }
+        saveLayerState(layerId, persist);
         return;
       }
 
