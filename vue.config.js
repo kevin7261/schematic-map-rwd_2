@@ -111,7 +111,7 @@ module.exports = defineConfig({
         }
       });
 
-      /** osm_2_geojson_2_json：`public/data/layers/{groupName}/{layerId}/` → Upper 三分頁 fetch */
+      /** 以下 API 仍保留於 devServer，前端已不再呼叫（路網成品改存圖層 dataOSM／dataGeojson／dataJson）。 */
       devServer.app.post('/api/save-osm2-geojson-2-json-artifacts', (req, res) => {
         try {
           const body = req.body || {};

@@ -10,13 +10,11 @@ export {
   parseLocalOsmXmlStringToRouteLoadResult,
 } from './pipeline.js';
 export {
-  encodeOsm2ArtifactsDirForDataUrl,
-  schedulePersistOsm2GeojsonArtifacts,
-} from './artifactPersist.js';
-export {
   mergeOsm2GeojsonLoaderResultIntoLayer,
+  assignOsm2LayerViewerFields,
   getOsm2GeojsonPersistPatchAfterLoaderMerge,
   applyOsm2GeojsonRouteFieldsFromGeojsonData,
   syncOsm2LayerDerivedGeoJsonAndScheduleArtifactsPersist,
 } from './layerMerge.js';
+export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
 export { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from './executeOsmGeojsonToTaipeiSn4ASpaceGrid.js';

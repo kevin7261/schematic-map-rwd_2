@@ -50,6 +50,9 @@
         dataStore.saveLayerState(OSM_PIPELINE_LAYER_ID, {
           jsonData: ly.jsonData,
           geojsonData: ly.geojsonData,
+          dataOSM: ly.dataOSM,
+          dataGeojson: ly.dataGeojson,
+          dataJson: ly.dataJson,
         });
       };
       // 為每個圖層存儲獨立的地圖狀態

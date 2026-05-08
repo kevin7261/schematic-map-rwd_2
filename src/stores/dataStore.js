@@ -150,7 +150,7 @@ import {
   executeOsmGeojsonToTaipeiSn4A,
 } from '../utils/dataExecute/index.js';
 import { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../utils/layers/osm_2_geojson_2_json/executeOsmGeojsonToTaipeiSn4ASpaceGrid.js';
-import { schedulePersistOsm2GeojsonArtifacts } from '../utils/layers/osm_2_geojson_2_json/artifactPersist.js';
+import { assignOsm2LayerViewerFields } from '../utils/layers/osm_2_geojson_2_json/layerMerge.js';
 import {
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
@@ -292,6 +292,9 @@ export const useDataStore = defineStore(
             display: true,
             highlightedSegmentIndex: null,
             squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
             upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
           },
         ],
@@ -2116,7 +2119,7 @@ export const useDataStore = defineStore(
           layer.dataTableData = result.dataTableData;
           layer.dashboardData = result.dashboardData;
           layer.layerInfoData = result.layerInfoData;
-          /** 空字串載入（無 osmFileName）不可覆寫本機載入尚在 session 的 XML，否則 dev 持久化會少寫 source.osm */
+          /** 本機載入之 OSM 原文保留於 session，供未帶 sourceOsmXmlText 之載入路徑沿用 */
           if (
             layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID &&
             typeof result.sourceOsmXmlText === 'string' &&
@@ -2131,6 +2134,13 @@ export const useDataStore = defineStore(
           // 生成繪製數據
           if (layer.processToDrawData && layer.processedJsonData) {
             layer.drawJsonData = layer.processToDrawData(layer.processedJsonData);
+          }
+
+          if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID) {
+            assignOsm2LayerViewerFields(layer, {
+              sourceOsmXmlText:
+                typeof result.sourceOsmXmlText === 'string' ? result.sourceOsmXmlText : '',
+            });
           }
 
           layer.isLoaded = true;
@@ -2179,14 +2189,10 @@ export const useDataStore = defineStore(
             dashboardData: layer.dashboardData,
             layerInfoData: layer.layerInfoData,
             trafficData: layer.trafficData,
+            dataOSM: layer.dataOSM,
+            dataGeojson: layer.dataGeojson,
+            dataJson: layer.dataJson,
           });
-          if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID) {
-            schedulePersistOsm2GeojsonArtifacts({
-              groupName: findGroupNameByLayerId(layerId),
-              layer,
-              sourceOsmXmlText: result.sourceOsmXmlText,
-            });
-          }
         } catch (error) {
           console.error(`❌ 載入圖層 "${layer.layerName}" 失敗:`, error);
           /** OSM／可空載入圖層：維持使用者已開啟之可見狀態，不因無檔／請求失敗而自動關閉 */

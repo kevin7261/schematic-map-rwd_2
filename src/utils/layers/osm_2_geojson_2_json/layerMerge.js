@@ -1,8 +1,44 @@
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '@/utils/mapDrawnRoutesImport.js';
 
-import { schedulePersistOsm2GeojsonArtifacts } from './artifactPersist.js';
-import { LAYER_ID } from './sessionOsmXml.js';
+import { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
+import { LAYER_ID, getOsm2GeojsonSessionOsmXml } from './sessionOsmXml.js';
 import { geojson_2_json } from './pipeline.js';
+
+/**
+ * 同步圖層上的 Upper 三分頁資料（不入檔、僅記憶體）。
+ * @param {object} layer
+ * @param {{ sourceOsmXmlText?: string, forceSyntheticOsm?: boolean }} [options]
+ */
+export function assignOsm2LayerViewerFields(layer, options = {}) {
+  if (!layer || layer.layerId !== LAYER_ID) return;
+  const { sourceOsmXmlText = '', forceSyntheticOsm = false } = options;
+  layer.dataJson = layer.jsonData ?? null;
+  layer.dataGeojson = layer.geojsonData ?? null;
+
+  const gj = layer.geojsonData;
+  const hasGj = gj?.features?.length > 0;
+  let osm = '';
+
+  if (forceSyntheticOsm) {
+    osm = hasGj ? minimalOsmXmlFromLonLatFeatureCollection(gj) : '';
+    if (!osm.trim()) {
+      const sess = getOsm2GeojsonSessionOsmXml();
+      if (sess?.trim()) osm = sess;
+    }
+    layer.dataOSM = osm.trim() ? osm : null;
+    return;
+  }
+
+  if (typeof sourceOsmXmlText === 'string' && sourceOsmXmlText.trim()) {
+    osm = sourceOsmXmlText;
+  } else if (getOsm2GeojsonSessionOsmXml()?.trim()) {
+    osm = getOsm2GeojsonSessionOsmXml();
+  }
+  if (!osm.trim() && hasGj) {
+    osm = minimalOsmXmlFromLonLatFeatureCollection(gj);
+  }
+  layer.dataOSM = osm.trim() ? osm : null;
+}
 
 /**
  * @param {object} layer
@@ -18,19 +54,14 @@ export function mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, persistence
   layer.layerInfoData = result.layerInfoData ?? null;
   layer.isLoaded = true;
   layer.isLoading = false;
-  if (
-    layer.layerId === LAYER_ID &&
-    persistence?.groupName &&
-    typeof persistence.groupName === 'string'
-  ) {
-    schedulePersistOsm2GeojsonArtifacts({
-      groupName: persistence.groupName,
-      layer,
-      sourceOsmXmlText:
-        typeof persistence.sourceOsmXmlText === 'string'
-          ? persistence.sourceOsmXmlText
-          : result?.sourceOsmXmlText,
-    });
+  const src =
+    typeof persistence?.sourceOsmXmlText === 'string' && persistence.sourceOsmXmlText.trim()
+      ? persistence.sourceOsmXmlText
+      : typeof result?.sourceOsmXmlText === 'string'
+        ? result.sourceOsmXmlText
+        : '';
+  if (layer.layerId === LAYER_ID) {
+    assignOsm2LayerViewerFields(layer, { sourceOsmXmlText: src });
   }
 }
 
@@ -41,6 +72,9 @@ export function getOsm2GeojsonPersistPatchAfterLoaderMerge(layer) {
     jsonData: layer.jsonData,
     processedJsonData: layer.processedJsonData,
     geojsonData: layer.geojsonData,
+    dataOSM: layer.dataOSM,
+    dataGeojson: layer.dataGeojson,
+    dataJson: layer.dataJson,
     dashboardData: layer.dashboardData,
     dataTableData: layer.dataTableData,
     layerInfoData: layer.layerInfoData,
@@ -62,6 +96,9 @@ export function applyOsm2GeojsonRouteFieldsFromGeojsonData(layer) {
   layer.dataTableData = result.dataTableData ?? null;
   layer.layerInfoData = result.layerInfoData ?? null;
   layer.jsonData = result.jsonData ?? null;
+  if (layer.layerId === LAYER_ID) {
+    assignOsm2LayerViewerFields(layer, {});
+  }
   return {
     processedJsonData: layer.processedJsonData,
     dashboardData: layer.dashboardData,
@@ -72,7 +109,7 @@ export function applyOsm2GeojsonRouteFieldsFromGeojsonData(layer) {
 }
 
 /**
- * MapTab 手繪／交叉後：依 jsonData 還原路線 LineString GeoJSON，`schedulePersist…` 仍會附帶 session 內之 OSM（若有）。
+ * MapTab 手繪／交叉後：依 jsonData 還原路線 LineString GeoJSON，並更新 dataOSM／dataGeojson／dataJson（由 GeoJSON 產生簡易 OSM XML）。
  *
  * @param {object} layer
  * @param {string|null|undefined} groupName
@@ -85,6 +122,6 @@ export function syncOsm2LayerDerivedGeoJsonAndScheduleArtifactsPersist(layer, gr
     Array.isArray(layer.jsonData) ? layer.jsonData : []
   );
   layer.geojsonData = gj;
-  schedulePersistOsm2GeojsonArtifacts({ groupName, layer });
+  assignOsm2LayerViewerFields(layer, { forceSyntheticOsm: true });
   return { geojsonData: gj };
 }
