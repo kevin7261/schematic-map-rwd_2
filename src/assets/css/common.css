@@ -397,6 +397,22 @@ body {
   background-color: var(--my-color-gray-200);
 }
 
+.my-btn-teal {
+  color: var(--my-color-white);
+  background-color: var(--my-color-teal);
+}
+
+.my-btn-teal:hover,
+.my-btn-teal:active {
+  color: var(--my-color-white);
+  background-color: var(--my-color-teal-hover);
+}
+
+.my-btn-teal:disabled {
+  color: var(--my-color-gray-600);
+  background-color: var(--my-color-gray-200);
+}
+
 .my-btn-blue {
   color: var(--my-color-white);
   background-color: var(--my-color-blue);

@@ -11,4 +11,5 @@ export {
   resolveB3InputSpaceNetwork,
   buildC3NetworkForCoordNormalize,
 } from './jsonGridCoordNormalizeHelpers.js';
+export { executeJsonGridOrthogonalStraighten } from './executeJsonGridOrthogonalStraighten.js';
 export { executeJsonGridCoordNormalize } from './executeJsonGridCoordNormalize.js';

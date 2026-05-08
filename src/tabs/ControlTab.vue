@@ -30,6 +30,7 @@
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
   import {
     JSON_GRID_COORD_NORMALIZED_LAYER_ID,
+    executeJsonGridOrthogonalStraighten,
     executeJsonGridCoordNormalize,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { getIcon } from '@/utils/utils.js';
@@ -3660,6 +3661,31 @@
     if (el) el.click();
   };
 
+  /** JSON·網格·座標正規化：Orthogonal layout（只產生水平／垂直段） */
+  const onJsonGridOrthogonalStraightenClick = async () => {
+    if (isExecuting.value) return;
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const result = await Promise.resolve(executeJsonGridOrthogonalStraighten());
+      if (!result?.ok) {
+        window.alert(
+          `路線水平直線化失敗：${result?.message || '請先開啟本圖層並確認有 dataJson 或 spaceNetworkGridJsonData。'}`
+        );
+      } else if (result.skippedEdges > 0) {
+        window.alert(
+          `路線水平直線化已完成，但有 ${result.skippedEdges} 段因會產生新交叉或重疊而保留原狀。`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
   /** JSON·網格·座標正規化（本層 b→c→d，單鍵） */
   const onJsonGridCoordNormalizeClick = async () => {
     if (isExecuting.value) return;
@@ -6443,12 +6469,19 @@
           </ol>
         </div>
 
-        <!-- JSON·網格·座標正規化：單鍵 b→c→d -->
+        <!-- JSON·網格·座標正規化：Orthogonal layout + b→c→d -->
         <div
           v-if="layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID"
           class="pb-3 mb-3 border-bottom"
         >
-          <div class="my-title-xs-gray pb-2">座標正規化</div>
+          <div class="my-title-xs-gray pb-2">路網處理</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            @click="onJsonGridOrthogonalStraightenClick"
+          >
+            路線水平直線化（Orthogonal layout）
+          </button>
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue"
@@ -6457,9 +6490,14 @@
             座標正規化（本層 dataJson／路網 → d3）
           </button>
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.55">
-            <strong>開啟本圖層</strong>會自動自「OSM → GeoJSON → JSON」複製 <code class="small">dataJson</code>／<code class="small">geojsonData</code>。<br>
-            按鈕一次完成本層 <strong>b→c→d</strong>（內含直線化與 <code class="small">buildTaipeiD3FromC3Network</code>），只使用<strong>本圖層</strong>資料；成功後將 d3 路網經
-            <code class="small">minimalOsmXmlFromLonLatFeatureCollection</code> 寫入本層 <code class="small">dataOSM</code>。
+            <strong>開啟本圖層</strong>會自動自「OSM → GeoJSON → JSON」複製
+            <code class="small">dataJson</code>／<code class="small">geojsonData</code>。<br />
+            <strong>路線水平直線化</strong>只使用本圖層資料，將可安全處理的路段改為水平／垂直；若會產生新交叉或路線重疊，該段保留原狀。<br />
+            <strong>座標正規化</strong>一次完成本層 <strong>b→c→d</strong>（若已做 Orthogonal layout，會直接以其結果接
+            <code class="small">buildTaipeiD3FromC3Network</code
+            >），只使用<strong>本圖層</strong>資料；成功後將 d3 路網經
+            <code class="small">minimalOsmXmlFromLonLatFeatureCollection</code> 寫入本層
+            <code class="small">dataOSM</code>。
           </div>
         </div>
 

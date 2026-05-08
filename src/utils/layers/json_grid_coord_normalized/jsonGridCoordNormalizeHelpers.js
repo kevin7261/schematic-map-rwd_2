@@ -29,9 +29,7 @@ export function lineStringFeatureCollectionFromSpaceNetwork(spaceNetworkJsonData
     const routeName = String(seg.route_name ?? seg.name ?? 'Unknown');
     const wtags = seg.way_properties?.tags || {};
     const color =
-      typeof wtags.color === 'string' && wtags.color.trim() !== ''
-        ? wtags.color.trim()
-        : '#666666';
+      typeof wtags.color === 'string' && wtags.color.trim() !== '' ? wtags.color.trim() : '#666666';
     features.push({
       type: 'Feature',
       properties: {
@@ -72,11 +70,7 @@ export function resolveB3InputSpaceNetwork(coordLayer) {
 
   let geojsonForExport = null;
   const gj = coordLayer?.geojsonData;
-  if (
-    gj?.type === 'FeatureCollection' &&
-    Array.isArray(gj.features) &&
-    gj.features.length > 0
-  ) {
+  if (gj?.type === 'FeatureCollection' && Array.isArray(gj.features) && gj.features.length > 0) {
     geojsonForExport = gj;
   }
   if (!geojsonForExport?.features?.length) {
@@ -114,6 +108,13 @@ export function resolveB3InputSpaceNetwork(coordLayer) {
 export function buildC3NetworkForCoordNormalize(coordLayer) {
   const resolved = resolveB3InputSpaceNetwork(coordLayer);
   if (!resolved?.spaceNetwork?.length) return null;
+
+  if (
+    coordLayer?.dashboardData?.orthogonalLayout === true &&
+    coordLayer?.dashboardData?.orthogonalLayoutSafe === true
+  ) {
+    return { c3Network: resolved.spaceNetwork, resolved };
+  }
 
   const straightened = straightenSpaceNetworkAfterStrippingBlackStations(resolved.spaceNetwork);
   if (!straightened) {
