@@ -299,7 +299,8 @@ export const useDataStore = defineStore(
             geojsonLoader: loadOsmXmlAsGeoJsonForRoutes,
             processToDrawData: null,
             geojsonFileName: null,
-            osmFileName: 'taipei/taipei.osm',
+            /** 僅經 Control 本機選 .osm 載入後才有資料；無 osmFileName 時開圖層不請求伺服器（geojsonLoader 為空載入）。 */
+            osmFileName: null,
             jsonFileName: null,
             executeFunction: executeOsmGeojsonToTaipeiSn4ASpaceGrid,
             isDataLayer: true,
@@ -397,7 +398,8 @@ export const useDataStore = defineStore(
             geojsonLoader: loadOsmXmlAsGeoJsonForRoutes,
             processToDrawData: null,
             geojsonFileName: null,
-            osmFileName: 'taipei/taipei.osm',
+            /** 僅經 Control 本機選 .osm 載入；無檔名前開圖層不請求伺服器。 */
+            osmFileName: null,
             jsonFileName: null,
             executeFunction: executeOsmGeojsonToTaipeiSn4A,
             isDataLayer: true,

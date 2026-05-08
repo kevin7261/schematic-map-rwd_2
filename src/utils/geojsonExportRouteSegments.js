@@ -3,7 +3,12 @@
  * 輸出：{ routeName, color, segment: { start, stations, end }, routeCoordinates }[]
  */
 
-import { getGeoJsonFeatureTagProps, normalizeRouteSegmentEndpointType } from './geojsonRouteHelpers.js';
+import {
+  getGeoJsonFeatureTagProps,
+  normalizeRouteSegmentEndpointType,
+  routeIdFromGeoJsonWayTags,
+  ensureSegmentStationStrings,
+} from './geojsonRouteHelpers.js';
 
 function num(v) {
   return Number(v);
@@ -27,8 +32,65 @@ function routeDisplayNameFromFeature(feature) {
   return n != null && String(n).trim() !== '' ? String(n).trim() : '未命名路線';
 }
 
+/** 與 Point／polyline 頂點鍵一致（浮點誤差時仍對到 stations，以便填入 route_name_list） */
+const COORD_KEY_DECIMALS = 7;
+
 function coordTupleKey(coord) {
-  return `${num(coord[0])},${num(coord[1])}`;
+  if (!coord || coord.length < 2) return '';
+  const f = 10 ** COORD_KEY_DECIMALS;
+  const x = Math.round(num(coord[0]) * f) / f;
+  const y = Math.round(num(coord[1]) * f) / f;
+  return `${x},${y}`;
+}
+
+/**
+ * 切段匯出：每筆輸出路段給新 routeName／route_id，並依新名稱重算端點 route_name_list／connect_number／type
+ * @param {object[]} segments {@link exportRouteSegmentsFromGeoJson} 產物
+ * @param {{ emittedSegmentNamePrefix?: string }} [renameOpts]
+ */
+function applyEmittedSegmentRenamingAndRouteLists(segments, renameOpts) {
+  const prefix = renameOpts?.emittedSegmentNamePrefix ?? '手繪';
+  let i = 0;
+  for (const seg of segments) {
+    i += 1;
+    seg.routeName = `${prefix}_${String(i).padStart(2, '0')}`;
+    seg.route_id = `S${String(i).padStart(2, '0')}`;
+  }
+  /** @type {Map<string, Set<string>>} */
+  const keyToNames = new Map();
+  const addName = (lon, lat, name) => {
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || !name) return;
+    const k = coordTupleKey([lon, lat]);
+    if (!keyToNames.has(k)) keyToNames.set(k, new Set());
+    keyToNames.get(k).add(name);
+  };
+  for (const seg of segments) {
+    const n = seg.routeName;
+    const st = seg.segment;
+    addName(num(st.start.lon), num(st.start.lat), n);
+    addName(num(st.end.lon), num(st.end.lat), n);
+  }
+  const listAt = (lon, lat) => {
+    const k = coordTupleKey([lon, lat]);
+    return Array.from(keyToNames.get(k) ?? []).sort();
+  };
+  for (const seg of segments) {
+    const st = seg.segment;
+    const slon = num(st.start.lon);
+    const slat = num(st.start.lat);
+    const elon = num(st.end.lon);
+    const elat = num(st.end.lat);
+    st.start.route_name_list = listAt(slon, slat);
+    st.end.route_name_list = listAt(elon, elat);
+    st.start.connect_number = st.start.route_name_list.length;
+    st.end.connect_number = st.end.route_name_list.length;
+    st.start.type = normalizeRouteSegmentEndpointType(
+      st.start.connect_number > 1 ? 'intersection' : 'terminal'
+    );
+    st.end.type = normalizeRouteSegmentEndpointType(
+      st.end.connect_number > 1 ? 'intersection' : 'terminal'
+    );
+  }
 }
 
 /** 線段—點距離（垂直距離，t 箝在 [0,1]）；密頂點弧線須略寬，否則 HD_S 無法插入 walk */
@@ -77,8 +139,8 @@ function expandRouteCoordsWithStationsOnLine(coords, stations) {
     /** @type {{ t: number, x: number, y: number }[]} */
     const hits = [];
     for (const st of stationArr) {
-      const px = num(st.x_grid);
-      const py = num(st.y_grid);
+      const px = num(st.lon ?? st.x_grid);
+      const py = num(st.lat ?? st.y_grid);
       if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
       if (distPointToClosedSegmentSq(ax, ay, bx, by, px, py) > dMaxSq) continue;
       const t = paramAlongSegment01(ax, ay, bx, by, px, py);
@@ -99,23 +161,31 @@ function expandRouteCoordsWithStationsOnLine(coords, stations) {
 }
 
 function snapStation(s) {
+  const lon = num(s.lon ?? s.x_grid);
+  const lat = num(s.lat ?? s.y_grid);
+  const e = ensureSegmentStationStrings(s, lon, lat);
   return {
-    station_id: s.station_id,
-    station_name: s.station_name,
-    route_name_list: [...(s.route_name_list || [])],
-    x_grid: s.x_grid,
-    y_grid: s.y_grid,
+    station_id: e.station_id,
+    station_name: e.station_name,
+    route_name_list: [...(Array.isArray(s.route_name_list) ? s.route_name_list : [])],
+    lon,
+    lat,
     type: normalizeRouteSegmentEndpointType(s.type),
-    connect_number: s.connect_number,
+    connect_number: s.connect_number != null ? num(s.connect_number) : 0,
   };
 }
 
 /**
  * @param {*} geojson - GeoJSON FeatureCollection
+ * @param {{
+ *   renameEachEmittedSegment?: boolean,
+ *   emittedSegmentNamePrefix?: string,
+ * }} [options] — `renameEachEmittedSegment`：交叉點切段後每段為獨立路線名與 S01… 編號，不再沿用輸入之 routeName
  * @returns {Array<Object>}
  */
-export function exportRouteSegmentsFromGeoJson(geojson) {
+export function exportRouteSegmentsFromGeoJson(geojson, options = {}) {
   if (!geojson?.features || !Array.isArray(geojson.features)) return [];
+  const { renameEachEmittedSegment = false, emittedSegmentNamePrefix } = options;
 
   /** @type {Map<string, object>} */
   const stations = new Map();
@@ -128,36 +198,57 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
 
     if (geom.type === 'Point') {
       const t = getGeoJsonFeatureTagProps(feature);
-      const stName = t.station_name ?? t.name ?? props.station_name ?? props.name;
-      if (!stName || String(stName).trim() === '') continue;
       const c = geom.coordinates;
+      if (!Array.isArray(c) || c.length < 2) continue;
       const coord = [num(c[0]), num(c[1])];
       const key = coordTupleKey(coord);
+      const stNameRaw = t.station_name ?? t.name ?? props.station_name ?? props.name;
+      const nameTrim =
+        stNameRaw != null && String(stNameRaw).trim() !== '' ? String(stNameRaw).trim() : '';
       const sidRaw = t.station_id ?? props.station_id;
+      const sidTrim =
+        sidRaw != null && String(sidRaw).trim() !== '' ? String(sidRaw).trim() : '';
       const presetFromSketchAuto =
         props.sketch_sn4_auto_station === true &&
         (props.type === 'terminal' || props.type === 'intersection')
           ? props.type
           : undefined;
+      const merged = ensureSegmentStationStrings(
+        { station_id: sidTrim, station_name: nameTrim, route_name_list: [] },
+        coord[0],
+        coord[1],
+      );
       stations.set(key, {
-        station_id: sidRaw != null && String(sidRaw).trim() !== '' ? String(sidRaw) : '',
-        station_name: String(stName).trim(),
-        x_grid: coord[0],
-        y_grid: coord[1],
-        route_name_list: [],
+        ...merged,
+        lon: coord[0],
+        lat: coord[1],
         ...(presetFromSketchAuto ? { type: presetFromSketchAuto } : {}),
       });
     } else if (geom.type === 'LineString') {
       const routeName = routeDisplayNameFromFeature(feature);
       const color = routeLineColorFromFeature(feature);
+      const tprops = getGeoJsonFeatureTagProps(feature);
+      const props = feature.properties || {};
+      const routeId =
+        routeIdFromGeoJsonWayTags({
+          ...props,
+          ...tprops,
+        }) || '';
       const coords = (geom.coordinates || []).map((c) => [num(c[0]), num(c[1])]);
-      routes.push({ routeName, color, coords });
+      routes.push({ routeName, color, routeId, coords });
     } else if (geom.type === 'MultiLineString') {
       const routeName = routeDisplayNameFromFeature(feature);
       const color = routeLineColorFromFeature(feature);
+      const tprops = getGeoJsonFeatureTagProps(feature);
+      const props = feature.properties || {};
+      const routeId =
+        routeIdFromGeoJsonWayTags({
+          ...props,
+          ...tprops,
+        }) || '';
       for (const line of geom.coordinates || []) {
         const coords = line.map((c) => [num(c[0]), num(c[1])]);
-        routes.push({ routeName, color, coords });
+        routes.push({ routeName, color, routeId, coords });
       }
     }
   }
@@ -193,6 +284,7 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
     const route = routes[ri];
     const rName = route.routeName;
     const rColor = route.color;
+    const rRouteId = route.routeId != null ? String(route.routeId) : '';
     const routeStations = [];
     const walk = routeWalkCoords[ri];
     for (const coord of walk) {
@@ -219,16 +311,25 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
           currentMidStations = [];
         } else {
           const endNode = st;
-          const midStationsFormatted = currentMidStations.map((ms) => ({
-            station_id: ms.station_id,
-            station_name: ms.station_name,
-            x_grid: ms.x_grid,
-            y_grid: ms.y_grid,
-            type: 'normal',
-          }));
-          const midCoords = currentMidStations.map((ms) => [ms.x_grid, ms.y_grid]);
+          const midStationsFormatted = currentMidStations.map((ms) => {
+            const mlon = num(ms.lon ?? ms.x_grid);
+            const mlat = num(ms.lat ?? ms.y_grid);
+            const me = ensureSegmentStationStrings(ms, mlon, mlat);
+            return {
+              station_id: me.station_id,
+              station_name: me.station_name,
+              lon: mlon,
+              lat: mlat,
+              type: 'normal',
+            };
+          });
+          const midCoords = currentMidStations.map((ms) => [
+            num(ms.lon ?? ms.x_grid),
+            num(ms.lat ?? ms.y_grid),
+          ]);
 
           outputSegments.push({
+            route_id: rRouteId,
             routeName: rName,
             color: rColor,
             segment: {
@@ -237,9 +338,12 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
               end: snapStation(endNode),
             },
             routeCoordinates: [
-              [currentSegmentStart.x_grid, currentSegmentStart.y_grid],
+              [
+                num(currentSegmentStart.lon ?? currentSegmentStart.x_grid),
+                num(currentSegmentStart.lat ?? currentSegmentStart.y_grid),
+              ],
               midCoords,
-              [endNode.x_grid, endNode.y_grid],
+              [num(endNode.lon ?? endNode.x_grid), num(endNode.lat ?? endNode.y_grid)],
             ],
           });
           currentSegmentStart = endNode;
@@ -249,6 +353,10 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
         currentMidStations.push(st);
       }
     }
+  }
+
+  if (renameEachEmittedSegment && outputSegments.length > 0) {
+    applyEmittedSegmentRenamingAndRouteLists(outputSegments, { emittedSegmentNamePrefix });
   }
 
   return outputSegments;

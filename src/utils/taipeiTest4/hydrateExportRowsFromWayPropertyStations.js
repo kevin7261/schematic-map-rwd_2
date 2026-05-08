@@ -210,12 +210,17 @@ export function hydrateExportRowsFromWayPropertyStations(geojson, rows) {
     if (!seg) continue;
     if (!Array.isArray(seg.stations)) seg.stations = [];
     const k = coordKeyXYPrecise(st.lng, st.lat);
-    if (seg.stations.some((x) => coordKeyXYPrecise(x.x_grid, x.y_grid) === k)) continue;
+    if (
+      seg.stations.some((x) =>
+        coordKeyXYPrecise(x.lon ?? x.x_grid, x.lat ?? x.y_grid) === k
+      )
+    )
+      continue;
     seg.stations.push({
       station_id: st.station_id,
       station_name: st.station_name,
-      x_grid: st.lng,
-      y_grid: st.lat,
+      lon: st.lng,
+      lat: st.lat,
     });
   }
 
@@ -231,8 +236,8 @@ export function hydrateExportRowsFromWayPropertyStations(geojson, rows) {
     if (chain.length < 2) continue;
     seg.stations.sort(
       (a, b) =>
-        sortKeyAlongCoordsChain(chain, num(a.x_grid), num(a.y_grid)) -
-        sortKeyAlongCoordsChain(chain, num(b.x_grid), num(b.y_grid))
+        sortKeyAlongCoordsChain(chain, num(a.lon ?? a.x_grid), num(a.lat ?? a.y_grid)) -
+        sortKeyAlongCoordsChain(chain, num(b.lon ?? b.x_grid), num(b.lat ?? b.y_grid))
     );
   }
 }

@@ -2569,7 +2569,8 @@
   const openNetworkDrawSketchRoutesJsonPicker = (layerId) => {
     networkDrawSketchImportTargetLayerId.value = layerId;
     nextTick(() => {
-      document.getElementById('network-draw-sketch-routes-json-input')?.click();
+      const el = document.getElementById('network-draw-sketch-routes-json-input');
+      if (el) el.click();
     });
   };
 
@@ -3680,19 +3681,9 @@
     layer.isLoading = false;
   };
 
-  const onTaipeiOsmSn4OsmPathCommit = (layer, raw) => {
-    const v = typeof raw === 'string' ? raw.trim() : '';
-    layer.osmFileName = v || null;
-    dataStore.saveLayerState(layer.layerId, { osmFileName: layer.osmFileName });
-  };
-
-  const onTaipeiOsmSn4ReloadFromPublicData = async (layer) => {
-    if (!layer.visible) return;
-    await dataStore.reloadLayer(layer.layerId);
-  };
-
   const onTaipeiOsmSn4PickLocalFileClick = () => {
-    document.getElementById('taipei-osm-sn4-local-file-input')?.click();
+    const el = document.getElementById('taipei-osm-sn4-local-file-input');
+    if (el) el.click();
   };
 
   const onTaipeiOsmSn4LocalFileInputChange = async (event) => {
@@ -3725,14 +3716,9 @@
     }
   };
 
-  const onTaipeiOsmSpaceGridOsmPathCommit = (layer, raw) => {
-    const v = typeof raw === 'string' ? raw.trim() : '';
-    layer.osmFileName = v || null;
-    dataStore.saveLayerState(layer.layerId, { osmFileName: layer.osmFileName });
-  };
-
   const onTaipeiOsmSpaceGridPickLocalFileClick = () => {
-    document.getElementById('taipei-osm-space-grid-local-file-input')?.click();
+    const el = document.getElementById('taipei-osm-space-grid-local-file-input');
+    if (el) el.click();
   };
 
   const onTaipeiOsmSpaceGridLocalFileInputChange = async (event) => {
@@ -6396,34 +6382,12 @@
           </button>
         </div>
 
-        <!-- taipei_osm_geojson_sn4：指定 osmFileName／從 data 載入或本機選檔 -->
+        <!-- taipei_osm_geojson_sn4：本機 .osm -->
         <div
           v-if="layer.layerId === 'taipei_osm_geojson_sn4'"
           class="pb-3 mb-3 border-bottom"
         >
-          <div class="my-title-xs-gray pb-2">OSM 來源</div>
-          <label class="my-font-size-xs text-muted d-block mb-1"
-            >相對於網站 data 目錄的路徑（例：taipei/taipei.osm）</label
-          >
-          <input
-            type="text"
-            class="form-control form-control-sm mb-2"
-            :value="layer.osmFileName || ''"
-            placeholder="taipei/taipei.osm"
-            @change="onTaipeiOsmSn4OsmPathCommit(layer, $event.target.value)"
-          />
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
-            :disabled="
-              !layer.visible ||
-              layer.isLoading ||
-              !(layer.osmFileName && String(layer.osmFileName).trim())
-            "
-            @click="onTaipeiOsmSn4ReloadFromPublicData(layer)"
-          >
-            依路徑從 /data/ 重新載入
-          </button>
+          <div class="my-title-xs-gray pb-2">OSM 來源（本機檔）</div>
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
@@ -6433,92 +6397,51 @@
             選擇本機 .osm 並讀入
           </button>
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.45">
-            本機選檔會將檔名寫入 osmFileName 並直接解析；「依路徑載入」需先開啟本圖層開關，且檔案須存在於
-            public/data 對應路徑。
+            僅支援由本機選檔載入 OSM XML；無選檔前圖層為空載入。
           </div>
         </div>
 
-        <!-- osm_2_geojson_2_json：指定 osmFileName／本機選檔 -->
+        <!-- osm_2_geojson_2_json：本機 .osm -->
         <div
           v-if="layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID"
           class="pb-3 mb-3 border-bottom"
         >
-          <label class="my-font-size-xs text-muted d-block mb-1"
-            >相對於網站 data 目錄的路徑（例：taipei/taipei.osm）</label
-          >
-          <input
-            type="text"
-            class="form-control form-control-sm mb-2"
-            :value="layer.osmFileName || ''"
-            placeholder="taipei/taipei.osm"
-            @change="onTaipeiOsmSpaceGridOsmPathCommit(layer, $event.target.value)"
-          />
+          <div class="my-title-xs-gray pb-2">OSM 來源（本機檔）</div>
           <button
             type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
             :disabled="layer.isLoading"
             @click="onTaipeiOsmSpaceGridPickLocalFileClick"
           >
             選擇本機 .osm 並讀入
           </button>
-          <div class="my-title-xs-gray pt-3 pb-1">執行步驟（函式呼叫順序）</div>
-          <div class="my-font-size-xs text-muted mb-1">開圖層（依 <code class="small">osmFileName</code> 從 <code class="small">/data/</code> 載入）</div>
+          <div class="text-muted mb-3" style="font-size: 11px; line-height: 1.45">
+            僅支援本機選檔；無選檔時開啟圖層不會請求伺服器資料。
+          </div>
+          <div class="my-title-xs-gray pb-1">流程說明（本機選檔）</div>
           <ol class="my-font-size-xs text-muted mb-2 ps-3" style="line-height: 1.55">
             <li>
-              <strong>取得 XML 全文</strong>：Store 呼叫圖層的 <code class="small">geojsonLoader</code> →
-              <code class="small">loadOsmXmlAsGeoJsonForRoutes</code>（<code class="small"
-                >dataProcessor.js</code
-              >）向公開目錄讀檔並得到字串。
+              <strong>讀檔並快取 XML</strong>：<code class="small">setOsm2GeojsonSessionOsmXml</code> 寫入本次執行期間 OSM
+              字串；檔名寫入 <code class="small">osmFileName</code>。
             </li>
             <li>
-              <strong>串接本圖層轉換管線</strong>：動態載入
-              <code class="small">osmXmlToOsm2GeojsonLoaderResult</code>（<code class="small"
-                >osm_2_geojson_2_json/pipeline.js</code
-              >），把 XML 一次走完「GeoJSON + 衍生欄位 + 路段陣列」邏輯。
+              <strong>XML → GeoJSON + 表格 + 路段陣列</strong>：<code class="small"
+                >osmXmlToOsm2GeojsonLoaderResult</code
+              >
+              （<code class="small">osm_2_geojson_2_json/pipeline.js</code>）。
             </li>
             <li>
-              <strong>XML → 路網 FeatureCollection</strong>：<code class="small">osm_2_geojson</code> 內呼叫
-              <code class="small">osmXmlStringToGeoJsonFeatureCollection</code>（<code class="small"
-                >osmXmlToGeoJson.js</code
-              >），產出 <code class="small">geojsonData</code>（點／線、properties／tags）。
+              <strong>合併至圖層</strong>：<code class="small">mergeOsm2GeojsonLoaderResultIntoLayer</code>
+              （<code class="small">layerMerge.js</code>）更新
+              <code class="small">geojsonData</code>／<code class="small">jsonData</code>／儀表等。
             </li>
             <li>
-              <strong>GeoJSON → 表格／儀表／路段 JSON</strong>：<code class="small">geojson_2_json</code> 內先
-              <code class="small">buildStandardRouteGeoJsonLoadResult</code> 建路線摘要表，再以
-              <code class="small">exportRouteSegmentsFromGeoJson</code> 產出頂層路段陣列寫入
-              <code class="small">jsonData</code>。
-            </li>
-            <li>
-              <strong>寫回圖層並保留 XML 供檢視</strong>：Pinia 合併回傳欄位至當前 layer；若有
-              <code class="small">sourceOsmXmlText</code> 則
-              <code class="small">setOsm2GeojsonSessionOsmXml</code>（<code class="small"
-                >sessionOsmXml.js</code
-              >）存進 session，供 Upper「osm-viewer」顯示原文。
-            </li>
-          </ol>
-          <div class="my-font-size-xs text-muted mb-1">本機選檔（下方「選擇本機 .osm」）</div>
-          <ol class="my-font-size-xs text-muted mb-2 ps-3" style="line-height: 1.55" start="6">
-            <li>
-              <strong>讀檔並快取 XML</strong>：<code class="small">setOsm2GeojsonSessionOsmXml</code> 寫入本次執行期間的
-              OSM 字串，並以檔名作為 <code class="small">osmFileName</code>。
-            </li>
-            <li>
-              <strong>與開圖層相同的轉換結果</strong>：<code class="small">osmXmlToOsm2GeojsonLoaderResult</code> 產出與上列
-              2～4 相同形狀的物件。
-            </li>
-            <li>
-              <strong>立即合併到記憶體中的 layer</strong>：<code class="small">mergeOsm2GeojsonLoaderResultIntoLayer</code>（<code
-                class="small"
-                >layerMerge.js</code
-              >）更新 <code class="small">geojsonData</code>、<code class="small">jsonData</code>、儀表等，不經由「關圖再開」。
-            </li>
-            <li>
-              <strong>持久化</strong>：<code class="small">getOsm2GeojsonPersistPatchAfterLoaderMerge</code> 組出可存狀態 →
-              <code class="small">saveLayerState</code> 寫入 Pinia 持久欄位。
+              <strong>持久化</strong>：<code class="small">getOsm2GeojsonPersistPatchAfterLoaderMerge</code> →
+              <code class="small">saveLayerState</code>
             </li>
           </ol>
           <div class="my-font-size-xs text-muted mb-1">圖層「執行下一步」</div>
-          <ol class="my-font-size-xs text-muted mb-0 ps-3" style="line-height: 1.55" start="10">
+          <ol class="my-font-size-xs text-muted mb-0 ps-3" style="line-height: 1.55" start="5">
             <li>
               <strong>複製 GeoJSON 至下游圖層</strong>：<code class="small">executeOsmGeojsonToTaipeiSn4ASpaceGrid</code>（<code
                 class="small"
@@ -6528,8 +6451,6 @@
             </li>
           </ol>
         </div>
-
-        <!-- 🎯 網格預覽區域（僅在網格示意圖測試圖層顯示） -->
         <div v-if="isCurrentLayerGridSchematic" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">網格預覽</div>
           <div class="d-flex justify-content-center">

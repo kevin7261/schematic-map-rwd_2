@@ -23,6 +23,7 @@ import {
   isGeoJsonWayLineFeature,
 } from './geojsonRouteHelpers.js';
 import { osmXmlStringToGeoJsonFeatureCollection } from './osmXmlToGeoJson.js';
+import { exportRouteSegmentsFromGeoJson } from './geojsonExportRouteSegments.js';
 
 /**
  * 📊 數據處理核心模組 (Data Processing Core Module)
@@ -544,13 +545,27 @@ export async function loadGeoJsonForRoutes(layer) {
  * 讀取 public/data 下 .osm XML，於瀏覽器轉成路網 GeoJSON，欄位與 loadGeoJsonForRoutes 一致。
  *
  * @param {Object} layer
- * @param {string} layer.osmFileName - 相對於 /data/ 的檔名，例如 taipei/taipei.osm
+ * @param {string} [layer.osmFileName] - 相對於 /data/ 的檔名；未設定或空白時不發請求，回傳空路網
  */
 export async function loadOsmXmlAsGeoJsonForRoutes(layer) {
   try {
-    const fileName = layer.osmFileName;
-    if (!fileName) {
-      throw new Error('圖層未設定 osmFileName');
+    const fileName = layer?.osmFileName;
+    if (!fileName || String(fileName).trim() === '') {
+      const emptyFc = { type: 'FeatureCollection', features: [] };
+      if (layer?.layerId === 'osm_2_geojson_2_json') {
+        const base = buildStandardRouteGeoJsonLoadResult(emptyFc);
+        const routeExportRows = exportRouteSegmentsFromGeoJson(emptyFc);
+        return {
+          ...base,
+          jsonData: routeExportRows,
+          processedJsonData: null,
+          sourceOsmXmlText: '',
+        };
+      }
+      return {
+        ...buildStandardRouteGeoJsonLoadResult(emptyFc),
+        sourceOsmXmlText: undefined,
+      };
     }
     const baseUrl = process.env.BASE_URL || '/';
     const dataPath = `${baseUrl}data/${fileName}`;

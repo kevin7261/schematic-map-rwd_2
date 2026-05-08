@@ -11,7 +11,7 @@ import {
 
 /**
  * @param {*} geojson - FeatureCollection
- * @param {{ forceCoordinateRouteSegments?: boolean }} [options] — 為 true 時略過 Colab 1-1，改用與 Python `export_route_segments` 相同之座標比對（含 `segment.stations`）。
+ * @param {{ forceCoordinateRouteSegments?: boolean, renameEachEmittedSegment?: boolean, emittedSegmentNamePrefix?: string }} [options]
  * @returns {{ rows: Array, colabMeta: object | null, linearizeAlgorithm: string }}
  */
 export function exportTaipeiA3GeojsonToB3Rows(geojson, options = {}) {
@@ -25,7 +25,7 @@ export function exportTaipeiA3GeojsonToB3Rows(geojson, options = {}) {
     };
   }
   return {
-    rows: exportRouteSegmentsFromGeoJson(geojson),
+    rows: exportRouteSegmentsFromGeoJson(geojson, options),
     colabMeta: null,
     linearizeAlgorithm: 'coordinate_match',
   };

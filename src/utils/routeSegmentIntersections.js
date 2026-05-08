@@ -1,4 +1,8 @@
 import { expandLonLatChainFromRouteCoordinates } from '@/utils/mapDrawnRoutesImport.js';
+import {
+  fallbackStationIdFromLonLat,
+  ensureSegmentStationStrings,
+} from '@/utils/geojsonRouteHelpers.js';
 
 const LON_LAT_VERTEX_TOL_SQ = (4e-6) ** 2; // ~0.4–0.45 m scale，用於判定「頂點已存在／重疊」
 const SAME_POINT_TOL_SQ = (8e-7) ** 2; // 合併重複交叉候選點
@@ -35,12 +39,15 @@ function cloneNode(obj) {
 }
 
 export function makeIntersectionStation(lon, lat) {
+  const lo = Number(lon);
+  const la = Number(lat);
+  const fb = fallbackStationIdFromLonLat(lo, la);
   return {
-    station_id: '',
-    station_name: '',
+    station_id: fb,
+    station_name: `交叉點_${fb}`,
     route_name_list: [],
-    x_grid: lon,
-    y_grid: lat,
+    lon: lo,
+    lat: la,
     type: 'intersection',
     connect_number: 2,
   };
@@ -58,21 +65,29 @@ export function buildRouteExportRowFromChain(chain, routeName, color, startNode,
   for (let i = 1; i < chain.length - 1; i++) {
     const pt = chain[i];
     bendCoords.push([pt[0], pt[1]]);
+    const ensured = ensureSegmentStationStrings({}, pt[0], pt[1]);
     stations.push({
-      station_id: '',
-      station_name: '',
-      x_grid: pt[0],
-      y_grid: pt[1],
+      station_id: ensured.station_id,
+      station_name: ensured.station_name,
+      lon: pt[0],
+      lat: pt[1],
       type: 'normal',
     });
   }
   const s0 = cloneNode(startNode);
   const e0 = cloneNode(endNode);
-  s0.x_grid = startPt[0];
-  s0.y_grid = startPt[1];
-  e0.x_grid = endPt[0];
-  e0.y_grid = endPt[1];
+  delete s0.x_grid;
+  delete s0.y_grid;
+  delete e0.x_grid;
+  delete e0.y_grid;
+  s0.lon = startPt[0];
+  s0.lat = startPt[1];
+  e0.lon = endPt[0];
+  e0.lat = endPt[1];
+  Object.assign(s0, ensureSegmentStationStrings(s0, s0.lon, s0.lat));
+  Object.assign(e0, ensureSegmentStationStrings(e0, e0.lon, e0.lat));
   const row = {
+    route_id: meta.route_id != null ? String(meta.route_id) : '',
     routeName: routeName || '路線',
     color: typeof color === 'string' && color.trim() !== '' ? color.trim() : '#666666',
     segment: {
@@ -111,7 +126,7 @@ export function splitRouteRowAtEdgeInterior(row, edgeIndexK, qlon, qlat) {
   const seg = row.segment || {};
   const rn = row.routeName || '路線';
   const col = row.color;
-  const meta = { _drawn: row._drawn, _drawnAt: row._drawnAt };
+  const meta = { _drawn: row._drawn, _drawnAt: row._drawnAt, route_id: row.route_id ?? '' };
 
   const leftRow = buildRouteExportRowFromChain(leftChain, rn, col, seg.start || {}, inter, meta);
   const rightRow = buildRouteExportRowFromChain(rightChain, rn, col, inter, seg.end || {}, meta);

@@ -3,7 +3,7 @@
  * 並轉成 SpaceNetworkGridTab 可繪製的 Normalize segments（points + properties_start/end + way_properties）。
  */
 
-import { normalizeRouteSegmentEndpointType } from './geojsonRouteHelpers.js';
+import { normalizeRouteSegmentEndpointType, routeIdFromGeoJsonWayTags, ensureSegmentStationStrings } from './geojsonRouteHelpers.js';
 
 /** GeoJSON feature.properties 可能為 { tags } 或已扁平 */
 function flatFeatureProps(feature) {
@@ -35,18 +35,27 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
     const props = flatFeatureProps(feature);
 
     if (geom.type === 'Point') {
-      const stName = props.station_name ?? props.name;
-      if (!stName) continue;
       const c = geom.coordinates;
       if (!Array.isArray(c) || c.length < 2) continue;
-      const lon = c[0];
-      const lat = c[1];
+      const lon = Number(c[0]);
+      const lat = Number(c[1]);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
       const key = coordKey(lon, lat);
+      const nameRaw = props.station_name ?? props.name;
+      const nameTrim =
+        nameRaw != null && String(nameRaw).trim() !== '' ? String(nameRaw).trim() : '';
+      const sidRaw = props.station_id;
+      const sidTrim =
+        sidRaw != null && String(sidRaw).trim() !== '' ? String(sidRaw).trim() : '';
+      const merged = ensureSegmentStationStrings(
+        { station_id: sidTrim, station_name: nameTrim, route_name_list: [] },
+        lon,
+        lat,
+      );
       stations.set(key, {
-        station_id: props.station_id ?? '',
-        station_name: stName,
-        x_grid: lon,
-        y_grid: lat,
+        ...merged,
+        lon,
+        lat,
         route_name_list: [],
       });
     } else if (geom.type === 'LineString') {
@@ -54,9 +63,11 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
       if (coords.length < 2) continue;
       const routeName = props.name ?? props.route_name ?? '未命名路線';
       const color = props.color ?? '#000000';
+      const routeId = routeIdFromGeoJsonWayTags(props) || '';
       routes.push({
         routeName,
         color,
+        routeId,
         coordPairs: coords,
       });
     }
@@ -87,6 +98,7 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
   for (const route of routes) {
     const rName = route.routeName;
     const rColor = route.color;
+    const rRouteId = route.routeId != null ? String(route.routeId) : '';
     const routeStations = [];
     for (const xy of route.coordPairs) {
       const key = coordKey(xy[0], xy[1]);
@@ -117,44 +129,55 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
           const midStationsFormatted = [];
           const midCoords = [];
           for (const ms of currentMidStations) {
+            const mlon = Number(ms.lon ?? ms.x_grid);
+            const mlat = Number(ms.lat ?? ms.y_grid);
+            const me = ensureSegmentStationStrings(ms, mlon, mlat);
             midStationsFormatted.push({
-              station_id: ms.station_id,
-              station_name: ms.station_name,
-              x_grid: ms.x_grid,
-              y_grid: ms.y_grid,
+              station_id: me.station_id,
+              station_name: me.station_name,
+              lon: mlon,
+              lat: mlat,
               type: 'normal',
             });
-            midCoords.push([ms.x_grid, ms.y_grid]);
+            midCoords.push([mlon, mlat]);
           }
 
+          const slon = Number(currentSegmentStart.lon ?? currentSegmentStart.x_grid);
+          const slat = Number(currentSegmentStart.lat ?? currentSegmentStart.y_grid);
+          const elon = Number(endNode.lon ?? endNode.x_grid);
+          const elat = Number(endNode.lat ?? endNode.y_grid);
+          const startE = ensureSegmentStationStrings(currentSegmentStart, slon, slat);
+          const endE = ensureSegmentStationStrings(endNode, elon, elat);
+
           const segmentData = {
+            route_id: rRouteId,
             routeName: rName,
             color: rColor,
             segment: {
               start: {
-                station_id: currentSegmentStart.station_id,
-                station_name: currentSegmentStart.station_name,
+                station_id: startE.station_id,
+                station_name: startE.station_name,
                 route_name_list: currentSegmentStart.route_name_list,
-                x_grid: currentSegmentStart.x_grid,
-                y_grid: currentSegmentStart.y_grid,
+                lon: slon,
+                lat: slat,
                 type: normalizeRouteSegmentEndpointType(currentSegmentStart.type),
                 connect_number: currentSegmentStart.connect_number,
               },
               stations: midStationsFormatted,
               end: {
-                station_id: endNode.station_id,
-                station_name: endNode.station_name,
+                station_id: endE.station_id,
+                station_name: endE.station_name,
                 route_name_list: endNode.route_name_list,
-                x_grid: endNode.x_grid,
-                y_grid: endNode.y_grid,
+                lon: elon,
+                lat: elat,
                 type: normalizeRouteSegmentEndpointType(endNode.type),
                 connect_number: endNode.connect_number,
               },
             },
             routeCoordinates: [
-              [currentSegmentStart.x_grid, currentSegmentStart.y_grid],
+              [slon, slat],
               midCoords,
-              [endNode.x_grid, endNode.y_grid],
+              [elon, elat],
             ],
           };
           outputSegments.push(segmentData);
@@ -173,16 +196,21 @@ export function exportRouteSegmentsFromGeoJson(geojson) {
 
 function stationToGridProps(st) {
   if (!st) return null;
+  const gx = st.lon ?? st.x_grid;
+  const gy = st.lat ?? st.y_grid;
+  const e = ensureSegmentStationStrings(st, gx, gy);
+  const sid = e.station_id;
+  const sna = e.station_name;
   return {
     type: 'node',
-    station_id: st.station_id ?? '',
-    station_name: st.station_name,
-    x_grid: st.x_grid,
-    y_grid: st.y_grid,
+    station_id: sid,
+    station_name: sna,
+    x_grid: gx,
+    y_grid: gy,
     tags: {
-      station_id: st.station_id ?? '',
-      station_name: st.station_name,
-      name: st.station_name,
+      station_id: sid,
+      station_name: sna,
+      name: sna,
     },
     node_type: 'connect',
     connect_number: st.connect_number,

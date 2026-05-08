@@ -81,10 +81,12 @@ export function buildTaipeiA3LoadLayerFieldsFromGeojson(geojson) {
 /**
  * executeTaipeiTest3_A3_To_B3 專用（僅原寫入 b3 之欄位）
  * @param {*} geojson - FeatureCollection
+ * @param {{ renameEachEmittedSegment?: boolean, emittedSegmentNamePrefix?: string }} [extraExportOptions]
  */
-export function buildTaipeiB3ExecuteLayerFieldsFromGeojson(geojson) {
+export function buildTaipeiB3ExecuteLayerFieldsFromGeojson(geojson, extraExportOptions = {}) {
   const { rows, flatSegs, computed, colabMeta, linearizeAlgorithm } = computeTaipeiA3NetworkFromGeojson(geojson, {
     forceCoordinateRouteSegments: true,
+    ...extraExportOptions,
   });
 
   return {

@@ -1,3 +1,5 @@
+import { ensureSegmentStationStrings } from './geojsonRouteHelpers.js';
+
 /**
  * 將 e 層「地圖路段匯出」JSON 陣列還原為 spaceNetworkGridJsonData 扁平 segments，
  * 並可再餵給 computeStationDataFromRoutes，使 taipei_f／taipei_g 讀檔後繪製與 taipei_e 一致。
@@ -218,15 +220,40 @@ export function expandLonLatChainFromRouteCoordinates(routeCoordinates) {
   return out;
 }
 
-function cloneConnectNode(obj, px, py) {
-  if (!obj || typeof obj !== 'object') {
-    return { node_type: 'connect', x_grid: px, y_grid: py, tags: {} };
+function normalizeNodeStationStrings(o, px, py) {
+  const ens = ensureSegmentStationStrings(
+    {
+      station_id: o.station_id ?? o.tags?.station_id ?? '',
+      station_name:
+        (o.station_name ?? o.tags?.station_name ?? o.tags?.name ?? '') ||
+        '',
+    },
+    px,
+    py,
+  );
+  o.station_id = ens.station_id;
+  o.station_name = ens.station_name;
+  if (!o.tags || typeof o.tags !== 'object') o.tags = {};
+  o.tags.station_id = ens.station_id;
+  o.tags.station_name = ens.station_name;
+  if (o.tags.name == null || String(o.tags.name).trim() === '') {
+    o.tags.name = ens.station_name;
   }
-  const o = cloneJson(obj);
-  o.node_type = 'connect';
-  o.x_grid = px;
-  o.y_grid = py;
-  o.tags = o.tags && typeof o.tags === 'object' ? { ...o.tags } : {};
+}
+
+function cloneConnectNode(obj, px, py) {
+  /** @type {Record<string, unknown>} */
+  let o;
+  if (!obj || typeof obj !== 'object') {
+    o = { node_type: 'connect', x_grid: px, y_grid: py, tags: {} };
+  } else {
+    o = cloneJson(obj);
+    o.node_type = 'connect';
+    o.x_grid = px;
+    o.y_grid = py;
+    o.tags = o.tags && typeof o.tags === 'object' ? { ...o.tags } : {};
+  }
+  normalizeNodeStationStrings(o, px, py);
   return o;
 }
 
@@ -290,8 +317,8 @@ function insertMapDrawnStationsIntoPolyline(points, stations) {
   const inserts = [];
   for (const st of stations) {
     if (!st || typeof st !== 'object') continue;
-    const sx = num(st.x_grid ?? st.tags?.x_grid);
-    const sy = num(st.y_grid ?? st.tags?.y_grid);
+    const sx = num(st.lon ?? st.x_grid ?? st.tags?.lon ?? st.tags?.x_grid);
+    const sy = num(st.lat ?? st.y_grid ?? st.tags?.lat ?? st.tags?.y_grid);
     if (!Number.isFinite(sx) || !Number.isFinite(sy)) continue;
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i];
@@ -325,8 +352,8 @@ function buildNodesAlignedToPoints(points, startObj, endObj, stations) {
   const stationByKey = new Map();
   for (const s of stations || []) {
     if (!s || typeof s !== 'object') continue;
-    const x = s.x_grid ?? s.tags?.x_grid;
-    const y = s.y_grid ?? s.tags?.y_grid;
+    const x = s.lon ?? s.x_grid ?? s.tags?.lon ?? s.tags?.x_grid;
+    const y = s.lat ?? s.y_grid ?? s.tags?.lat ?? s.tags?.y_grid;
     if (x == null || y == null) continue;
     stationByKey.set(pointKey(x, y), s);
   }
@@ -341,9 +368,14 @@ function buildNodesAlignedToPoints(points, startObj, endObj, stations) {
     } else if (i === n - 1) {
       nodes.push(cloneConnectNode(endObj, px, py));
     } else if (stationByKey.has(k)) {
-      nodes.push(cloneJson(stationByKey.get(k)));
+      const cloned = cloneJson(stationByKey.get(k));
+      normalizeNodeStationStrings(cloned, px, py);
+      nodes.push(cloned);
     } else {
-      nodes.push({ node_type: 'line', x_grid: px, y_grid: py, tags: {} });
+      /** @type {Record<string, unknown>} */
+      const bare = { node_type: 'line', x_grid: px, y_grid: py, tags: {} };
+      normalizeNodeStationStrings(bare, px, py);
+      nodes.push(bare);
     }
   }
   return nodes;
