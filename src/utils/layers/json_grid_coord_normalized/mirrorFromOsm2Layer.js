@@ -6,6 +6,7 @@
 import { LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID } from '../osm_2_geojson_2_json/sessionOsmXml.js';
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
 import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from './layerIds.js';
+import { syncJsonGridFromCoordNormalizedMirrorFromParent } from './mirrorFromCoordNormalizedLayer.js';
 
 /** 自 OSM 管線父圖層複製路段 JSON（dataJson）至座標正規化衍生圖層 */
 export function applyOsm2DataJsonSyncedLayerFromParent(findLayerById, derivedLayer) {
@@ -99,6 +100,7 @@ export function mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, save
   applyOsm2DataJsonSyncedLayerFromParent(findLayerById, layer);
   resetJsonGridCoordNormalizedPipelineFields(layer);
   saveLayerState(layer.layerId, jsonGridCoordNormalizedPersistPayload(layer, { omitLoadingFlags: true }));
+  syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, saveLayerState);
 }
 
 /** reloadLayer：鏡像、重置、標記載入完成並 persist */
@@ -108,6 +110,7 @@ export function reloadJsonGridCoordNormalizedLayer(findLayerById, saveLayerState
   layer.isLoaded = true;
   layer.isLoading = false;
   saveLayerState(layer.layerId, jsonGridCoordNormalizedPersistPayload(layer));
+  syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, saveLayerState);
 }
 
 /** OSM 管線父圖層載入後，同步鏡像至座標正規化圖層並 persist（可見時） */
@@ -125,4 +128,5 @@ export function syncOsm2DataJsonMirrorFromParent(findLayerById, saveLayerState) 
       layoutUniformGridMeta: layoutViewer.layoutUniformGridMeta ?? null,
     });
   }
+  syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, saveLayerState);
 }

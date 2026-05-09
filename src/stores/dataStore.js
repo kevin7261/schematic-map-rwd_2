@@ -162,6 +162,11 @@ import {
   syncOsm2DataJsonMirrorFromParent as syncOsm2DataJsonMirrorFromParentImpl,
 } from '../utils/layers/json_grid_coord_normalized/mirrorFromOsm2Layer.js';
 import {
+  mirrorResetAndPersistJsonGridFromCoordNormalized,
+  reloadJsonGridFromCoordNormalizedLayer,
+} from '../utils/layers/json_grid_coord_normalized/mirrorFromCoordNormalizedLayer.js';
+import { JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID } from '../utils/layers/json_grid_coord_normalized/layerIds.js';
+import {
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
 } from '../utils/networkDrawSketchPipelineLayers.js';
@@ -349,6 +354,49 @@ export const useDataStore = defineStore(
             jsonGridNeighborFixPersist: null,
             /** 與 {@link executeJsonGridCoordNormalize} 當次拓撲比對相同之 c3 路網（不可從現有 d3 反推，否則找不到錯邊） */
             jsonGridCoordNormalizeReferenceC3: null,
+          },
+          {
+            layerId: JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
+            layerName: '自座標正規化 dataJson（預留）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],
       },
@@ -2063,6 +2111,10 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
+      if (layer.visible && layer.layerId === JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID) {
+        mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
+      }
+
       // 🩹 修正：taipei_6_1_test2 的 dataTableData 欄位 schema 曾變更（改為 0-based，且由三連改為兩連，再改為單列/單行）
       // 若 Pinia persist 還留著舊資料（會出現 idx/idx1/idx2=203 之類的不存在座標，或舊的 pair/triplet schema），強制標記為未載入以觸發重新載入
       if (
@@ -3203,6 +3255,11 @@ export const useDataStore = defineStore(
 
       if (layerId === 'json_grid_coord_normalized') {
         reloadJsonGridCoordNormalizedLayer(findLayerById, saveLayerState, layer);
+        return;
+      }
+
+      if (layerId === JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID) {
+        reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }
 

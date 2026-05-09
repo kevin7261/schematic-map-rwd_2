@@ -3700,6 +3700,13 @@
     return jsonGridNeighborFixDisplayLines(lyr).length > 0;
   };
 
+  /** 須先完成「座標正規化」取得拓撲比對（非刪空欄列後之 skipped 占位）才可刪空欄列 */
+  const jsonGridPruneEmptyGridLinesEnabled = (lyr) => {
+    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return false;
+    const tc = lyr.dashboardData?.topologyCheck;
+    return !!(tc && !tc.skipped);
+  };
+
   const jsonGridTopologyCardToneClass = (lyr) => {
     const tc = lyr?.dashboardData?.topologyCheck;
     if (tc && !tc.skipped) {
@@ -3740,6 +3747,14 @@
   /** 刪除無 connect 之整欄／列並壓縮座標（對齊 taipei d3→e3 Proc2） */
   const onJsonGridPruneEmptyGridLinesClick = async () => {
     if (isExecuting.value) return;
+    const layNorm = dataStore.findLayerById('json_grid_coord_normalized');
+    const tc = layNorm?.dashboardData?.topologyCheck;
+    if (!tc || tc.skipped) {
+      window.alert(
+        '請先按「座標正規化」完成拓撲比對後，再使用「刪空欄列」。若曾刪過空欄列，請先再執行一次「座標正規化」。'
+      );
+      return;
+    }
     isExecuting.value = true;
     try {
       await nextTick();
@@ -6482,14 +6497,6 @@
           >
             座標正規化（本層 dataJson／路網 → d3）
           </button>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mt-2"
-            :disabled="isExecuting"
-            @click="onJsonGridPruneEmptyGridLinesClick"
-          >
-            刪空欄列（無 connect 之整欄／列 → 壓縮座標）
-          </button>
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.55">
             <strong>開啟本圖層</strong>會自動自「OSM → GeoJSON → JSON」複製
             <code class="small">dataJson</code>／<code class="small">geojsonData</code>。<br />
@@ -6612,6 +6619,21 @@
             >
               未偵測到錯邊時無法按下「修正」，也不會產生座標變更紀錄。若肉眼仍覺得站在鄰線另一側，可能是該點超出「近距離鄰線」掃描範圍，需手動調整或放寬演算法閾值。
             </div>
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mt-2"
+            :disabled="isExecuting || !jsonGridPruneEmptyGridLinesEnabled(layer)"
+            @click="onJsonGridPruneEmptyGridLinesClick"
+          >
+            刪空欄列（無 connect 之整欄／列 → 壓縮座標）
+          </button>
+          <div
+            v-if="!jsonGridPruneEmptyGridLinesEnabled(layer)"
+            class="text-muted mt-1"
+            style="font-size: 10px; line-height: 1.45"
+          >
+            完成「座標正規化」並顯示上方拓撲比對後，即可刪除無 connect 之整欄／列。
           </div>
         </div>
 
