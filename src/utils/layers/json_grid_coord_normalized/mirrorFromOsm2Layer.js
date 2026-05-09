@@ -1,5 +1,5 @@
 /**
- * 座標正規化圖層（json_grid_coord_normalized）：自 OSM→GeoJSON→JSON 父圖層鏡像 dataJson／重置管線欄位。
+ * 座標正規化圖層（json_grid_coord_normalized）：自 OSM→GeoJSON→JSON 父圖層鏡像 dataJson／重置管線欄位／persist。
  * 與 {@link ../osm_2_geojson_2_json/index.js} 分檔對齊，store 僅注入 findLayerById／saveLayerState。
  */
 
@@ -21,7 +21,7 @@ export function applyOsm2DataJsonSyncedLayerFromParent(findLayerById, derivedLay
   derivedLayer.dataJson = arr;
   derivedLayer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(
     Array.isArray(raw) ? raw : [],
-    { stationPoints: 'endpoints', routeLine: 'endpoints' }
+    { stationPoints: 'endpoints', routeLine: 'endpoints' },
   );
   derivedLayer.isLoaded = true;
   derivedLayer.layoutUniformGridGeoJson = null;
@@ -58,6 +58,56 @@ export function resetJsonGridCoordNormalizedPipelineFields(lyr) {
   lyr.showStationPlacement = true;
   lyr.isLoaded = true;
   lyr.jsonGridCoordNormalizeReferenceC3 = null;
+}
+
+/**
+ * Pinia persist 欄位：鏡像並重置管線後與 dataStore.toggle／reload 共用。
+ * @param {{ omitLoadingFlags?: boolean }} [opts] toggle 時省略 isLoading，與原 store 行為一致。
+ */
+export function jsonGridCoordNormalizedPersistPayload(layer, opts = {}) {
+  const { omitLoadingFlags = false } = opts;
+  const payload = {
+    isLoaded: layer.isLoaded,
+    jsonData: layer.jsonData,
+    geojsonData: layer.geojsonData,
+    dataJson: layer.dataJson,
+    layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
+    layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
+    spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
+    spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
+    spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
+    spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
+    processedJsonData: layer.processedJsonData,
+    dashboardData: layer.dashboardData,
+    drawJsonData: layer.drawJsonData,
+    dataOSM: layer.dataOSM,
+    dataTableData: layer.dataTableData,
+    layerInfoData: layer.layerInfoData,
+    highlightedSegmentIndex: layer.highlightedSegmentIndex,
+    showStationPlacement: layer.showStationPlacement,
+    jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
+    jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
+  };
+  if (!omitLoadingFlags) {
+    payload.isLoading = layer.isLoading;
+  }
+  return payload;
+}
+
+/** 圖層開啟時：自父圖層鏡像、重置管線並 persist */
+export function mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer) {
+  applyOsm2DataJsonSyncedLayerFromParent(findLayerById, layer);
+  resetJsonGridCoordNormalizedPipelineFields(layer);
+  saveLayerState(layer.layerId, jsonGridCoordNormalizedPersistPayload(layer, { omitLoadingFlags: true }));
+}
+
+/** reloadLayer：鏡像、重置、標記載入完成並 persist */
+export function reloadJsonGridCoordNormalizedLayer(findLayerById, saveLayerState, layer) {
+  applyOsm2DataJsonSyncedLayerFromParent(findLayerById, layer);
+  resetJsonGridCoordNormalizedPipelineFields(layer);
+  layer.isLoaded = true;
+  layer.isLoading = false;
+  saveLayerState(layer.layerId, jsonGridCoordNormalizedPersistPayload(layer));
 }
 
 /** OSM 管線父圖層載入後，同步鏡像至座標正規化圖層並 persist（可見時） */

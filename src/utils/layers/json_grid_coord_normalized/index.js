@@ -7,6 +7,9 @@ export {
   applyOsm2DataJsonSyncedLayerFromParent,
   resetJsonGridCoordNormalizedPipelineFields,
   syncOsm2DataJsonMirrorFromParent,
+  jsonGridCoordNormalizedPersistPayload,
+  mirrorResetAndPersistJsonGridCoordNormalized,
+  reloadJsonGridCoordNormalizedLayer,
 } from './mirrorFromOsm2Layer.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
 export {

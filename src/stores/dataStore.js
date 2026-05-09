@@ -156,7 +156,11 @@ import {
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
-import * as jsonGridCoordNormalizedMirror from '../utils/layers/json_grid_coord_normalized/mirrorFromOsm2Layer.js';
+import {
+  mirrorResetAndPersistJsonGridCoordNormalized,
+  reloadJsonGridCoordNormalizedLayer,
+  syncOsm2DataJsonMirrorFromParent as syncOsm2DataJsonMirrorFromParentImpl,
+} from '../utils/layers/json_grid_coord_normalized/mirrorFromOsm2Layer.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
@@ -1948,16 +1952,9 @@ export const useDataStore = defineStore(
       return allLayers;
     };
 
-    /** 自 OSM 管線父圖層複製路段 JSON（dataJson）至 D3 示意等衍生圖層 — 實作見 json_grid_coord_normalized／mirrorFromOsm2Layer.js */
-    const applyOsm2DataJsonSyncedLayerFromParent = (derivedLayer) =>
-      jsonGridCoordNormalizedMirror.applyOsm2DataJsonSyncedLayerFromParent(findLayerById, derivedLayer);
-
-    /** 版面網格·座標正規化：清除直線化／正規化產物以改從新複製之 dataJson 重跑 */
-    const resetJsonGridCoordNormalizedPipelineFields =
-      jsonGridCoordNormalizedMirror.resetJsonGridCoordNormalizedPipelineFields;
-
+    /** OSM 管線父圖層資料更新後，鏡像至座標正規化圖層 — 實作見 json_grid_coord_normalized／mirrorFromOsm2Layer.js */
     const syncOsm2DataJsonMirrorFromParent = () =>
-      jsonGridCoordNormalizedMirror.syncOsm2DataJsonMirrorFromParent(findLayerById, saveLayerState);
+      syncOsm2DataJsonMirrorFromParentImpl(findLayerById, saveLayerState);
 
     // ==================== 🔄 主要圖層處理函數 (Main Layer Processing Functions) ====================
 
@@ -2063,31 +2060,7 @@ export const useDataStore = defineStore(
       saveLayerState(layerId, { visible: layer.visible });
 
       if (layer.visible && layer.layerId === 'json_grid_coord_normalized') {
-        applyOsm2DataJsonSyncedLayerFromParent(layer);
-        resetJsonGridCoordNormalizedPipelineFields(layer);
-        const persist = {
-          jsonData: layer.jsonData,
-          geojsonData: layer.geojsonData,
-          dataJson: layer.dataJson,
-          isLoaded: layer.isLoaded,
-          layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
-          layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
-          spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
-          spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
-          spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
-          spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
-          processedJsonData: layer.processedJsonData,
-          dashboardData: layer.dashboardData,
-          drawJsonData: layer.drawJsonData,
-          dataOSM: layer.dataOSM,
-          dataTableData: layer.dataTableData,
-          layerInfoData: layer.layerInfoData,
-          highlightedSegmentIndex: layer.highlightedSegmentIndex,
-          showStationPlacement: layer.showStationPlacement,
-          jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
-          jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
-        };
-        saveLayerState(layerId, persist);
+        mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
       // 🩹 修正：taipei_6_1_test2 的 dataTableData 欄位 schema 曾變更（改為 0-based，且由三連改為兩連，再改為單列/單行）
@@ -3229,34 +3202,7 @@ export const useDataStore = defineStore(
       }
 
       if (layerId === 'json_grid_coord_normalized') {
-        applyOsm2DataJsonSyncedLayerFromParent(layer);
-        resetJsonGridCoordNormalizedPipelineFields(layer);
-        layer.isLoaded = true;
-        layer.isLoading = false;
-        const persist = {
-          isLoaded: true,
-          isLoading: false,
-          jsonData: layer.jsonData,
-          geojsonData: layer.geojsonData,
-          dataJson: layer.dataJson,
-          layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
-          layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
-          spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
-          spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
-          spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
-          spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
-          processedJsonData: layer.processedJsonData,
-          dashboardData: layer.dashboardData,
-          drawJsonData: layer.drawJsonData,
-          dataOSM: layer.dataOSM,
-          dataTableData: layer.dataTableData,
-          layerInfoData: layer.layerInfoData,
-          highlightedSegmentIndex: layer.highlightedSegmentIndex,
-          showStationPlacement: layer.showStationPlacement,
-          jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
-          jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
-        };
-        saveLayerState(layerId, persist);
+        reloadJsonGridCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }
 
