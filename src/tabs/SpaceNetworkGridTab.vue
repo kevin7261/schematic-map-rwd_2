@@ -95,6 +95,7 @@
   import {
     JSON_GRID_COORD_NORMALIZED_LAYER_ID,
     POINT_ORTHOGONAL_LAYER_ID,
+    LINE_ORTHOGONAL_LAYER_ID,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -3543,7 +3544,7 @@
     const xRange = xMax - xMin;
     const yRange = yMax - yMin;
 
-    /** taipei_d3／e3／…、`json_grid_coord_normalized`／`point_orthogonal`：整數座標系，背景與軸每 1 單位一條線／一個刻度（每格一線） */
+    /** taipei_d3／e3／…、`json_grid_coord_normalized`／衍生正交層：整數座標系，背景與軸每 1 單位一條線／一個刻度（每格一線） */
     const isTaipeiD3CoordNormalizeLayer =
       layerTab === 'taipei_d3' ||
       layerTab === 'taipei_sn4_d' ||
@@ -3567,6 +3568,7 @@
       layerTab === 'taipei_h3_dp_2' ||
       layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
       layerTab === POINT_ORTHOGONAL_LAYER_ID ||
+      layerTab === LINE_ORTHOGONAL_LAYER_ID ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
     /** 經緯度或小範圍連續座標：整數步長會變成 1 導致刻度迴圈為空，改以 d3.ticks 產生網格與軸刻度 */
@@ -6012,9 +6014,9 @@
       }
     }
 
-    // point_orthogonal：Control「下一頂點」— 橘圈目前頂點
-    if (layerTab === POINT_ORTHOGONAL_LAYER_ID) {
-      const hlLayer = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+    // point_orthogonal／line_orthogonal：Control「下一頂點」等— 橘圈目前頂點（line 之 Control 接入後沿用同欄位）
+    if (layerTab === POINT_ORTHOGONAL_LAYER_ID || layerTab === LINE_ORTHOGONAL_LAYER_ID) {
+      const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;
       if (
         hlLayer &&
@@ -6316,7 +6318,10 @@
       const lid = activeLayerTab.value;
       const layer = dataStore.findLayerById(lid);
       if (!layer) return null;
-      if (layer.layerId === POINT_ORTHOGONAL_LAYER_ID) {
+      if (
+        layer.layerId === POINT_ORTHOGONAL_LAYER_ID ||
+        layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+      ) {
         const hl = layer.highlightedSegmentIndex;
         const sg = layer.jsonGridFromCoordSuggestTargetGrid;
         return `${hl?.[0] ?? ''},${hl?.[1] ?? ''}|${sg?.x ?? ''},${sg?.y ?? ''}`;

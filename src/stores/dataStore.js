@@ -355,7 +355,7 @@ export const useDataStore = defineStore(
             jsonGridCoordNormalizeReferenceC3: null,
           },
           {
-  /** 站點移動水平垂直化：自「座標正規化」鏡像 dataJson */
+            /** 站點移動水平垂直化：自「座標正規化」鏡像 dataJson */
             layerId: 'point_orthogonal',
             layerName: '站點移動水平垂直化',
             visible: false,
@@ -391,6 +391,51 @@ export const useDataStore = defineStore(
             display: true,
             highlightedSegmentIndex: null,
             /** Control「下一頂點」：共點群組移至此格可嚴格增加橫豎比例時之建議格 */
+            jsonGridFromCoordSuggestTargetGrid: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
+            /** 路線移動水平垂直化：自「座標正規化」鏡像 dataJson（機制與 point_orthogonal 相同） */
+            layerId: 'line_orthogonal',
+            layerName: '路線移動水平垂直化',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
             jsonGridFromCoordSuggestTargetGrid: null,
             squareGridCellsTaipeiTest3: false,
             dataOSM: null,
@@ -2113,7 +2158,10 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
-      if (layer.visible && layer.layerId === 'point_orthogonal') {
+      if (
+        layer.visible &&
+        (layer.layerId === 'point_orthogonal' || layer.layerId === 'line_orthogonal')
+      ) {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
@@ -3260,7 +3308,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === 'point_orthogonal') {
+      if (layerId === 'point_orthogonal' || layerId === 'line_orthogonal') {
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }

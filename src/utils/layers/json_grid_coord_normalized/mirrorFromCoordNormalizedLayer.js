@@ -1,5 +1,5 @@
 /**
- * 衍生圖層 `point_orthogonal`（站點移動水平垂直化）：自「座標正規化」圖層複製 dataJson／對應 GeoJSON。
+ * 衍生圖層 `point_orthogonal`／`line_orthogonal`：自「座標正規化」圖層複製 dataJson／對應 GeoJSON。
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
@@ -7,6 +7,7 @@ import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSe
 import {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
+  LINE_ORTHOGONAL_LAYER_ID,
 } from './layerIds.js';
 
 /**
@@ -130,6 +131,11 @@ export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerS
  */
 export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, saveLayerState) {
   const follow = findLayerById(JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID);
-  if (!follow?.visible) return;
-  mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, follow);
+  if (follow?.visible) {
+    mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, follow);
+  }
+  const lineOrtho = findLayerById(LINE_ORTHOGONAL_LAYER_ID);
+  if (lineOrtho?.visible) {
+    mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, lineOrtho);
+  }
 }
