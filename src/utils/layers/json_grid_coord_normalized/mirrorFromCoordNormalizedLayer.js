@@ -1,5 +1,5 @@
 /**
- * 衍生圖層（json_grid_from_coord_normalized）：自「座標正規化」圖層複製 dataJson／對應 GeoJSON。
+ * 衍生圖層 `point_orthogonal`（站點移動水平垂直化）：自「座標正規化」圖層複製 dataJson／對應 GeoJSON。
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';

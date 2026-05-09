@@ -251,6 +251,14 @@ const DELTAS = (() => {
   return d;
 })();
 
+/** findBestCoPointGroupTargetOnGrid 專用：錨點四方向鄰格（不含斜向） */
+const DELTAS_4 = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
 function tryImproveOnce(current, currentCost, initialGroupIdByVertex) {
   const groupMap = buildGroups(current);
   const keys = [...groupMap.keys()].sort();
@@ -326,9 +334,9 @@ export function runAxisAlignHillClimb(flatSegments, opts = {}) {
 }
 
 /**
- * 在目前路網下，將與 (segIdx,ptIdx) 共點之群組移至 bbox 內任一格點，
+ * 在目前路網下，將與 (segIdx,ptIdx) 共點之群組移至**錨點周邊 4 鄰格**（上下左右，曼哈頓距離 1，不含斜向與原地），
  * 使總斜段權重嚴格下降且滿足共點／無交叉／無共線重疊／無頂點落於他線開放內部。
- * 若多個目標同權重，取曼哈頓距離最近者。
+ * 若多個目標同權重，取曼哈頓距離最近者（四鄰皆為 1，可另以方向次序打破平手）。
  *
  * @returns {{ ok: boolean, target: {x:number,y:number}|null, costBefore?: number, costAfter?: number, improved?: boolean, message?: string }}
  */
@@ -357,49 +365,27 @@ export function findBestCoPointGroupTargetOnGrid(flatSegments, segIdx, ptIdx) {
   }
   const groupRefs = [...group];
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const seg of work) {
-    const pts = seg?.points;
-    if (!Array.isArray(pts)) continue;
-    for (const p of pts) {
-      const [x, y] = getXY(p);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-    }
-  }
   const cost0 = totalCost(work);
-  if (!Number.isFinite(minX)) {
-    return { ok: true, target: null, costBefore: cost0, costAfter: cost0, improved: false };
-  }
 
   let bestCost = Infinity;
   let bestDist = Infinity;
   let bestTarget = null;
 
-  for (let ty = minY; ty <= maxY; ty++) {
-    for (let tx = minX; tx <= maxX; tx++) {
-      const dx = tx - cx;
-      const dy = ty - cy;
-      if (dx === 0 && dy === 0) continue;
-      const trial = JSON.parse(JSON.stringify(work));
-      applyGroupDelta(trial, groupRefs, dx, dy);
-      if (!occupancyNoDistinctCoPointsMerged(trial, initialGroupIdByVertex)) continue;
-      if (!buildEdges(trial)) continue;
-      if (hasInvalidGeometry(trial)) continue;
-      const c = totalCost(trial);
-      if (c >= cost0) continue;
-      const dist = Math.abs(tx - cx) + Math.abs(ty - cy);
-      if (c < bestCost || (c === bestCost && dist < bestDist)) {
-        bestCost = c;
-        bestDist = dist;
-        bestTarget = { x: tx, y: ty };
-      }
+  for (const [ndx, ndy] of DELTAS_4) {
+    const tx = cx + ndx;
+    const ty = cy + ndy;
+    const trial = JSON.parse(JSON.stringify(work));
+    applyGroupDelta(trial, groupRefs, ndx, ndy);
+    if (!occupancyNoDistinctCoPointsMerged(trial, initialGroupIdByVertex)) continue;
+    if (!buildEdges(trial)) continue;
+    if (hasInvalidGeometry(trial)) continue;
+    const c = totalCost(trial);
+    if (c >= cost0) continue;
+    const dist = Math.abs(tx - cx) + Math.abs(ty - cy);
+    if (c < bestCost || (c === bestCost && dist < bestDist)) {
+      bestCost = c;
+      bestDist = dist;
+      bestTarget = { x: tx, y: ty };
     }
   }
 
@@ -412,5 +398,66 @@ export function findBestCoPointGroupTargetOnGrid(flatSegments, segIdx, ptIdx) {
     costBefore: cost0,
     costAfter: bestCost,
     improved: true,
+  };
+}
+
+/**
+ * 若 {@link findBestCoPointGroupTargetOnGrid} 能找到嚴格改善格，將共點群組平移至該格並回傳新路網（於 deep clone 上修改）。
+ *
+ * @returns {{ ok: boolean, applied: boolean, segments?: Array|null, target?: {x:number,y:number}, costBefore?: number, costAfter?: number, message?: string }}
+ */
+export function applyBestCoPointGroupMoveOnGrid(flatSegments, segIdx, ptIdx) {
+  const pick = findBestCoPointGroupTargetOnGrid(flatSegments, segIdx, ptIdx);
+  if (!pick.ok) {
+    return { ok: false, applied: false, segments: null, message: pick.message };
+  }
+  if (!pick.improved || !pick.target) {
+    return {
+      ok: true,
+      applied: false,
+      segments: null,
+      costBefore: pick.costBefore,
+      costAfter: pick.costAfter,
+    };
+  }
+
+  const work = JSON.parse(JSON.stringify(flatSegments));
+  syncAllEndpoints(work);
+  const initialGroupIdByVertex = buildInitialCoPointGroupIdByVertex(work);
+  const groupMap = buildGroups(work);
+  const anchor = work[segIdx]?.points?.[ptIdx];
+  if (!anchor) {
+    return { ok: false, applied: false, segments: null, message: '頂點不存在' };
+  }
+  const [cx, cy] = getXY(anchor);
+  const key = `${cx},${cy}`;
+  const group = groupMap.get(key);
+  if (!group?.length || !group.some((g) => g.si === segIdx && g.pi === ptIdx)) {
+    return { ok: false, applied: false, segments: null, message: '無法對齊共點群組' };
+  }
+  const groupRefs = [...group];
+  const dx = pick.target.x - cx;
+  const dy = pick.target.y - cy;
+  applyGroupDelta(work, groupRefs, dx, dy);
+  syncAllEndpoints(work);
+  if (!occupancyNoDistinctCoPointsMerged(work, initialGroupIdByVertex)) {
+    return { ok: false, applied: false, segments: null, message: '套用後共點約束失敗' };
+  }
+  if (!buildEdges(work)) {
+    return { ok: false, applied: false, segments: null, message: '套用後零長邊' };
+  }
+  if (hasInvalidGeometry(work)) {
+    return { ok: false, applied: false, segments: null, message: '套用後出現交叉／重疊／頂點落線' };
+  }
+  if (totalCost(work) !== pick.costAfter) {
+    return { ok: false, applied: false, segments: null, message: '套用後權重與預期不一致' };
+  }
+  return {
+    ok: true,
+    applied: true,
+    segments: work,
+    target: pick.target,
+    costBefore: pick.costBefore,
+    costAfter: pick.costAfter,
   };
 }

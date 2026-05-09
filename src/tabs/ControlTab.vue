@@ -32,8 +32,15 @@
     executeJsonGridCoordNormalizedPruneEmptyGridLines,
     executeJsonGridNeighborTopologyFix,
     resolveB3InputSpaceNetwork,
-    findBestCoPointGroupTargetOnGrid,
+    writeLayoutNormalizedLayerDataOsmFromNetwork,
+    applyBestCoPointGroupMoveOnGrid,
+    syncJsonGridFromCoordDataJsonFromPipeline,
+    jsonGridFromCoordNormalizedPersistPayload,
+    executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
+    POINT_ORTHOGONAL_LAYER_ID,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
+  import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
+  import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
   import { getIcon } from '@/utils/utils.js';
 
   /**
@@ -2387,6 +2394,7 @@
     stopTaipeiFCenteringAutoAdvance();
     stopTaipeiFSectionCenteringAuto();
     stopTaipeiL3ReductionAuto();
+    stopJsonGridFromCoordVertexAuto();
   });
 
   onUnmounted(() => {
@@ -2395,6 +2403,7 @@
     stopTaipeiFCenteringAutoAdvance();
     stopTaipeiFSectionCenteringAuto();
     stopTaipeiL3ReductionAuto();
+    stopJsonGridFromCoordVertexAuto();
   });
 
   /** 黑點站向示意圖幾何中心（藍虛線）靠攏；僅更新黑點格座標，不修改折線轉折 */
@@ -3709,6 +3718,12 @@
     return !!(tc && !tc.skipped);
   };
 
+  /** `point_orthogonal`：本層有路網即可刪空欄列（與父層拓撲狀態無關） */
+  const jsonGridFromCoordPruneEmptyGridLinesEnabled = (lyr) => {
+    if (!lyr || lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID) return false;
+    return Array.isArray(lyr.spaceNetworkGridJsonData) && lyr.spaceNetworkGridJsonData.length > 0;
+  };
+
   const jsonGridTopologyCardToneClass = (lyr) => {
     const tc = lyr?.dashboardData?.topologyCheck;
     if (tc && !tc.skipped) {
@@ -3720,11 +3735,11 @@
   };
 
   /**
-   * `json_grid_from_coord_normalized`：由路網（或 geojson／dataJson 建網）列舉每段折線上之所有頂點。
+   * `point_orthogonal`：由路網（或 geojson／dataJson 建網）列舉每段折線上之所有頂點。
    * @returns {Array<{ row: number, segIdx: number, ptIdx: number, routeName: string, x: number, y: number, role: string, label: string }>}
    */
   const jsonGridFromCoordNormalizedVertexList = (lyr) => {
-    if (!lyr || lyr.layerId !== 'json_grid_from_coord_normalized') return [];
+    if (!lyr || lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID) return [];
     const resolved = resolveB3InputSpaceNetwork(lyr);
     if (!resolved?.spaceNetwork?.length) return [];
     const flat = normalizeSpaceNetworkDataToFlatSegments(
@@ -3781,31 +3796,241 @@
   /** 手動步進頂點列表索引（每按一次 highlight 下一筆，循環） */
   const jsonGridFromCoordVertexStep = ref(-1);
 
-  const advanceJsonGridFromCoordVertexHighlight = () => {
-    const lyr = dataStore.findLayerById('json_grid_from_coord_normalized');
+  const JSON_GRID_FROM_COORD_VERTEX_AUTO_MS = 1000;
+  let jsonGridFromCoordVertexAutoTimerId = null;
+  const jsonGridFromCoordVertexAutoActive = ref(false);
+  let jsonGridFromCoordVertexAutoTickBusy = false;
+  const jsonGridFromCoordVertexOneClickRunning = ref(false);
+
+  const stopJsonGridFromCoordVertexAuto = () => {
+    if (jsonGridFromCoordVertexAutoTimerId != null) {
+      clearInterval(jsonGridFromCoordVertexAutoTimerId);
+      jsonGridFromCoordVertexAutoTimerId = null;
+    }
+    jsonGridFromCoordVertexAutoActive.value = false;
+    jsonGridFromCoordVertexAutoTickBusy = false;
+  };
+
+  const applyJsonGridFromCoordBestMoveSegmentsToLayer = (lyr, segments) => {
+    lyr.spaceNetworkGridJsonData = segments;
+    const computed = computeStationDataFromRoutes(segments);
+    lyr.spaceNetworkGridJsonData_SectionData = computed.sectionData;
+    lyr.spaceNetworkGridJsonData_ConnectData = computed.connectData;
+    lyr.spaceNetworkGridJsonData_StationData = computed.stationData;
+    try {
+      lyr.processedJsonData = flatSegmentsToGeojsonStyleExportRows(segments);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('共點平移：匯出 processedJsonData 失敗', e);
+    }
+    writeLayoutNormalizedLayerDataOsmFromNetwork(lyr, segments);
+    syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+    lyr.jsonGridFromCoordSuggestTargetGrid = null;
+  };
+
+  /**
+   * 於目前圖層路網嘗試對單一頂點做最佳共點平移（不更新 highlight／步進）。
+   * @returns {{ ok: boolean, applied: boolean, errorMessage?: string, targetGrid?: {x:number,y:number}, costBefore?: number, costAfter?: number }}
+   */
+  const tryJsonGridFromCoordApplyBestMoveAtVertex = (lyr, it) => {
+    const resolved = resolveB3InputSpaceNetwork(lyr);
+    if (!resolved?.spaceNetwork?.length) {
+      return { ok: false, applied: false, errorMessage: '沒有路網輸入。' };
+    }
+    const flat = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+    );
+    const move = applyBestCoPointGroupMoveOnGrid(flat, it.segIdx, it.ptIdx);
+    if (!move.ok) {
+      return { ok: false, applied: false, errorMessage: move.message || '無法評估平移' };
+    }
+    if (!move.applied || !Array.isArray(move.segments)) {
+      return { ok: true, applied: false };
+    }
+    applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, move.segments);
+    return {
+      ok: true,
+      applied: true,
+      targetGrid: move.target,
+      costBefore: move.costBefore,
+      costAfter: move.costAfter,
+    };
+  };
+
+  /** 手動步進：highlight 下一點並嘗試平移；自動模式每秒呼叫 */
+  const advanceJsonGridFromCoordVertexHighlight = async () => {
+    const lyr = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
     const list = lyr ? jsonGridFromCoordNormalizedVertexList(lyr) : [];
     if (!lyr || !list.length) {
       window.alert('尚無頂點；請先有路網資料。');
+      stopJsonGridFromCoordVertexAuto();
       return;
     }
     jsonGridFromCoordVertexStep.value = (jsonGridFromCoordVertexStep.value + 1) % list.length;
     const it = list[jsonGridFromCoordVertexStep.value];
     lyr.highlightedSegmentIndex = [it.segIdx, it.ptIdx];
+    lyr.jsonGridFromCoordSuggestTargetGrid = null;
 
-    let suggest = null;
-    const resolved = resolveB3InputSpaceNetwork(lyr);
-    if (resolved?.spaceNetwork?.length) {
-      const flat = normalizeSpaceNetworkDataToFlatSegments(
-        JSON.parse(JSON.stringify(resolved.spaceNetwork)),
-      );
-      const r = findBestCoPointGroupTargetOnGrid(flat, it.segIdx, it.ptIdx);
-      if (r?.ok && r.improved && r.target) suggest = { x: r.target.x, y: r.target.y };
+    const r = tryJsonGridFromCoordApplyBestMoveAtVertex(lyr, it);
+    if (!r.ok && r.errorMessage) {
+      window.alert(r.errorMessage);
+      stopJsonGridFromCoordVertexAuto();
+      dataStore.saveLayerState(POINT_ORTHOGONAL_LAYER_ID, {
+        highlightedSegmentIndex: lyr.highlightedSegmentIndex,
+        jsonGridFromCoordSuggestTargetGrid: null,
+      });
+      return;
     }
-    lyr.jsonGridFromCoordSuggestTargetGrid = suggest;
-    dataStore.saveLayerState('json_grid_from_coord_normalized', {
+
+    if (r.applied) {
+      jsonGridFromCoordVertexStep.value = -1;
+      lyr.highlightedSegmentIndex = null;
+      dataStore.saveLayerState(
+        POINT_ORTHOGONAL_LAYER_ID,
+        jsonGridFromCoordNormalizedPersistPayload(lyr),
+      );
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+      return;
+    }
+
+    dataStore.saveLayerState(POINT_ORTHOGONAL_LAYER_ID, {
       highlightedSegmentIndex: lyr.highlightedSegmentIndex,
-      jsonGridFromCoordSuggestTargetGrid: suggest,
+      jsonGridFromCoordSuggestTargetGrid: null,
     });
+  };
+
+  const startJsonGridFromCoordVertexAuto = () => {
+    const lyr = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+    if (!lyr || jsonGridFromCoordNormalizedVertexList(lyr).length === 0) {
+      window.alert('尚無頂點；請先有路網資料。');
+      return;
+    }
+    if (jsonGridFromCoordVertexOneClickRunning.value) return;
+    stopJsonGridFromCoordVertexAuto();
+    jsonGridFromCoordVertexAutoActive.value = true;
+    jsonGridFromCoordVertexAutoTimerId = setInterval(async () => {
+      if (!jsonGridFromCoordVertexAutoActive.value || jsonGridFromCoordVertexAutoTickBusy) return;
+      jsonGridFromCoordVertexAutoTickBusy = true;
+      try {
+        await advanceJsonGridFromCoordVertexHighlight();
+      } finally {
+        jsonGridFromCoordVertexAutoTickBusy = false;
+      }
+    }, JSON_GRID_FROM_COORD_VERTEX_AUTO_MS);
+  };
+
+  /** 自列表頭逐一嘗試平移，一有套用即回到頭，直到整輪無可改善（不更新 highlight／中途不重繪） */
+  const runJsonGridFromCoordVertexUntilStableNoUi = async () => {
+    const lyr = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+    if (!lyr || jsonGridFromCoordNormalizedVertexList(lyr).length === 0) {
+      window.alert('尚無頂點；請先有路網資料。');
+      return;
+    }
+    if (jsonGridFromCoordVertexAutoActive.value) stopJsonGridFromCoordVertexAuto();
+    jsonGridFromCoordVertexOneClickRunning.value = true;
+    const MAX_MOVES = 50000;
+    let moveCount = 0;
+    let round = 0;
+    const logPrefix = '[point_orthogonal][一鍵完成]';
+    try {
+      // eslint-disable-next-line no-console
+      console.log(logPrefix, '開始', {
+        頂點數: jsonGridFromCoordNormalizedVertexList(lyr).length,
+        單次平移上限: MAX_MOVES,
+      });
+      lyr.highlightedSegmentIndex = null;
+      lyr.jsonGridFromCoordSuggestTargetGrid = null;
+      while (moveCount < MAX_MOVES) {
+        const list = jsonGridFromCoordNormalizedVertexList(lyr);
+        if (!list.length) {
+          // eslint-disable-next-line no-console
+          console.log(logPrefix, '頂點列表為空，結束');
+          break;
+        }
+        round += 1;
+        // eslint-disable-next-line no-console
+        console.log(logPrefix, `第 ${round} 輪掃描起點`, {
+          本輪頂點數: list.length,
+          累計平移: moveCount,
+        });
+        let appliedRound = false;
+        let vi = 0;
+        for (const it of list) {
+          vi += 1;
+          if (vi === 1 || vi === list.length || vi % 50 === 0) {
+            // eslint-disable-next-line no-console
+            console.log(logPrefix, `第 ${round} 輪進度 ${vi}/${list.length}`, {
+              列表序: it.row,
+              segIdx: it.segIdx,
+              ptIdx: it.ptIdx,
+              route: it.routeName,
+              xy: [it.x, it.y],
+            });
+          }
+          const r = tryJsonGridFromCoordApplyBestMoveAtVertex(lyr, it);
+          if (!r.ok) {
+            // eslint-disable-next-line no-console
+            console.error(logPrefix, '評估／套用失敗', r.errorMessage);
+            window.alert(r.errorMessage || '無法評估平移');
+            dataStore.saveLayerState(
+              POINT_ORTHOGONAL_LAYER_ID,
+              jsonGridFromCoordNormalizedPersistPayload(lyr),
+            );
+            await nextTick();
+            dataStore.requestSpaceNetworkGridFullRedraw();
+            return;
+          }
+          if (r.applied) {
+            moveCount += 1;
+            appliedRound = true;
+            // eslint-disable-next-line no-console
+            console.log(logPrefix, `第 ${moveCount} 次平移（本輪於 ${vi}/${list.length} 命中）`, {
+              列表序: it.row,
+              segIdx: it.segIdx,
+              ptIdx: it.ptIdx,
+              route: it.routeName,
+              原座標: [it.x, it.y],
+              目標格: r.targetGrid,
+              斜段權重: `${r.costBefore} → ${r.costAfter}`,
+            });
+            break;
+          }
+        }
+        if (!appliedRound) {
+          // eslint-disable-next-line no-console
+          console.log(logPrefix, `第 ${round} 輪掃描完畢，無平移 → 收斂`, { 累計平移: moveCount });
+          break;
+        }
+        // eslint-disable-next-line no-console
+        console.log(logPrefix, `第 ${round} 輪已套用平移，回到列表頭再掃`, { 累計平移: moveCount });
+      }
+      if (moveCount >= MAX_MOVES) {
+        // eslint-disable-next-line no-console
+        console.warn(logPrefix, '已達單次平移上限，停止', { 累計平移: moveCount, 輪數: round });
+        window.alert('一鍵完成已達單次平移上限，請檢查路網或改用手動步進。');
+      }
+      jsonGridFromCoordVertexStep.value = -1;
+      lyr.highlightedSegmentIndex = null;
+      lyr.jsonGridFromCoordSuggestTargetGrid = null;
+      dataStore.saveLayerState(
+        POINT_ORTHOGONAL_LAYER_ID,
+        jsonGridFromCoordNormalizedPersistPayload(lyr),
+      );
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+      // eslint-disable-next-line no-console
+      console.log(logPrefix, '結束', {
+        累計平移: moveCount,
+        最後輪次: round,
+        已觸發上限: moveCount >= MAX_MOVES,
+      });
+      if (moveCount === 0) {
+        window.alert('路網已無可改善之共點平移（斜段已盡量在約束內轉橫豎）。');
+      }
+    } finally {
+      jsonGridFromCoordVertexOneClickRunning.value = false;
+    }
   };
 
   /** JSON·網格·座標正規化（單鍵 b→c→d） */
@@ -3860,6 +4085,39 @@
       }
       if (r.noop) {
         window.alert('目前沒有「整欄或整列皆無 connect（紅／藍）頂點」可刪除；路網維持不變。');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
+  /** `point_orthogonal`（站點移動水平垂直化）：刪除無 connect 之整欄／列並壓縮座標（僅寫入本層） */
+  const onJsonGridFromCoordPruneEmptyGridLinesClick = async () => {
+    if (isExecuting.value) return;
+    const follow = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+    if (!follow?.spaceNetworkGridJsonData?.length) {
+      window.alert('本層尚無路網（spaceNetworkGridJsonData）。請先載入或鏡像父層資料。');
+      return;
+    }
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const r = await Promise.resolve(executeJsonGridFromCoordNormalizedPruneEmptyGridLines());
+      if (!r?.ok) {
+        if (r?.reason === 'no-network') {
+          window.alert('尚無路網可刪空欄列。');
+        }
+        return;
+      }
+      if (r.noop) {
+        window.alert('目前沒有「整欄或整列皆無 connect（紅／藍）頂點」可刪除；路網維持不變。');
+      } else {
+        await nextTick();
+        dataStore.requestSpaceNetworkGridFullRedraw();
       }
     } catch (err) {
       console.error(err);
@@ -6732,9 +6990,9 @@
           </div>
         </div>
 
-        <!-- json_grid_from_coord_normalized：所有頂點列表 -->
+        <!-- point_orthogonal：所有頂點列表 -->
         <div
-          v-if="layer.layerId === 'json_grid_from_coord_normalized'"
+          v-if="layer.layerId === POINT_ORTHOGONAL_LAYER_ID"
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">所有頂點列表</div>
@@ -6743,14 +7001,53 @@
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
               style="min-height: 28px"
-              :disabled="jsonGridFromCoordNormalizedVertexList(layer).length === 0"
+              :disabled="
+                jsonGridFromCoordNormalizedVertexList(layer).length === 0 ||
+                jsonGridFromCoordVertexAutoActive ||
+                jsonGridFromCoordVertexOneClickRunning
+              "
               @click="advanceJsonGridFromCoordVertexHighlight"
             >
               下一頂點（示意圖 highlight）
             </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
+              style="min-height: 28px"
+              :disabled="
+                jsonGridFromCoordNormalizedVertexList(layer).length === 0 ||
+                jsonGridFromCoordVertexAutoActive ||
+                jsonGridFromCoordVertexOneClickRunning
+              "
+              @click="startJsonGridFromCoordVertexAuto"
+            >
+              自動（每秒一步）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer btn-outline-secondary px-3"
+              style="min-height: 28px"
+              :disabled="!jsonGridFromCoordVertexAutoActive"
+              @click="stopJsonGridFromCoordVertexAuto"
+            >
+              停止自動
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
+              style="min-height: 28px"
+              :disabled="
+                jsonGridFromCoordNormalizedVertexList(layer).length === 0 ||
+                jsonGridFromCoordVertexAutoActive ||
+                jsonGridFromCoordVertexOneClickRunning
+              "
+              @click="runJsonGridFromCoordVertexUntilStableNoUi"
+            >
+              一鍵完成（不顯示過程）
+            </button>
           </div>
           <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
-            每按一次只 highlight 列表下一頂點（橘圈）。若在 bbox 內整數格存在「與該共點群組一併平移、斜段權重嚴格下降且無新增交叉／重疊／頂點落線」之格，會再以綠圈標示曼哈頓距離最近者；否則僅橘圈。
+            手動：每按一次 highlight 下一頂點（橘圈）；若該共點群組能往**上下左右四鄰格**之一平移且嚴格減少斜段權重、又不破壞共點／交叉／重疊／頂點落線，則平移並歸零；否則僅 highlight。自動：每 1 秒等同按一次「下一頂點」。一鍵完成：自列表頭反覆嘗試平移直至整輪無可改善，過程不更新橘圈／不重繪，結束後一次寫回；若原本已無可改善則會提示。
           </div>
           <div
             v-if="jsonGridFromCoordNormalizedVertexList(layer).length === 0"
@@ -6789,6 +7086,21 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mt-2"
+            :disabled="isExecuting || !jsonGridFromCoordPruneEmptyGridLinesEnabled(layer)"
+            @click="onJsonGridFromCoordPruneEmptyGridLinesClick"
+          >
+            刪空欄列（無 connect 之整欄／列 → 壓縮座標）
+          </button>
+          <div
+            v-if="!jsonGridFromCoordPruneEmptyGridLinesEnabled(layer)"
+            class="text-muted mt-1"
+            style="font-size: 10px; line-height: 1.45"
+          >
+            本層有路網（spaceNetworkGridJsonData）時即可刪除無 connect 之整欄／列並壓縮座標。
           </div>
         </div>
 

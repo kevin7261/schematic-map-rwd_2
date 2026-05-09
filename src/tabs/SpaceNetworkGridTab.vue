@@ -92,7 +92,10 @@
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
     getOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
-  import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from '@/utils/layers/json_grid_coord_normalized/index.js';
+  import {
+    JSON_GRID_COORD_NORMALIZED_LAYER_ID,
+    POINT_ORTHOGONAL_LAYER_ID,
+  } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
   import { uniformGridCellFromLayoutMeta } from '@/utils/stationUniformGridGeoJson.js';
@@ -3540,7 +3543,7 @@
     const xRange = xMax - xMin;
     const yRange = yMax - yMin;
 
-    /** taipei_d3／e3／…、`json_grid_coord_normalized`／`json_grid_from_coord_normalized`：整數座標系，背景與軸每 1 單位一條線／一個刻度（每格一線） */
+    /** taipei_d3／e3／…、`json_grid_coord_normalized`／`point_orthogonal`：整數座標系，背景與軸每 1 單位一條線／一個刻度（每格一線） */
     const isTaipeiD3CoordNormalizeLayer =
       layerTab === 'taipei_d3' ||
       layerTab === 'taipei_sn4_d' ||
@@ -3563,7 +3566,7 @@
       layerTab === 'taipei_g3_dp_2' ||
       layerTab === 'taipei_h3_dp_2' ||
       layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
-      layerTab === 'json_grid_from_coord_normalized' ||
+      layerTab === POINT_ORTHOGONAL_LAYER_ID ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
     /** 經緯度或小範圍連續座標：整數步長會變成 1 導致刻度迴圈為空，改以 d3.ticks 產生網格與軸刻度 */
@@ -6009,9 +6012,9 @@
       }
     }
 
-    // json_grid_from_coord_normalized：Control「下一頂點」— 橘圈目前頂點，綠圈可平移共點群組以減少斜段之建議格
-    if (layerTab === 'json_grid_from_coord_normalized') {
-      const hlLayer = dataStore.findLayerById('json_grid_from_coord_normalized');
+    // point_orthogonal：Control「下一頂點」— 橘圈目前頂點
+    if (layerTab === POINT_ORTHOGONAL_LAYER_ID) {
+      const hlLayer = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
       const hl = hlLayer?.highlightedSegmentIndex;
       if (
         hlLayer &&
@@ -6313,7 +6316,7 @@
       const lid = activeLayerTab.value;
       const layer = dataStore.findLayerById(lid);
       if (!layer) return null;
-      if (layer.layerId === 'json_grid_from_coord_normalized') {
+      if (layer.layerId === POINT_ORTHOGONAL_LAYER_ID) {
         const hl = layer.highlightedSegmentIndex;
         const sg = layer.jsonGridFromCoordSuggestTargetGrid;
         return `${hl?.[0] ?? ''},${hl?.[1] ?? ''}|${sg?.x ?? ''},${sg?.y ?? ''}`;

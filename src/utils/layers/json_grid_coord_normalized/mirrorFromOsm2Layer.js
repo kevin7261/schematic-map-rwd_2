@@ -32,7 +32,7 @@ export function applyOsm2DataJsonSyncedLayerFromParent(findLayerById, derivedLay
 
 /**
  * 將正規化管線產物寫回本圖層 dataJson／jsonData 與 geojsonData（與 OSM 管線同型之匯出列），
- * 供 JSON 檢視與下游 json_grid_from_coord_normalized 鏡像讀取。
+ * 供 JSON 檢視與下游 `point_orthogonal` 鏡像讀取。
  */
 export function syncJsonGridCoordNormalizedDataJsonFromPipeline(layer) {
   if (!layer) return;

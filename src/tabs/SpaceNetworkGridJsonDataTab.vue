@@ -76,6 +76,7 @@
     getOsm2GeojsonSessionOsmXml,
     isSpaceLayoutUniformGridViewerLayerId,
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+  import { POINT_ORTHOGONAL_LAYER_ID } from '@/utils/layers/json_grid_coord_normalized/layerIds.js';
   import {
     minimalLineStringFeatureCollectionFromRouteExportRows,
     mapDrawnExportRowsFromJsonDrawRoot,
@@ -140,7 +141,7 @@
           return Array.isArray(rows) && rows.length > 0;
         }
         /** 「版面網格·座標正規化」：與 OSM 管線共用 Upper json-viewer；以路網／匯出 JSON 為主 */
-        if (layer.layerId === 'json_grid_coord_normalized') {
+        if (layer.layerId === 'json_grid_coord_normalized' || layer.layerId === POINT_ORTHOGONAL_LAYER_ID) {
           return true;
         }
         return false;
@@ -182,7 +183,10 @@
     }
     if (props.osmViewerMode === 'osm-xml') return '圖層 dataOSM（記憶體；手繪後為由路網還原之簡易 OSM XML）';
     if (props.osmViewerMode === 'osm-geojson') return '圖層 dataGeojson（記憶體）';
-    if (activeResolvedLayer.value?.layerId === 'json_grid_coord_normalized') {
+    if (
+      activeResolvedLayer.value?.layerId === 'json_grid_coord_normalized' ||
+      activeResolvedLayer.value?.layerId === POINT_ORTHOGONAL_LAYER_ID
+    ) {
       return '圖層 spaceNetworkGridJsonData／processedJsonData（c3→d3 與測試_4 相同結構；記憶體）';
     }
     return '圖層 dataJson／jsonData（記憶體）';
@@ -195,7 +199,10 @@
     if (props.osmViewerMode === 'osm-xml') return '此圖層尚無 dataOSM／可對應之 OSM XML';
     if (props.osmViewerMode === 'osm-geojson')
       return '此圖層尚無 dataGeojson（且無法由 jsonData 還原折線）';
-    if (activeResolvedLayer.value?.layerId === 'json_grid_coord_normalized') {
+    if (
+      activeResolvedLayer.value?.layerId === 'json_grid_coord_normalized' ||
+      activeResolvedLayer.value?.layerId === POINT_ORTHOGONAL_LAYER_ID
+    ) {
       return '尚無 spaceNetworkGridJsonData；請貼入 c3 路網或自 taipei_sn4_c 複製後再檢視';
     }
     return '此圖層尚無 dataJson／jsonData 路段資料';
@@ -275,7 +282,7 @@
       return null;
     }
 
-    if (layer.layerId === 'json_grid_coord_normalized') {
+    if (layer.layerId === 'json_grid_coord_normalized' || layer.layerId === POINT_ORTHOGONAL_LAYER_ID) {
       const sn = layer.spaceNetworkGridJsonData;
       if (Array.isArray(sn) && sn.length > 0) {
         try {

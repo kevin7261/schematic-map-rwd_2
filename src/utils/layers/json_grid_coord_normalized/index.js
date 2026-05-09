@@ -5,6 +5,7 @@
 export {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
+  POINT_ORTHOGONAL_LAYER_ID,
 } from './layerIds.js';
 export {
   applyOsm2DataJsonSyncedLayerFromParent,
@@ -36,5 +37,5 @@ export {
   executeJsonGridCoordNormalizedPruneEmptyGridLines,
   executeJsonGridNeighborTopologyFix,
 } from './executeJsonGridCoordNormalize.js';
-export { executeJsonGridFromCoordNormalizedAxisAlign } from './executeJsonGridFromCoordNormalizedAxisAlign.js';
-export { findBestCoPointGroupTargetOnGrid } from './axisAlignGridNetworkHillClimb.js';
+export { executeJsonGridFromCoordNormalizedAxisAlign, executeJsonGridFromCoordNormalizedPruneEmptyGridLines } from './executeJsonGridFromCoordNormalizedAxisAlign.js';
+export { findBestCoPointGroupTargetOnGrid, applyBestCoPointGroupMoveOnGrid } from './axisAlignGridNetworkHillClimb.js';

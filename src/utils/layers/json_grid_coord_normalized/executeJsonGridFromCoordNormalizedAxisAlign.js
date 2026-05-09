@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 
 /**
- * 「自座標正規化 dataJson」圖層：格點路網橫豎化（見 dataStore 該 layerId 註解）。
+ * 「站點移動水平垂直化」圖層（layerId：`point_orthogonal`）：格點路網四鄰橫豎化、刪空欄列等。
  */
 
 import { useDataStore } from '@/stores/dataStore.js';
@@ -10,12 +10,14 @@ import { resolveB3InputSpaceNetwork, writeLayoutNormalizedLayerDataOsmFromNetwor
 import { runAxisAlignHillClimb } from './axisAlignGridNetworkHillClimb.js';
 import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
 import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
+import { pruneGridLinesWithoutConnectVertices } from '@/utils/taipeiDataProcTest3/f3ToG3PruneEmptyGridLines.js';
 import {
   jsonGridFromCoordNormalizedPersistPayload,
   syncJsonGridFromCoordDataJsonFromPipeline,
 } from './mirrorFromCoordNormalizedLayer.js';
+import { POINT_ORTHOGONAL_LAYER_ID } from './layerIds.js';
 
-const LAYER_ID = 'json_grid_from_coord_normalized';
+const LAYER_ID = POINT_ORTHOGONAL_LAYER_ID;
 
 /**
  * @returns {{ ok: boolean, noop?: boolean, message?: string, iterations?: number, costBefore?: number, costAfter?: number }}
@@ -90,5 +92,84 @@ export function executeJsonGridFromCoordNormalizedAxisAlign(opts = {}) {
     iterations: r.iterations,
     costBefore: r.costBefore,
     costAfter: r.costAfter,
+  };
+}
+
+/**
+ * 同 {@link executeJsonGridCoordNormalizedPruneEmptyGridLines}：對本層路網刪除無 connect 之整欄／列並壓縮座標，
+ * 重算 Section／Connect／Station、processedJson、dataOSM 並 persist（僅寫入 `point_orthogonal` 圖層）。
+ *
+ * @returns {{ ok: boolean, noop?: boolean, reason?: string, colCount?: number, rowCount?: number }}
+ */
+export function executeJsonGridFromCoordNormalizedPruneEmptyGridLines() {
+  const dataStore = useDataStore();
+  const layer = dataStore.findLayerById(LAYER_ID);
+  if (!layer) {
+    console.warn('executeJsonGridFromCoordNormalizedPruneEmptyGridLines：找不到圖層');
+    return { ok: false, reason: 'no-layer' };
+  }
+  if (!layer.spaceNetworkGridJsonData?.length) {
+    return { ok: false, reason: 'no-network' };
+  }
+
+  const inputSegs = JSON.parse(JSON.stringify(layer.spaceNetworkGridJsonData));
+  const {
+    segments: S_strokes,
+    removedCols,
+    removedRows,
+    colCount,
+    rowCount,
+  } = pruneGridLinesWithoutConnectVertices(inputSegs);
+
+  if (colCount === 0 && rowCount === 0) {
+    return {
+      ok: true,
+      noop: true,
+      colCount,
+      rowCount,
+      removedCols,
+      removedRows,
+    };
+  }
+
+  const computed = computeStationDataFromRoutes(S_strokes);
+  layer.spaceNetworkGridJsonData = S_strokes;
+  layer.spaceNetworkGridJsonData_SectionData = computed.sectionData;
+  layer.spaceNetworkGridJsonData_ConnectData = computed.connectData;
+  layer.spaceNetworkGridJsonData_StationData = computed.stationData;
+  layer.showStationPlacement = false;
+
+  try {
+    layer.processedJsonData = flatSegmentsToGeojsonStyleExportRows(layer.spaceNetworkGridJsonData);
+  } catch (e) {
+    console.error('刪空欄列（point_orthogonal）：匯出 processedJsonData 失敗', e);
+  }
+
+  const prevDash =
+    layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
+  layer.dashboardData = {
+    ...prevDash,
+    segmentCount: S_strokes.length,
+    exportRowCount: Array.isArray(layer.processedJsonData) ? layer.processedJsonData.length : 0,
+    pruneEmptyGridLinesAt: Date.now(),
+    removedColCount: colCount,
+    removedRowCount: rowCount,
+    removedCols,
+    removedRows,
+    inputSegments: inputSegs.length,
+    outputSegments: S_strokes.length,
+  };
+
+  writeLayoutNormalizedLayerDataOsmFromNetwork(layer, S_strokes);
+  syncJsonGridFromCoordDataJsonFromPipeline(layer);
+  dataStore.saveLayerState(LAYER_ID, jsonGridFromCoordNormalizedPersistPayload(layer));
+
+  return {
+    ok: true,
+    noop: false,
+    colCount,
+    rowCount,
+    removedCols,
+    removedRows,
   };
 }

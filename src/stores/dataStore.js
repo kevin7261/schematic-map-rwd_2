@@ -355,9 +355,9 @@ export const useDataStore = defineStore(
             jsonGridCoordNormalizeReferenceC3: null,
           },
           {
-            /** 自父層「座標正規化」鏡像 dataJson（預留下游） */
-            layerId: 'json_grid_from_coord_normalized',
-            layerName: '自座標正規化 dataJson（預留）',
+  /** 站點移動水平垂直化：自「座標正規化」鏡像 dataJson */
+            layerId: 'point_orthogonal',
+            layerName: '站點移動水平垂直化',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -2113,7 +2113,7 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
-      if (layer.visible && layer.layerId === 'json_grid_from_coord_normalized') {
+      if (layer.visible && layer.layerId === 'point_orthogonal') {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
@@ -3260,7 +3260,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === 'json_grid_from_coord_normalized') {
+      if (layerId === 'point_orthogonal') {
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }
