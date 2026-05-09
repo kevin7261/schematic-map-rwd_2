@@ -20,5 +20,6 @@ export {
 } from './jsonGridCoordNormalizeHelpers.js';
 export {
   executeJsonGridCoordNormalize,
+  executeJsonGridCoordNormalizedPruneEmptyGridLines,
   executeJsonGridNeighborTopologyFix,
 } from './executeJsonGridCoordNormalize.js';

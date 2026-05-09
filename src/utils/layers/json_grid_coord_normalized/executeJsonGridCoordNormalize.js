@@ -17,6 +17,9 @@ import {
   analyzeCoordNormalizeTopology,
   applyNeighborSideTopologyFix,
 } from './coordNormalizeTopology.js';
+import { pruneGridLinesWithoutConnectVertices } from '@/utils/taipeiDataProcTest3/f3ToG3PruneEmptyGridLines.js';
+import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
+import { jsonGridCoordNormalizedPersistPayload } from './mirrorFromOsm2Layer.js';
 
 export function executeJsonGridCoordNormalize() {
   const dataStore = useDataStore();
@@ -113,6 +116,118 @@ export function executeJsonGridCoordNormalize() {
   });
 
   return true;
+}
+
+/**
+ * 同 {@link executeTaipeiDataProcTest3_D3_To_E3_Proc2}：對本層正規化後路網刪除無 connect 之整欄／列並壓縮座標，
+ * 重算 Section／Connect／Station、processedJson、dataOSM 並 persist。
+ * @returns {{ ok: boolean, noop?: boolean, reason?: string, colCount?: number, rowCount?: number }}
+ */
+export function executeJsonGridCoordNormalizedPruneEmptyGridLines() {
+  const dataStore = useDataStore();
+  const layer = dataStore.findLayerById('json_grid_coord_normalized');
+  if (!layer) {
+    console.warn('executeJsonGridCoordNormalizedPruneEmptyGridLines：找不到圖層');
+    return { ok: false, reason: 'no-layer' };
+  }
+  if (!layer.spaceNetworkGridJsonData?.length) {
+    return { ok: false, reason: 'no-network' };
+  }
+
+  const inputSegs = JSON.parse(JSON.stringify(layer.spaceNetworkGridJsonData));
+  const {
+    segments: S_strokes,
+    removedCols,
+    removedRows,
+    colCount,
+    rowCount,
+  } = pruneGridLinesWithoutConnectVertices(inputSegs);
+
+  if (colCount === 0 && rowCount === 0) {
+    return {
+      ok: true,
+      noop: true,
+      colCount,
+      rowCount,
+      removedCols,
+      removedRows,
+    };
+  }
+
+  const computed = computeStationDataFromRoutes(S_strokes);
+  layer.spaceNetworkGridJsonData = S_strokes;
+  layer.spaceNetworkGridJsonData_SectionData = computed.sectionData;
+  layer.spaceNetworkGridJsonData_ConnectData = computed.connectData;
+  layer.spaceNetworkGridJsonData_StationData = computed.stationData;
+  layer.showStationPlacement = false;
+
+  try {
+    layer.processedJsonData = flatSegmentsToGeojsonStyleExportRows(layer.spaceNetworkGridJsonData);
+  } catch (e) {
+    console.error('刪空欄列：匯出 processedJsonData 失敗', e);
+  }
+
+  const prevDash = layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
+  const persistFix = layer.jsonGridNeighborFixPersist;
+  let fixLog =
+    Array.isArray(prevDash.neighborTopologyFixLog) && prevDash.neighborTopologyFixLog.length
+      ? [...prevDash.neighborTopologyFixLog]
+      : null;
+  let fixAt = prevDash.neighborTopologyFixAt;
+  let fixOk = prevDash.neighborTopologyFixOk;
+  if (!fixLog?.length && persistFix?.log?.length) {
+    fixLog = [...persistFix.log];
+    fixAt = persistFix.at;
+    fixOk = persistFix.ok;
+  }
+  const hadFixLog = !!(fixLog && fixLog.length);
+
+  layer.dashboardData = {
+    ...prevDash,
+    segmentCount: S_strokes.length,
+    exportRowCount: Array.isArray(layer.processedJsonData) ? layer.processedJsonData.length : 0,
+    topologyCheck: {
+      skipped: true,
+      summaryZh: '路網已執行「刪空欄列」；請再按「座標正規化」以重建 c3／d3 並更新拓撲比對。',
+    },
+    pruneEmptyGridLinesAt: Date.now(),
+    removedColCount: colCount,
+    removedRowCount: rowCount,
+    removedCols,
+    removedRows,
+    inputSegments: inputSegs.length,
+    outputSegments: S_strokes.length,
+    ...(hadFixLog
+      ? {
+          neighborTopologyFixLog: fixLog,
+          neighborTopologyFixOk: fixOk,
+          neighborTopologyFixAt: fixAt,
+          neighborTopologyFixStale: true,
+        }
+      : {}),
+  };
+
+  if (hadFixLog && fixLog) {
+    layer.jsonGridNeighborFixPersist = {
+      log: fixLog,
+      at: fixAt,
+      ok: fixOk,
+      stale: true,
+    };
+  }
+
+  writeLayoutNormalizedLayerDataOsmFromNetwork(layer, S_strokes);
+
+  dataStore.saveLayerState('json_grid_coord_normalized', jsonGridCoordNormalizedPersistPayload(layer));
+
+  return {
+    ok: true,
+    noop: false,
+    colCount,
+    rowCount,
+    removedCols,
+    removedRows,
+  };
 }
 
 /**

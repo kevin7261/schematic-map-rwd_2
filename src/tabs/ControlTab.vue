@@ -29,6 +29,7 @@
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
   import {
     executeJsonGridCoordNormalize,
+    executeJsonGridCoordNormalizedPruneEmptyGridLines,
     executeJsonGridNeighborTopologyFix,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { getIcon } from '@/utils/utils.js';
@@ -3736,6 +3737,35 @@
     }
   };
 
+  /** 刪除無 connect 之整欄／列並壓縮座標（對齊 taipei d3→e3 Proc2） */
+  const onJsonGridPruneEmptyGridLinesClick = async () => {
+    if (isExecuting.value) return;
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const r = await Promise.resolve(executeJsonGridCoordNormalizedPruneEmptyGridLines());
+      if (!r?.ok) {
+        if (r?.reason === 'no-network') {
+          window.alert(
+            '尚無正規化後路網（spaceNetworkGridJsonData）。請先按「座標正規化（本層 dataJson／路網 → d3）」。'
+          );
+        }
+        return;
+      }
+      if (r.noop) {
+        window.alert(
+          '目前沒有「整欄或整列皆無 connect（紅／藍）頂點」可刪除；路網維持不變。'
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
   const onTaipeiOsmSpaceGridLocalFileInputChange = async (event) => {
     const input = event.target;
     const file = input.files && input.files[0];
@@ -6451,6 +6481,14 @@
             @click="onJsonGridCoordNormalizeClick"
           >
             座標正規化（本層 dataJson／路網 → d3）
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mt-2"
+            :disabled="isExecuting"
+            @click="onJsonGridPruneEmptyGridLinesClick"
+          >
+            刪空欄列（無 connect 之整欄／列 → 壓縮座標）
           </button>
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.55">
             <strong>開啟本圖層</strong>會自動自「OSM → GeoJSON → JSON」複製
