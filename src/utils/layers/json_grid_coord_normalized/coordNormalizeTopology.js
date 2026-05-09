@@ -90,9 +90,7 @@ function vLabel(run, pi) {
 
 /** 格式化邊（含路線名、兩端點車站名、座標） */
 function eLabel(run, ei) {
-  const a = run.sNames[ei]
-    ? `「${run.sNames[ei]}」${pFmt(run.pts[ei])}`
-    : pFmt(run.pts[ei]);
+  const a = run.sNames[ei] ? `「${run.sNames[ei]}」${pFmt(run.pts[ei])}` : pFmt(run.pts[ei]);
   const b = run.sNames[ei + 1]
     ? `「${run.sNames[ei + 1]}」${pFmt(run.pts[ei + 1])}`
     : pFmt(run.pts[ei + 1]);
@@ -217,11 +215,7 @@ function bboxMaxSpan(runs) {
  *（同一遍歷序下 EC[k]／ED[k] 邊一一對齊時使用。）
  */
 function collectNeighborSideFlips(C, D, EC, ED, opts) {
-  const {
-    maxReports = 24,
-    rFactor = 0.068,
-    rFloor = 22,
-  } = opts || {};
+  const { maxReports = 24, rFactor = 0.068, rFloor = 22 } = opts || {};
 
   /** @type {string[]} */
   const issues = [];
@@ -269,12 +263,7 @@ function collectNeighborSideFlips(C, D, EC, ED, opts) {
 
       /* 垂足若在端點上，叉向不穩定；其餘整段皆可 */
       const edgeEps = 1e-5;
-      if (
-        fc.t <= edgeEps ||
-        fc.t >= 1 - edgeEps ||
-        fd.t <= edgeEps ||
-        fd.t >= 1 - edgeEps
-      )
+      if (fc.t <= edgeEps || fc.t >= 1 - edgeEps || fd.t <= edgeEps || fd.t >= 1 - edgeEps)
         continue;
 
       const zc = sideOfEdge(vc, ebc.p1, ebc.p2);
@@ -517,8 +506,9 @@ export function analyzeCoordNormalizeTopology(c3Segments, d3Segments) {
   }
 
   // ── 檢查 4：頂點相對「他路線」之左右側翻面（須結構對齊、邊索引一致） ────
-  const neighborSideIssues =
-    structMatch ? collectNeighborSideFlips(C, D, EC, ED, {}) : /** @type {string[]} */ ([]);
+  const neighborSideIssues = structMatch
+    ? collectNeighborSideFlips(C, D, EC, ED, {})
+    : /** @type {string[]} */ ([]);
 
   // ── 彙整結果 ──────────────────────────────────────────────────────────────
   out.reasons.push(...crossIssues, ...overlapIssues, ...bendIssues, ...neighborSideIssues);

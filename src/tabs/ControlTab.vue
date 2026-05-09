@@ -6447,10 +6447,7 @@
         </div>
 
         <!-- JSON·網格·座標正規化（單鍵 b→c→d）；layerId：json_grid_coord_normalized -->
-        <div
-          v-if="layer.layerId === 'json_grid_coord_normalized'"
-          class="pb-3 mb-3 border-bottom"
-        >
+        <div v-if="layer.layerId === 'json_grid_coord_normalized'" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">座標正規化</div>
           <button
             type="button"
