@@ -401,9 +401,9 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
           {
-            /** 路線移動水平垂直化：自「座標正規化」鏡像 dataJson（機制與 point_orthogonal 相同） */
-            layerId: 'line_orthogonal',
-            layerName: '路線移動水平垂直化',
+            /** 測試：自「座標正規化」鏡像 dataJson（與 point_orthogonal 同來源） */
+            layerId: 'temp',
+            layerName: '測試',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -2160,7 +2160,7 @@ export const useDataStore = defineStore(
 
       if (
         layer.visible &&
-        (layer.layerId === 'point_orthogonal' || layer.layerId === 'line_orthogonal')
+        (layer.layerId === 'point_orthogonal' || layer.layerId === 'temp')
       ) {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
@@ -3308,7 +3308,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === 'point_orthogonal' || layerId === 'line_orthogonal') {
+      if (layerId === 'point_orthogonal' || layerId === 'temp') {
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }

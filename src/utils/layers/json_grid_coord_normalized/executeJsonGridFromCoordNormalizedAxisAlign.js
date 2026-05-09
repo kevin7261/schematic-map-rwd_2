@@ -14,6 +14,7 @@ import { pruneGridLinesWithoutConnectVertices } from '@/utils/taipeiDataProcTest
 import {
   jsonGridFromCoordNormalizedPersistPayload,
   syncJsonGridFromCoordDataJsonFromPipeline,
+  refreshLineOrthogonalFromPointOrthogonalIfVisible,
 } from './mirrorFromCoordNormalizedLayer.js';
 import { POINT_ORTHOGONAL_LAYER_ID } from './layerIds.js';
 
@@ -85,6 +86,10 @@ export function executeJsonGridFromCoordNormalizedAxisAlign(opts = {}) {
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, r.segments);
   syncJsonGridFromCoordDataJsonFromPipeline(layer);
   dataStore.saveLayerState(LAYER_ID, jsonGridFromCoordNormalizedPersistPayload(layer));
+  refreshLineOrthogonalFromPointOrthogonalIfVisible(
+    (id) => dataStore.findLayerById(id),
+    (id, payload) => dataStore.saveLayerState(id, payload),
+  );
 
   return {
     ok: true,
@@ -163,6 +168,10 @@ export function executeJsonGridFromCoordNormalizedPruneEmptyGridLines() {
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, S_strokes);
   syncJsonGridFromCoordDataJsonFromPipeline(layer);
   dataStore.saveLayerState(LAYER_ID, jsonGridFromCoordNormalizedPersistPayload(layer));
+  refreshLineOrthogonalFromPointOrthogonalIfVisible(
+    (id) => dataStore.findLayerById(id),
+    (id, payload) => dataStore.saveLayerState(id, payload),
+  );
 
   return {
     ok: true,

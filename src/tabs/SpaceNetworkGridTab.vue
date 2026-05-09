@@ -6014,7 +6014,7 @@
       }
     }
 
-    // point_orthogonal／line_orthogonal：Control「下一頂點」等— 橘圈目前頂點（line 之 Control 接入後沿用同欄位）
+    // point_orthogonal／temp：Control「下一頂點」等— 橘圈目前頂點（line 之 Control 接入後沿用同欄位）
     if (layerTab === POINT_ORTHOGONAL_LAYER_ID || layerTab === LINE_ORTHOGONAL_LAYER_ID) {
       const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;

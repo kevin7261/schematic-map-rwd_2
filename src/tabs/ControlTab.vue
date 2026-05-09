@@ -27,18 +27,20 @@
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
     setOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
-  import {
-    executeJsonGridCoordNormalize,
-    executeJsonGridCoordNormalizedPruneEmptyGridLines,
-    executeJsonGridNeighborTopologyFix,
-    resolveB3InputSpaceNetwork,
-    writeLayoutNormalizedLayerDataOsmFromNetwork,
-    applyBestCoPointGroupMoveOnGrid,
-    syncJsonGridFromCoordDataJsonFromPipeline,
-    jsonGridFromCoordNormalizedPersistPayload,
-    executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
-    POINT_ORTHOGONAL_LAYER_ID,
-  } from '@/utils/layers/json_grid_coord_normalized/index.js';
+import {
+  executeJsonGridCoordNormalize,
+  executeJsonGridCoordNormalizedPruneEmptyGridLines,
+  executeJsonGridNeighborTopologyFix,
+  resolveB3InputSpaceNetwork,
+  writeLayoutNormalizedLayerDataOsmFromNetwork,
+  applyBestCoPointGroupMoveOnGrid,
+  syncJsonGridFromCoordDataJsonFromPipeline,
+  jsonGridFromCoordNormalizedPersistPayload,
+  executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
+  POINT_ORTHOGONAL_LAYER_ID,
+  LINE_ORTHOGONAL_LAYER_ID,
+  refreshLineOrthogonalFromPointOrthogonalIfVisible,
+} from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
   import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
   import { getIcon } from '@/utils/utils.js';
@@ -3743,7 +3745,7 @@
     const resolved = resolveB3InputSpaceNetwork(lyr);
     if (!resolved?.spaceNetwork?.length) return [];
     const flat = normalizeSpaceNetworkDataToFlatSegments(
-      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
     );
     const out = [];
     let row = 0;
@@ -3793,6 +3795,85 @@
     return out;
   };
 
+  /**
+   * `temp`（LINE_ORTHOGONAL_LAYER_ID）：由路網拆出格點折線之水平邊、垂直邊（斜邊不列入表內，僅計數）。
+   * @returns {{ horizontal: Array<{ row: number, segIdx: number, edgeIdx: number, routeName: string, y: number, xMin: number, xMax: number, span: number }>, vertical: Array<{ row: number, segIdx: number, edgeIdx: number, routeName: string, x: number, yMin: number, yMax: number, span: number }>, diagonalCount: number }}
+   */
+  const jsonGridLineOrthogonalAxisLineLists = (lyr) => {
+    const empty = { horizontal: [], vertical: [], diagonalCount: 0 };
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return empty;
+    const resolved = resolveB3InputSpaceNetwork(lyr);
+    if (!resolved?.spaceNetwork?.length) return empty;
+    const flat = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+    );
+    const horizontal = [];
+    const vertical = [];
+    let diagonalCount = 0;
+    for (let segIdx = 0; segIdx < flat.length; segIdx++) {
+      const seg = flat[segIdx];
+      const routeName = String(seg.route_name ?? seg.name ?? 'Unknown');
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i];
+        const p1 = pts[i + 1];
+        const x0 = Array.isArray(p0) ? Number(p0[0]) : Number(p0?.x);
+        const y0 = Array.isArray(p0) ? Number(p0[1]) : Number(p0?.y);
+        const x1 = Array.isArray(p1) ? Number(p1[0]) : Number(p1?.x);
+        const y1 = Array.isArray(p1) ? Number(p1[1]) : Number(p1?.y);
+        if (
+          !Number.isFinite(x0) ||
+          !Number.isFinite(y0) ||
+          !Number.isFinite(x1) ||
+          !Number.isFinite(y1)
+        ) {
+          continue;
+        }
+        const rx0 = Math.round(x0);
+        const ry0 = Math.round(y0);
+        const rx1 = Math.round(x1);
+        const ry1 = Math.round(y1);
+        if (rx0 === rx1 && ry0 === ry1) continue;
+        if (ry0 === ry1) {
+          horizontal.push({
+            segIdx,
+            edgeIdx: i,
+            routeName,
+            y: ry0,
+            xMin: Math.min(rx0, rx1),
+            xMax: Math.max(rx0, rx1),
+            span: Math.abs(rx1 - rx0),
+          });
+        } else if (rx0 === rx1) {
+          vertical.push({
+            segIdx,
+            edgeIdx: i,
+            routeName,
+            x: rx0,
+            yMin: Math.min(ry0, ry1),
+            yMax: Math.max(ry0, ry1),
+            span: Math.abs(ry1 - ry0),
+          });
+        } else {
+          diagonalCount += 1;
+        }
+      }
+    }
+    horizontal.sort((a, b) => (a.y !== b.y ? a.y - b.y : a.xMin - b.xMin));
+    vertical.sort((a, b) => (a.x !== b.x ? a.x - b.x : a.yMin - b.yMin));
+    let rh = 0;
+    for (const h of horizontal) {
+      rh += 1;
+      h.row = rh;
+    }
+    let rv = 0;
+    for (const v of vertical) {
+      rv += 1;
+      v.row = rv;
+    }
+    return { horizontal, vertical, diagonalCount };
+  };
+
   /** 手動步進頂點列表索引（每按一次 highlight 下一筆，循環） */
   const jsonGridFromCoordVertexStep = ref(-1);
 
@@ -3826,6 +3907,10 @@
     writeLayoutNormalizedLayerDataOsmFromNetwork(lyr, segments);
     syncJsonGridFromCoordDataJsonFromPipeline(lyr);
     lyr.jsonGridFromCoordSuggestTargetGrid = null;
+    refreshLineOrthogonalFromPointOrthogonalIfVisible(
+      dataStore.findLayerById.bind(dataStore),
+      dataStore.saveLayerState.bind(dataStore),
+    );
   };
 
   /**
@@ -3838,7 +3923,7 @@
       return { ok: false, applied: false, errorMessage: '沒有路網輸入。' };
     }
     const flat = normalizeSpaceNetworkDataToFlatSegments(
-      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
     );
     const move = applyBestCoPointGroupMoveOnGrid(flat, it.segIdx, it.ptIdx);
     if (!move.ok) {
@@ -3887,7 +3972,7 @@
       lyr.highlightedSegmentIndex = null;
       dataStore.saveLayerState(
         POINT_ORTHOGONAL_LAYER_ID,
-        jsonGridFromCoordNormalizedPersistPayload(lyr),
+        jsonGridFromCoordNormalizedPersistPayload(lyr)
       );
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
@@ -3975,7 +4060,7 @@
             window.alert(r.errorMessage || '無法評估平移');
             dataStore.saveLayerState(
               POINT_ORTHOGONAL_LAYER_ID,
-              jsonGridFromCoordNormalizedPersistPayload(lyr),
+              jsonGridFromCoordNormalizedPersistPayload(lyr)
             );
             await nextTick();
             dataStore.requestSpaceNetworkGridFullRedraw();
@@ -4015,7 +4100,7 @@
       lyr.jsonGridFromCoordSuggestTargetGrid = null;
       dataStore.saveLayerState(
         POINT_ORTHOGONAL_LAYER_ID,
-        jsonGridFromCoordNormalizedPersistPayload(lyr),
+        jsonGridFromCoordNormalizedPersistPayload(lyr)
       );
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
@@ -6991,10 +7076,7 @@
         </div>
 
         <!-- point_orthogonal：所有頂點列表 -->
-        <div
-          v-if="layer.layerId === POINT_ORTHOGONAL_LAYER_ID"
-          class="pb-3 mb-3 border-bottom"
-        >
+        <div v-if="layer.layerId === POINT_ORTHOGONAL_LAYER_ID" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">所有頂點列表</div>
           <div class="d-flex flex-wrap gap-2 mb-2">
             <button
@@ -7047,7 +7129,10 @@
             </button>
           </div>
           <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
-            手動：每按一次 highlight 下一頂點（橘圈）；若該共點群組能往**上下左右四鄰格**之一平移且嚴格減少斜段權重、又不破壞共點／交叉／重疊／頂點落線，則平移並歸零；否則僅 highlight。自動：每 1 秒等同按一次「下一頂點」。一鍵完成：自列表頭反覆嘗試平移直至整輪無可改善，過程不更新橘圈／不重繪，結束後一次寫回；若原本已無可改善則會提示。
+            手動：每按一次 highlight
+            下一頂點（橘圈）；若該共點群組能往**上下左右四鄰格**之一平移且嚴格減少斜段權重、又不破壞共點／交叉／重疊／頂點落線，則平移並歸零；否則僅
+            highlight。自動：每 1
+            秒等同按一次「下一頂點」。一鍵完成：自列表頭反覆嘗試平移直至整輪無可改善，過程不更新橘圈／不重繪，結束後一次寫回；若原本已無可改善則會提示。
           </div>
           <div
             v-if="jsonGridFromCoordNormalizedVertexList(layer).length === 0"
@@ -7075,7 +7160,10 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="it in jsonGridFromCoordNormalizedVertexList(layer)" :key="'gcpt-' + it.row">
+                <tr
+                  v-for="it in jsonGridFromCoordNormalizedVertexList(layer)"
+                  :key="'gcpt-' + it.row"
+                >
                   <td>{{ it.row }}</td>
                   <td>{{ it.segIdx }}</td>
                   <td>{{ it.ptIdx }}</td>
@@ -7102,6 +7190,86 @@
           >
             本層有路網（spaceNetworkGridJsonData）時即可刪除無 connect 之整欄／列並壓縮座標。
           </div>
+        </div>
+
+        <!-- temp：水平線／垂直線段清單 -->
+        <div v-if="layer.layerId === LINE_ORTHOGONAL_LAYER_ID" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">水平線／垂直線段清單</div>
+          <div
+            v-if="jsonGridLineOrthogonalAxisLineLists(layer).horizontal.length === 0 && jsonGridLineOrthogonalAxisLineLists(layer).vertical.length === 0"
+            class="text-muted my-font-size-xs"
+            style="line-height: 1.45"
+          >
+            尚無可列之橫豎邊。請確認站點層已有路網／dataJson 後再開啟本圖層。
+          </div>
+          <template v-else>
+            <div class="my-font-size-xs text-muted mb-1">
+              斜邊（未列入表）計數：{{ jsonGridLineOrthogonalAxisLineLists(layer).diagonalCount }}
+            </div>
+            <div class="my-title-xs-gray pb-1 mt-2">水平線（固定 y）</div>
+            <div
+              class="border rounded overflow-auto bg-body mb-3"
+              style="max-height: 220px; font-size: 11px"
+            >
+              <table class="table table-sm table-bordered mb-0 align-middle">
+                <thead class="sticky-top bg-secondary bg-opacity-10">
+                  <tr class="text-nowrap">
+                    <th>#</th>
+                    <th>路段序</th>
+                    <th>邊序</th>
+                    <th>路線名</th>
+                    <th>y</th>
+                    <th>x 範圍</th>
+                    <th>格長</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="it in jsonGridLineOrthogonalAxisLineLists(layer).horizontal"
+                    :key="'lo-h-' + it.row"
+                  >
+                    <td>{{ it.row }}</td>
+                    <td>{{ it.segIdx }}</td>
+                    <td>{{ it.edgeIdx }}</td>
+                    <td class="text-break" style="max-width: 120px">{{ it.routeName }}</td>
+                    <td class="text-nowrap">{{ it.y }}</td>
+                    <td class="text-nowrap">[{{ it.xMin }}, {{ it.xMax }}]</td>
+                    <td>{{ it.span }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="my-title-xs-gray pb-1">垂直線（固定 x）</div>
+            <div class="border rounded overflow-auto bg-body" style="max-height: 220px; font-size: 11px">
+              <table class="table table-sm table-bordered mb-0 align-middle">
+                <thead class="sticky-top bg-secondary bg-opacity-10">
+                  <tr class="text-nowrap">
+                    <th>#</th>
+                    <th>路段序</th>
+                    <th>邊序</th>
+                    <th>路線名</th>
+                    <th>x</th>
+                    <th>y 範圍</th>
+                    <th>格長</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="it in jsonGridLineOrthogonalAxisLineLists(layer).vertical"
+                    :key="'lo-v-' + it.row"
+                  >
+                    <td>{{ it.row }}</td>
+                    <td>{{ it.segIdx }}</td>
+                    <td>{{ it.edgeIdx }}</td>
+                    <td class="text-break" style="max-width: 120px">{{ it.routeName }}</td>
+                    <td class="text-nowrap">{{ it.x }}</td>
+                    <td class="text-nowrap">[{{ it.yMin }}, {{ it.yMax }}]</td>
+                    <td>{{ it.span }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
         </div>
 
         <div v-if="isCurrentLayerGridSchematic" class="pb-3 mb-3 border-bottom">

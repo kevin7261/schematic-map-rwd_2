@@ -1,5 +1,5 @@
 /**
- * 衍生圖層 `point_orthogonal`／`line_orthogonal`：自「座標正規化」圖層複製 dataJson／對應 GeoJSON。
+ * 衍生圖層：`point_orthogonal` 與 `temp`（LINE_ORTHOGONAL_LAYER_ID）皆自「座標正規化」複製 dataJson／jsonData。
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
@@ -138,4 +138,11 @@ export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, s
   if (lineOrtho?.visible) {
     mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, lineOrtho);
   }
+}
+
+/** 站點層寫入後，若 temp 圖層開啟則自「座標正規化」重鏡像並 persist */
+export function refreshLineOrthogonalFromPointOrthogonalIfVisible(findLayerById, saveLayerState) {
+  const line = findLayerById(LINE_ORTHOGONAL_LAYER_ID);
+  if (!line?.visible) return;
+  mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, line);
 }

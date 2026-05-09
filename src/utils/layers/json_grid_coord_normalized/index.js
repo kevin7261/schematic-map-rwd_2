@@ -24,6 +24,7 @@ export {
   mirrorResetAndPersistJsonGridFromCoordNormalized,
   reloadJsonGridFromCoordNormalizedLayer,
   syncJsonGridFromCoordNormalizedMirrorFromParent,
+  refreshLineOrthogonalFromPointOrthogonalIfVisible,
   syncJsonGridFromCoordDataJsonFromPipeline,
 } from './mirrorFromCoordNormalizedLayer.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
