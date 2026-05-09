@@ -154,8 +154,6 @@ import { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../utils/layers/osm_2_ge
 import { assignOsm2LayerViewerFields } from '../utils/layers/osm_2_geojson_2_json/layerMerge.js';
 import {
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
-  JSON_DRAW_LAYOUT_READ_LAYER_ID,
-  SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
 import {
@@ -347,86 +345,6 @@ export const useDataStore = defineStore(
             jsonGridNeighborFixPersist: null,
             /** 與 {@link executeJsonGridCoordNormalize} 當次拓撲比對相同之 c3 路網（不可從現有 d3 反推，否則找不到錯邊） */
             jsonGridCoordNormalizeReferenceC3: null,
-          },
-          {
-            layerId: 'json_draw',
-            layerName: 'json繪製',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'teal',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            osmFileName: null,
-            jsonFileName: null,
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            squareGridCellsTaipeiTest3: false,
-            dataOSM: null,
-            dataGeojson: null,
-            dataJson: null,
-            /** space-layout-grid-viewer：均勻網格線（每軸 4→16→64… 遞增直至每格至多一站） */
-            layoutUniformGridGeoJson: null,
-            /** space-layout-grid-viewer：網格模式（經緯外框細分數／壓縮後 nx、ny） */
-            layoutUniformGridMeta: null,
-            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
-          },
-          {
-            layerId: 'json_draw_layout_read',
-            layerName: 'json繪製·讀檔',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'teal',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            osmFileName: null,
-            jsonFileName: null,
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            squareGridCellsTaipeiTest3: false,
-            dataOSM: null,
-            dataGeojson: null,
-            dataJson: null,
-            layoutUniformGridGeoJson: null,
-            layoutUniformGridMeta: null,
-            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],
       },
@@ -1872,22 +1790,6 @@ export const useDataStore = defineStore(
         layerStates.value[layerId] = {};
       }
       Object.assign(layerStates.value[layerId], stateData);
-
-      /** 「json 繪製·讀檔」開啟時，隨主圖層 {@link SPACE_LAYOUT_GRID_VIEWER_LAYER_ID} 持久化一併更新鏡像 */
-      if (layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
-        const readLay = findLayerById(JSON_DRAW_LAYOUT_READ_LAYER_ID);
-        if (readLay?.visible) {
-          applyJsonDrawLayoutReadLayerSyncedFromJsonDraw(readLay);
-          saveLayerState(JSON_DRAW_LAYOUT_READ_LAYER_ID, {
-            jsonData: readLay.jsonData,
-            geojsonData: readLay.geojsonData,
-            dataJson: readLay.dataJson,
-            isLoaded: readLay.isLoaded,
-            layoutUniformGridGeoJson: readLay.layoutUniformGridGeoJson ?? null,
-            layoutUniformGridMeta: readLay.layoutUniformGridMeta ?? null,
-          });
-        }
-      }
     };
 
     // ==================== 🔍 圖層搜尋函數 (Layer Search Functions) ====================
@@ -2047,28 +1949,6 @@ export const useDataStore = defineStore(
       return allLayers;
     };
 
-    /** 自「json 繪製」主圖層深拷 {@link SPACE_LAYOUT_GRID_VIEWER_LAYER_ID} 之 dataJson／jsonData／格線至讀檔圖層 */
-    const applyJsonDrawLayoutReadLayerSyncedFromJsonDraw = (viewerLayer) => {
-      const src = findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
-      if (!viewerLayer || !src) return;
-      const cloneJson = (x) => {
-        if (x == null) return x;
-        try {
-          return typeof structuredClone === 'function'
-            ? structuredClone(x)
-            : JSON.parse(JSON.stringify(x));
-        } catch {
-          return x;
-        }
-      };
-      viewerLayer.jsonData = cloneJson(src.jsonData);
-      viewerLayer.dataJson = cloneJson(src.dataJson);
-      viewerLayer.geojsonData = cloneJson(src.geojsonData);
-      viewerLayer.layoutUniformGridGeoJson = cloneJson(src.layoutUniformGridGeoJson);
-      viewerLayer.layoutUniformGridMeta = cloneJson(src.layoutUniformGridMeta);
-      viewerLayer.isLoaded = true;
-    };
-
     /** 自 OSM 管線父圖層複製路段 JSON（dataJson）至 D3 示意等衍生圖層 */
     const applyOsm2DataJsonSyncedLayerFromParent = (derivedLayer) => {
       const parent = findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
@@ -2123,11 +2003,11 @@ export const useDataStore = defineStore(
     };
 
     const syncOsm2DataJsonMirrorFromParent = () => {
-      const layoutViewer = findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+      const layoutViewer = findLayerById('json_grid_coord_normalized');
       if (!layoutViewer) return;
       applyOsm2DataJsonSyncedLayerFromParent(layoutViewer);
       if (layoutViewer.visible) {
-        saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
+        saveLayerState('json_grid_coord_normalized', {
           jsonData: layoutViewer.jsonData,
           geojsonData: layoutViewer.geojsonData,
           dataJson: layoutViewer.dataJson,
@@ -2241,20 +2121,9 @@ export const useDataStore = defineStore(
       // 保存圖層的可見性狀態
       saveLayerState(layerId, { visible: layer.visible });
 
-      if (
-        layer.visible &&
-        (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ||
-          layer.layerId === JSON_DRAW_LAYOUT_READ_LAYER_ID ||
-          layer.layerId === 'json_grid_coord_normalized')
-      ) {
-        if (layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
-          applyOsm2DataJsonSyncedLayerFromParent(layer);
-        } else if (layer.layerId === 'json_grid_coord_normalized') {
-          applyOsm2DataJsonSyncedLayerFromParent(layer);
-          resetJsonGridCoordNormalizedPipelineFields(layer);
-        } else {
-          applyJsonDrawLayoutReadLayerSyncedFromJsonDraw(layer);
-        }
+      if (layer.visible && layer.layerId === 'json_grid_coord_normalized') {
+        applyOsm2DataJsonSyncedLayerFromParent(layer);
+        resetJsonGridCoordNormalizedPipelineFields(layer);
         const persist = {
           jsonData: layer.jsonData,
           geojsonData: layer.geojsonData,
@@ -2262,25 +2131,21 @@ export const useDataStore = defineStore(
           isLoaded: layer.isLoaded,
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
           layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
+          spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
+          spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
+          spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
+          spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
+          processedJsonData: layer.processedJsonData,
+          dashboardData: layer.dashboardData,
+          drawJsonData: layer.drawJsonData,
+          dataOSM: layer.dataOSM,
+          dataTableData: layer.dataTableData,
+          layerInfoData: layer.layerInfoData,
+          highlightedSegmentIndex: layer.highlightedSegmentIndex,
+          showStationPlacement: layer.showStationPlacement,
+          jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
+          jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
         };
-        if (layer.layerId === 'json_grid_coord_normalized') {
-          Object.assign(persist, {
-            spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
-            spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
-            spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
-            spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
-            processedJsonData: layer.processedJsonData,
-            dashboardData: layer.dashboardData,
-            drawJsonData: layer.drawJsonData,
-            dataOSM: layer.dataOSM,
-            dataTableData: layer.dataTableData,
-            layerInfoData: layer.layerInfoData,
-            highlightedSegmentIndex: layer.highlightedSegmentIndex,
-            showStationPlacement: layer.showStationPlacement,
-            jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
-            jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
-          });
-        }
         saveLayerState(layerId, persist);
       }
 
@@ -2516,8 +2381,6 @@ export const useDataStore = defineStore(
           /** OSM／可空載入圖層：維持使用者已開啟之可見狀態，不因無檔／請求失敗而自動關閉 */
           if (
             layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID &&
-            layerId !== SPACE_LAYOUT_GRID_VIEWER_LAYER_ID &&
-            layerId !== JSON_DRAW_LAYOUT_READ_LAYER_ID &&
             layerId !== 'taipei_osm_geojson_sn4'
           ) {
             layer.visible = false;
@@ -3427,19 +3290,9 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (
-        layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ||
-        layerId === JSON_DRAW_LAYOUT_READ_LAYER_ID ||
-        layerId === 'json_grid_coord_normalized'
-      ) {
-        if (layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID) {
-          applyOsm2DataJsonSyncedLayerFromParent(layer);
-        } else if (layerId === 'json_grid_coord_normalized') {
-          applyOsm2DataJsonSyncedLayerFromParent(layer);
-          resetJsonGridCoordNormalizedPipelineFields(layer);
-        } else {
-          applyJsonDrawLayoutReadLayerSyncedFromJsonDraw(layer);
-        }
+      if (layerId === 'json_grid_coord_normalized') {
+        applyOsm2DataJsonSyncedLayerFromParent(layer);
+        resetJsonGridCoordNormalizedPipelineFields(layer);
         layer.isLoaded = true;
         layer.isLoading = false;
         const persist = {
@@ -3450,25 +3303,21 @@ export const useDataStore = defineStore(
           dataJson: layer.dataJson,
           layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
           layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
+          spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
+          spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
+          spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
+          spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
+          processedJsonData: layer.processedJsonData,
+          dashboardData: layer.dashboardData,
+          drawJsonData: layer.drawJsonData,
+          dataOSM: layer.dataOSM,
+          dataTableData: layer.dataTableData,
+          layerInfoData: layer.layerInfoData,
+          highlightedSegmentIndex: layer.highlightedSegmentIndex,
+          showStationPlacement: layer.showStationPlacement,
+          jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
+          jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
         };
-        if (layerId === 'json_grid_coord_normalized') {
-          Object.assign(persist, {
-            spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
-            spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
-            spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
-            spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
-            processedJsonData: layer.processedJsonData,
-            dashboardData: layer.dashboardData,
-            drawJsonData: layer.drawJsonData,
-            dataOSM: layer.dataOSM,
-            dataTableData: layer.dataTableData,
-            layerInfoData: layer.layerInfoData,
-            highlightedSegmentIndex: layer.highlightedSegmentIndex,
-            showStationPlacement: layer.showStationPlacement,
-            jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
-            jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
-          });
-        }
         saveLayerState(layerId, persist);
         return;
       }

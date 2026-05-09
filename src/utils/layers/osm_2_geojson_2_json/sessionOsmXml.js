@@ -2,18 +2,9 @@
 
 export const LAYER_ID = 'osm_2_geojson_2_json';
 
-/** Upper「json 繪製」子圖層：內容自 {@link LAYER_ID} 之 dataJson／jsonData 同步；不上地圖 */
-export const SPACE_LAYOUT_GRID_VIEWER_LAYER_ID = 'json_draw';
-
-/** Upper「json 繪製·讀檔」：唯讀複製 {@link SPACE_LAYOUT_GRID_VIEWER_LAYER_ID} 之 dataJson／格線；不上地圖 */
-export const JSON_DRAW_LAYOUT_READ_LAYER_ID = 'json_draw_layout_read';
-
-/** 版面均勻格／JSON 檢視：含主圖層與讀檔鏡像 */
+/** 版面均勻格／JSON 檢視（與 OSM 管線鏡像）：圖層 id 為 json_grid_coord_normalized */
 export function isSpaceLayoutUniformGridViewerLayerId(layerId) {
-  return (
-    layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID ||
-    layerId === JSON_DRAW_LAYOUT_READ_LAYER_ID
-  );
+  return layerId === 'json_grid_coord_normalized';
 }
 
 let sessionOsmXmlSourceText = '';

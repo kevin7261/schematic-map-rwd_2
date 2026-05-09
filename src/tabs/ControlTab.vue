@@ -22,7 +22,6 @@
   import { parseOsmXmlStringToRouteGeoJsonLoadResult } from '@/utils/dataProcessor.js';
   import {
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
-    SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
     mergeOsm2GeojsonLoaderResultIntoLayer,
     osmXmlToOsm2GeojsonLoaderResult,
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
@@ -3749,7 +3748,7 @@
   /** json 繪製：全域均勻網格（每軸 4→16→64…），寫入 layoutUniformGridGeoJson + meta（space-layout-grid-viewer） */
   const onGenerateJsonDrawUniformGridClick = () => {
     dataStore.syncOsm2DataJsonMirrorFromParent();
-    const lay = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+    const lay = dataStore.findLayerById('json_grid_coord_normalized');
     if (!lay) return;
     const rows = mapDrawnExportRowsFromJsonDrawRoot(lay.jsonData, lay.dataJson);
     if (!isMapDrawnRoutesExportArray(rows) || rows.length === 0) {
@@ -3763,7 +3762,7 @@
     lay.layoutUniformGridGeoJson = geojson;
     lay.layoutUniformGridMeta = meta;
     lay.dataJson = wrapJsonDrawDataJsonWithUniformGrid(rows, geojson, meta);
-    dataStore.saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
+    dataStore.saveLayerState('json_grid_coord_normalized', {
       layoutUniformGridGeoJson: geojson,
       layoutUniformGridMeta: meta,
       dataJson: lay.dataJson,
@@ -3773,7 +3772,7 @@
 
   /** 刪除整條無站之列／欄後，將路段與均勻格線重整到壓縮座標（僅適用經緯細分網格、尚未壓縮） */
   const onCompressJsonDrawUniformGridEmptyBandsClick = () => {
-    const lay = dataStore.findLayerById(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID);
+    const lay = dataStore.findLayerById('json_grid_coord_normalized');
     if (!lay) return;
     const divBefore =
       lay.layoutUniformGridMeta?.mode === 'wgs84'
@@ -3793,7 +3792,7 @@
     ) {
       window.alert('目前沒有「整欄或整列皆無站點」的條帶可刪除；資料與格線維持不變。');
     }
-    dataStore.saveLayerState(SPACE_LAYOUT_GRID_VIEWER_LAYER_ID, {
+    dataStore.saveLayerState('json_grid_coord_normalized', {
       jsonData: lay.jsonData,
       dataJson: lay.dataJson,
       geojsonData: lay.geojsonData,
@@ -6643,9 +6642,9 @@
           </div>
         </div>
 
-        <!-- json 繪製：經緯路段四元樹格（space-layout-grid-viewer） -->
+        <!-- 座標正規化圖層：經緯路段均勻網格（space-layout-grid-viewer） -->
         <div
-          v-if="layer.layerId === SPACE_LAYOUT_GRID_VIEWER_LAYER_ID"
+          v-if="layer.layerId === 'json_grid_coord_normalized'"
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">版面均勻網格</div>

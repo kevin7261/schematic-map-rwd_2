@@ -4,8 +4,6 @@
 
 export {
   LAYER_ID,
-  SPACE_LAYOUT_GRID_VIEWER_LAYER_ID,
-  JSON_DRAW_LAYOUT_READ_LAYER_ID,
   isSpaceLayoutUniformGridViewerLayerId,
   setOsm2GeojsonSessionOsmXml,
   getOsm2GeojsonSessionOsmXml,
