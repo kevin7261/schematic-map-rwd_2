@@ -343,6 +343,10 @@ export const useDataStore = defineStore(
             layoutUniformGridGeoJson: null,
             layoutUniformGridMeta: null,
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+            /** 鄰線錯邊「修正」座標紀錄；不因 {@link resetJsonGridCoordNormalizedPipelineFields} 清空（另存於此）。 */
+            jsonGridNeighborFixPersist: null,
+            /** 與 {@link executeJsonGridCoordNormalize} 當次拓撲比對相同之 c3 路網（不可從現有 d3 反推，否則找不到錯邊） */
+            jsonGridCoordNormalizeReferenceC3: null,
           },
           {
             layerId: 'json_draw',
@@ -2088,6 +2092,20 @@ export const useDataStore = defineStore(
 
     /** 版面網格·座標正規化：清除直線化／正規化產物以改從新複製之 dataJson 重跑 */
     const resetJsonGridCoordNormalizedPipelineFields = (lyr) => {
+      const dash = lyr.dashboardData;
+      if (dash?.neighborTopologyFixLog?.length) {
+        lyr.jsonGridNeighborFixPersist = {
+          log: [...dash.neighborTopologyFixLog],
+          at: dash.neighborTopologyFixAt,
+          ok: dash.neighborTopologyFixOk,
+          stale: true,
+        };
+      } else if (lyr.jsonGridNeighborFixPersist?.log?.length) {
+        lyr.jsonGridNeighborFixPersist = {
+          ...lyr.jsonGridNeighborFixPersist,
+          stale: true,
+        };
+      }
       lyr.spaceNetworkGridJsonData = null;
       lyr.spaceNetworkGridJsonData_SectionData = null;
       lyr.spaceNetworkGridJsonData_ConnectData = null;
@@ -2101,6 +2119,7 @@ export const useDataStore = defineStore(
       lyr.highlightedSegmentIndex = null;
       lyr.showStationPlacement = true;
       lyr.isLoaded = true;
+      lyr.jsonGridCoordNormalizeReferenceC3 = null;
     };
 
     const syncOsm2DataJsonMirrorFromParent = () => {
@@ -2258,6 +2277,8 @@ export const useDataStore = defineStore(
             layerInfoData: layer.layerInfoData,
             highlightedSegmentIndex: layer.highlightedSegmentIndex,
             showStationPlacement: layer.showStationPlacement,
+            jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
+            jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
           });
         }
         saveLayerState(layerId, persist);
@@ -3444,6 +3465,8 @@ export const useDataStore = defineStore(
             layerInfoData: layer.layerInfoData,
             highlightedSegmentIndex: layer.highlightedSegmentIndex,
             showStationPlacement: layer.showStationPlacement,
+            jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
+            jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
           });
         }
         saveLayerState(layerId, persist);

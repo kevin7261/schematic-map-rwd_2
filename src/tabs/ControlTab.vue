@@ -28,7 +28,10 @@
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
     setOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
-  import { executeJsonGridCoordNormalize } from '@/utils/layers/json_grid_coord_normalized/index.js';
+  import {
+    executeJsonGridCoordNormalize,
+    executeJsonGridNeighborTopologyFix,
+  } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { getIcon } from '@/utils/utils.js';
 
   /**
@@ -3657,6 +3660,65 @@
     if (el) el.click();
   };
 
+  const onJsonGridNeighborTopologyFixClick = async () => {
+    if (isExecuting.value) return;
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const r = await Promise.resolve(executeJsonGridNeighborTopologyFix());
+      const coordBlock =
+        r.moveLines && r.moveLines.length
+          ? `以下為 d3 路網上被移動頂點的「網格座標」（整數格，與編輯器網格一致）：\n\n${r.moveLines.join(
+              '\n'
+            )}\n\n`
+          : '';
+      const tail = r.message || '';
+      if (r.ok) {
+        window.alert(`鄰線錯邊修正完成。\n\n${coordBlock}${tail}`);
+      } else {
+        window.alert(`鄰線錯邊修正未完成。\n\n${r.message || ''}\n\n${coordBlock}`);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
+  /** 與拓撲／dashboard 分離存放的「修正」座標字串列；圖層欄位 {@link jsonGridNeighborFixPersist} 優先 */
+  const jsonGridNeighborFixDisplayLines = (lyr) => {
+    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return [];
+    const p = lyr.jsonGridNeighborFixPersist?.log;
+    if (Array.isArray(p) && p.length > 0) return p;
+    const d = lyr.dashboardData?.neighborTopologyFixLog;
+    return Array.isArray(d) && d.length > 0 ? d : [];
+  };
+
+  const jsonGridNeighborFixStaleVisual = (lyr) => {
+    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return false;
+    if (lyr.jsonGridNeighborFixPersist?.stale) return true;
+    return !!lyr.dashboardData?.neighborTopologyFixStale;
+  };
+
+  const jsonGridTopologyPanelShow = (lyr) => {
+    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return false;
+    const tc = lyr.dashboardData?.topologyCheck;
+    if (tc && !tc.skipped) return true;
+    return jsonGridNeighborFixDisplayLines(lyr).length > 0;
+  };
+
+  const jsonGridTopologyCardToneClass = (lyr) => {
+    const tc = lyr?.dashboardData?.topologyCheck;
+    if (tc && !tc.skipped) {
+      return tc.topologyPreserved
+        ? 'bg-success bg-opacity-10 text-success'
+        : 'bg-danger bg-opacity-10 text-danger';
+    }
+    return 'bg-secondary bg-opacity-10 text-body border border-secondary border-opacity-25';
+  };
+
   /** JSON·網格·座標正規化（單鍵 b→c→d） */
   const onJsonGridCoordNormalizeClick = async () => {
     if (isExecuting.value) return;
@@ -6464,20 +6526,84 @@
             <code class="small">minimalOsmXmlFromLonLatFeatureCollection</code> 寫入本層
             <code class="small">dataOSM</code>。
           </div>
+          <div class="text-muted mt-1" style="font-size: 10px; line-height: 1.45">
+            按下「修正」後的<strong>網格座標紀錄</strong>會存在本圖層；關閉或重開圖層後仍可顯示（與
+            <code class="small">dashboardData</code> 分開保存，避免被「重開圖層」清空）。
+          </div>
           <div
-            v-if="layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped"
+            v-if="jsonGridTopologyPanelShow(layer)"
             class="mt-2 rounded px-2 py-2"
             style="font-size: 11px; line-height: 1.5"
-            :class="
-              layer.dashboardData.topologyCheck.topologyPreserved
-                ? 'bg-success bg-opacity-10 text-success'
-                : 'bg-danger bg-opacity-10 text-danger'
-            "
+            :class="jsonGridTopologyCardToneClass(layer)"
           >
-            <strong>拓撲比對（c3 vs d3）</strong>
-            <div class="mt-1">{{ layer.dashboardData.topologyCheck.summaryZh }}</div>
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+              <div>
+                <strong>拓撲比對（c3 vs d3）</strong>
+                <span class="text-muted ms-1" style="font-size: 10px">僅偵測點位移到「鄰線另一側」</span>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm rounded-pill border-0 text-nowrap my-font-size-xs my-cursor-pointer px-3"
+                :class="
+                  layer.dashboardData?.topologyCheck?.topologyPreserved &&
+                  !jsonGridNeighborFixDisplayLines(layer).length
+                    ? 'btn-success'
+                    : 'my-btn-green'
+                "
+                style="min-height: 28px"
+                :disabled="
+                  isExecuting ||
+                  !layer.dashboardData?.topologyCheck?.structMatch ||
+                  !layer.dashboardData?.topologyCheck?.hasNeighborFlips
+                "
+                @click="onJsonGridNeighborTopologyFixClick"
+              >
+                修正
+              </button>
+            </div>
             <div
-              v-if="layer.dashboardData.topologyCheck.reasons?.length"
+              v-if="layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped"
+              class="mt-1"
+            >
+              {{ layer.dashboardData.topologyCheck.summaryZh }}
+            </div>
+            <div
+              v-else-if="jsonGridNeighborFixDisplayLines(layer).length"
+              class="mt-1 text-muted"
+              style="font-size: 10px"
+            >
+              目前尚無本次工作階段的拓撲摘要（請先按「座標正規化」）；下方為先前「修正」所動到的<strong
+                >網格座標（移動前 → 後）</strong
+              >。
+            </div>
+            <div
+              v-if="jsonGridNeighborFixDisplayLines(layer).length"
+              class="mt-2 p-2 rounded border border-success border-opacity-50 bg-body text-body"
+              style="font-size: 10.5px; white-space: pre-wrap; word-break: break-all"
+            >
+              <strong class="d-block mb-1 text-success">鄰線錯邊修正紀錄（網格座標）</strong>
+              <span
+                v-if="jsonGridNeighborFixStaleVisual(layer)"
+                class="d-block text-muted mb-1"
+                style="font-size: 10px"
+              >
+                曾執行「座標正規化」或重開圖層後，路網可能已重算；下列為最近一次成功套用「修正」時寫入的座標。
+              </span>
+              <div
+                v-for="(ln, li) in jsonGridNeighborFixDisplayLines(layer)"
+                :key="'fix-' + li"
+                class="mb-1 pb-1"
+                :class="
+                  li < jsonGridNeighborFixDisplayLines(layer).length - 1
+                    ? 'border-bottom border-secondary border-opacity-25'
+                    : ''
+                "
+              >
+                {{ ln }}
+              </div>
+            </div>
+            <div
+              v-if="layer.dashboardData?.topologyCheck?.reasons?.length"
               class="mt-1 mb-0 ps-2 text-body"
               style="font-size: 10.5px"
             >
@@ -6495,8 +6621,24 @@
                 {{ r }}
               </div>
             </div>
-            <div class="mt-1 text-muted" style="font-size: 10px">
+            <div
+              v-if="layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped"
+              class="mt-1 text-muted"
+              style="font-size: 10px"
+            >
               {{ layer.dashboardData.topologyCheck.statsCaptionZh }}
+            </div>
+            <div
+              v-if="
+                layer.dashboardData?.topologyCheck &&
+                !layer.dashboardData.topologyCheck.skipped &&
+                layer.dashboardData.topologyCheck.topologyPreserved &&
+                !layer.dashboardData.topologyCheck.hasNeighborFlips
+              "
+              class="mt-2 text-muted border-top border-secondary border-opacity-25 pt-2"
+              style="font-size: 10px; line-height: 1.45"
+            >
+              未偵測到錯邊時無法按下「修正」，也不會產生座標變更紀錄。若肉眼仍覺得站在鄰線另一側，可能是該點超出「近距離鄰線」掃描範圍，需手動調整或放寬演算法閾值。
             </div>
           </div>
         </div>

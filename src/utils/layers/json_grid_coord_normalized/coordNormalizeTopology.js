@@ -1,10 +1,9 @@
 /**
- * 座標正規化後幾何拓撲比對（c3 vs d3）
+ * 座標正規化後「相對鄰路線錯邊」比對與修正（c3 vs d3）
  *
- *  1. 新增交叉點
- *  2. 新增路線重疊
- *  3. 自身折線轉彎方向翻轉（三點叉積符號變號）
- *  4. 相對「鄰路線邊」左右側翻轉（點相對他線法向從一側跑到另一側；南勢角類案例）
+ * 只檢查：頂點相對他路線有向線段是否從正規化前一側跑到另一側（如南勢角、淡水站）。
+ * 「修正」：將該頂點沿對照鄰線之法向做最小位移至正確半平面（格點四捨五入），
+ * 循序套用並每次重驗，直到無錯邊或無法收斂。
  */
 
 import { normalizeSpaceNetworkDataToFlatSegments } from '@/utils/gridNormalizationMinDistance.js';
@@ -53,10 +52,15 @@ function stationAt(seg, pi, nPts) {
 }
 
 /**
- * @typedef {{ pts: Array<{x:number,y:number}>, routeName: string, sNames: string[] }} Run
+ * @typedef {{
+ *   pts: Array<{x:number,y:number}>,
+ *   routeName: string,
+ *   sNames: string[],
+ *   flatSegIndex: number,
+ * }} Run
  */
 
-/** 將路段資料展平為 Run 陣列 */
+/** 將路段資料展平為 Run 陣列（含 flat 原索引） */
 function toRuns(rawSegs) {
   const flat = normalizeSpaceNetworkDataToFlatSegments(Array.isArray(rawSegs) ? rawSegs : []);
   const out = [];
@@ -69,17 +73,16 @@ function toRuns(rawSegs) {
       pts,
       routeName,
       sNames: pts.map((_, pi) => stationAt(seg, pi, pts.length)),
+      flatSegIndex: k,
     });
   }
   return out;
 }
 
-/** 格式化座標 */
 function pFmt(p) {
   return `(${Math.round(p.x)},${Math.round(p.y)})`;
 }
 
-/** 格式化頂點（含路線名、車站名、座標） */
 function vLabel(run, pi) {
   const sn = run.sNames[pi];
   const loc = pFmt(run.pts[pi]);
@@ -88,7 +91,6 @@ function vLabel(run, pi) {
     : `路線「${run.routeName}」第${pi}點 ${loc}`;
 }
 
-/** 格式化邊（含路線名、兩端點車站名、座標） */
 function eLabel(run, ei) {
   const a = run.sNames[ei] ? `「${run.sNames[ei]}」${pFmt(run.pts[ei])}` : pFmt(run.pts[ei]);
   const b = run.sNames[ei + 1]
@@ -97,7 +99,7 @@ function eLabel(run, ei) {
   return `路線「${run.routeName}」${a}→${b}`;
 }
 
-// ─── 幾何計算 ─────────────────────────────────────────────────────────────────
+// ─── 幾何 ───────────────────────────────────────────────────────────────────
 
 const EPS = 1e-9;
 
@@ -105,65 +107,6 @@ function cross2d(ax, ay, bx, by) {
   return ax * by - ay * bx;
 }
 
-/**
- * 線段 (p1,p2) 與 (q1,q2) 的內部真交叉（不含端點碰觸）。
- * @returns {{ x:number, y:number }|null}
- */
-function segCross(p1, p2, q1, q2) {
-  const dx = p2.x - p1.x,
-    dy = p2.y - p1.y;
-  const ex = q2.x - q1.x,
-    ey = q2.y - q1.y;
-  const denom = cross2d(dx, dy, ex, ey);
-  if (Math.abs(denom) < EPS) return null; // 平行
-  const fx = q1.x - p1.x,
-    fy = q1.y - p1.y;
-  const t = cross2d(fx, fy, ex, ey) / denom;
-  const s = cross2d(fx, fy, dx, dy) / denom;
-  if (t > EPS && t < 1 - EPS && s > EPS && s < 1 - EPS) {
-    return { x: p1.x + t * dx, y: p1.y + t * dy };
-  }
-  return null;
-}
-
-/**
- * 線段 (p1,p2) 與 (q1,q2) 的共線重合（超過一個點）。
- * @returns {{ x:number, y:number }|null} 重疊區間中點
- */
-function segOverlap(p1, p2, q1, q2) {
-  const dx = p2.x - p1.x,
-    dy = p2.y - p1.y;
-  const len2 = dx * dx + dy * dy;
-  if (len2 < EPS) return null;
-  const sqLen = Math.sqrt(len2);
-  if (Math.abs(cross2d(dx, dy, q1.x - p1.x, q1.y - p1.y)) > EPS * sqLen) return null;
-  if (Math.abs(cross2d(dx, dy, q2.x - p1.x, q2.y - p1.y)) > EPS * sqLen) return null;
-  const tq1 = ((q1.x - p1.x) * dx + (q1.y - p1.y) * dy) / len2;
-  const tq2 = ((q2.x - p1.x) * dx + (q2.y - p1.y) * dy) / len2;
-  const lo = Math.max(0, Math.min(tq1, tq2));
-  const hi = Math.min(1, Math.max(tq1, tq2));
-  if (hi - lo < EPS) return null;
-  const tm = (lo + hi) / 2;
-  return { x: p1.x + tm * dx, y: p1.y + tm * dy };
-}
-
-/**
- * 折線轉彎叉積符號：+1 左轉（逆時針）、-1 右轉（順時針）、0 直行
- */
-function bendSign(prev, curr, next) {
-  const ax = curr.x - prev.x,
-    ay = curr.y - prev.y;
-  const bx = next.x - curr.x,
-    by = next.y - curr.y;
-  const z = cross2d(ax, ay, bx, by);
-  const scale = Math.hypot(ax, ay) * Math.hypot(bx, by);
-  if (scale < EPS) return 0;
-  /* 略放寬：格點微調時小轉角易被當成共線；鄰線側向檢查會補捉「跑到另一邊」 */
-  if (Math.abs(z) < scale * 1e-12) return 0;
-  return z > 0 ? 1 : -1;
-}
-
-/** 點到有限線段之平方距離、垂足參數 t∈[0,1] */
 function distSegFoot(p, a, b) {
   const dx = b.x - a.x,
     dy = b.y - a.y;
@@ -182,7 +125,6 @@ function distSegFoot(p, a, b) {
   return { dist2: ex * ex + ey * ey, t };
 }
 
-/** 點 p 相對有向邊 a→b 的左右側：+1 / -1；幾乎在直線上則 0 */
 function sideOfEdge(p, a, b) {
   const z = cross2d(b.x - a.x, b.y - a.y, p.x - a.x, p.y - a.y);
   const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -211,98 +153,9 @@ function bboxMaxSpan(runs) {
 }
 
 /**
- * 頂點相對「他路線」某邊，正規化前後是否在直線的另一側。
- *（同一遍歷序下 EC[k]／ED[k] 邊一一對齊時使用。）
- */
-function collectNeighborSideFlips(C, D, EC, ED, opts) {
-  const { maxReports = 24, rFactor = 0.068, rFloor = 22 } = opts || {};
-
-  /** @type {string[]} */
-  const issues = [];
-  if (!C.length || EC.length !== ED.length) return issues;
-
-  const span = Math.max(bboxMaxSpan(C), bboxMaxSpan(D));
-  const Rnear = Math.max(rFloor, span * rFactor);
-  const Rnear2 = Rnear * Rnear;
-
-  const orderVerts = [];
-  for (let ri = 0; ri < C.length; ri++) {
-    for (let pi = 0; pi < C[ri].pts.length; pi++) {
-      orderVerts.push({ ri, pi, named: !!C[ri].sNames[pi] });
-    }
-  }
-  /* 有站名優先（如南勢角）*/
-  orderVerts.sort((a, b) => Number(b.named) - Number(a.named));
-
-  const seenVtx = new Set();
-
-  for (const { ri, pi } of orderVerts) {
-    if (issues.length >= maxReports) break;
-
-    const vKey = `${ri}_${pi}`;
-    if (seenVtx.has(vKey)) continue;
-
-    const vc = C[ri].pts[pi];
-    const vd = D[ri].pts[pi];
-
-    let bestK = -1;
-    let bestSumD2 = Infinity;
-    let bestFc = /** @type {null | ReturnType<typeof distSegFoot>} */ (null);
-    let bestFd = /** @type {null | ReturnType<typeof distSegFoot>} */ (null);
-
-    for (let k = 0; k < EC.length; k++) {
-      if (EC[k].ri === ri) continue;
-
-      const ebc = EC[k];
-      const ebd = ED[k];
-
-      const fc = distSegFoot(vc, ebc.p1, ebc.p2);
-      const fd = distSegFoot(vd, ebd.p1, ebd.p2);
-
-      if (fc.dist2 > Rnear2 || fd.dist2 > Rnear2) continue;
-
-      /* 垂足若在端點上，叉向不穩定；其餘整段皆可 */
-      const edgeEps = 1e-5;
-      if (fc.t <= edgeEps || fc.t >= 1 - edgeEps || fd.t <= edgeEps || fd.t >= 1 - edgeEps)
-        continue;
-
-      const zc = sideOfEdge(vc, ebc.p1, ebc.p2);
-      const zd = sideOfEdge(vd, ebd.p1, ebd.p2);
-      if (zc === 0 || zd === 0 || zc === zd) continue;
-
-      const sumD = fc.dist2 + fd.dist2;
-      if (sumD < bestSumD2) {
-        bestSumD2 = sumD;
-        bestK = k;
-        bestFc = fc;
-        bestFd = fd;
-      }
-    }
-
-    if (bestK < 0 || !bestFc || !bestFd) continue;
-
-    seenVtx.add(vKey);
-    const ebd = ED[bestK];
-    const ecLabel = eLabel(ebd.run, ebd.ei);
-    /* 對照後版座標報告使用者 */
-    const distShow = Math.sqrt(Math.min(bestFc.dist2, bestFd.dist2));
-
-    issues.push(
-      `相對鄰線側向翻面：` +
-        `${vLabel(D[ri], pi)}；` +
-        `參考鄰線 ${ecLabel}（頂點距該線約 ${distShow.toFixed(1)} 格）。` +
-        `相對此有向線段，正規化前後落在直線兩側（已跨到鄰線另一邊）。`
-    );
-  }
-
-  return issues;
-}
-
-/**
  * @typedef {{ ri: number, ei: number, p1: {x:number,y:number}, p2: {x:number,y:number}, run: Run }} Edge
  */
 
-/** 建立全部邊的扁平清單 */
 function mkEdges(runs) {
   /** @type {Edge[]} */
   const E = [];
@@ -314,43 +167,187 @@ function mkEdges(runs) {
   return E;
 }
 
-/** 同路段且相鄰（共用端點），不算交叉 */
-function isAdj(a, b) {
-  return a.ri === b.ri && Math.abs(a.ei - b.ei) <= 1;
+/**
+ * 對鄰線 d3 邊段，將頂點做最小法向位移，使 sideOf 與 c3 參考側 targetSign 一致；輸出格點整數。
+ *
+ * @param {{x:number,y:number}} vd
+ * @param {{x:number,y:number}} a
+ * @param {{x:number,y:number}} b  正規化後鄰線有向邊
+ * @param {number} targetSign  +1 | -1（來自 c3 相對同一條邊索引的側向）
+ */
+function minimalGridMoveToSide(vd, a, b, targetSign) {
+  const dx = b.x - a.x,
+    dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < EPS || (targetSign !== 1 && targetSign !== -1)) return null;
+
+  const nx = -dy / len,
+    ny = dx / len;
+  const crossEn = len;
+
+  const Z = cross2d(dx, dy, vd.x - a.x, vd.y - a.y);
+  const cur = Z > len * 2e-8 ? 1 : Z < -len * 2e-8 ? -1 : 0;
+
+  if (cur === targetSign && cur !== 0) {
+    const rx = Math.round(vd.x),
+      ry = Math.round(vd.y);
+    if (sideOfEdge({ x: rx, y: ry }, a, b) === targetSign) return { x: rx, y: ry };
+  }
+
+  const margin = Math.max(len * 1e-5, 0.05);
+  const Ztarget = targetSign * Math.max(len * 3e-7, margin);
+  const s = (Ztarget - Z) / crossEn;
+
+  const tryPt = (x, y) => {
+    const p = { x, y };
+    const qx = Math.round(p.x),
+      qy = Math.round(p.y);
+    const rr = { x: qx, y: qy };
+    if (sideOfEdge(rr, a, b) === targetSign) return rr;
+    for (let step = 1; step <= 12; step++) {
+      const dirs = [
+        [0, step],
+        [0, -step],
+        [step, 0],
+        [-step, 0],
+        [step, step],
+        [step, -step],
+        [-step, step],
+        [-step, -step],
+      ];
+      for (const [ex, ey] of dirs) {
+        const tx = qx + ex,
+          ty = qy + ey;
+        if (sideOfEdge({ x: tx, y: ty }, a, b) === targetSign) return { x: tx, y: ty };
+      }
+    }
+    return null;
+  };
+
+  let cand = tryPt(vd.x + nx * s, vd.y + ny * s);
+  if (cand) return cand;
+  cand = tryPt(vd.x - nx * s, vd.y - ny * s);
+  return cand;
 }
 
-/**
- * 路線對 (ri, rj) 在 edges 中是否有任何交叉（供結構不對齊時的備援比對）
- */
-function routePairHasCross(edges, ri, rj) {
-  for (let i = 0; i < edges.length; i++) {
-    if (edges[i].ri !== ri) continue;
-    for (let j = 0; j < edges.length; j++) {
-      if (edges[j].ri !== rj) continue;
-      if (segCross(edges[i].p1, edges[i].p2, edges[j].p1, edges[j].p2)) return true;
-    }
+function setFlatPointMutate(flatSeg, pi, x, y) {
+  const pts = flatSeg.points;
+  if (!Array.isArray(pts) || pi < 0 || pi >= pts.length) return false;
+  const p = pts[pi];
+  if (Array.isArray(p)) {
+    p[0] = x;
+    p[1] = y;
+    return true;
+  }
+  if (p && typeof p === 'object') {
+    p.x = x;
+    p.y = y;
+    return true;
   }
   return false;
 }
 
 /**
- * 路線對 (ri, rj) 在 edges 中是否有任何重疊
+ * 掃描「相對鄰線錯邊」（與 collectNeighborSideFlips 同判据；可多筆）。
  */
-function routePairHasOverlap(edges, ri, rj) {
-  for (let i = 0; i < edges.length; i++) {
-    if (edges[i].ri !== ri) continue;
-    for (let j = 0; j < edges.length; j++) {
-      if (edges[j].ri !== rj) continue;
-      if (segOverlap(edges[i].p1, edges[i].p2, edges[j].p1, edges[j].p2)) return true;
+function collectNeighborFlipRecords(C, D, EC, ED, opts) {
+  const { maxRecords = 80, rFactor = 0.068, rFloor = 22 } = opts || {};
+
+  const records = [];
+  const reasons = [];
+  if (!C.length || EC.length !== ED.length) return { records, reasons };
+
+  const span = Math.max(bboxMaxSpan(C), bboxMaxSpan(D));
+  const Rnear = Math.max(rFloor, span * rFactor);
+  const Rnear2 = Rnear * Rnear;
+
+  const orderVerts = [];
+  for (let ri = 0; ri < C.length; ri++) {
+    for (let pi = 0; pi < C[ri].pts.length; pi++) {
+      orderVerts.push({ ri, pi, named: !!C[ri].sNames[pi] });
     }
   }
-  return false;
+  orderVerts.sort((a, b) => Number(b.named) - Number(a.named));
+
+  const seenVtx = new Set();
+
+  for (const { ri, pi } of orderVerts) {
+    if (records.length >= maxRecords) break;
+
+    const vKey = `${ri}_${pi}`;
+    if (seenVtx.has(vKey)) continue;
+
+    const vc = C[ri].pts[pi];
+    const vd = D[ri].pts[pi];
+
+    let bestK = -1;
+    let bestSumD2 = Infinity;
+    const edgeEps = 1e-5;
+
+    for (let k = 0; k < EC.length; k++) {
+      if (EC[k].ri === ri) continue;
+
+      const ebc = EC[k];
+      const ebd = ED[k];
+
+      const fc = distSegFoot(vc, ebc.p1, ebc.p2);
+      const fd = distSegFoot(vd, ebd.p1, ebd.p2);
+
+      if (fc.dist2 > Rnear2 || fd.dist2 > Rnear2) continue;
+      if (
+        fc.t <= edgeEps ||
+        fc.t >= 1 - edgeEps ||
+        fd.t <= edgeEps ||
+        fd.t >= 1 - edgeEps
+      )
+        continue;
+
+      const zc = sideOfEdge(vc, ebc.p1, ebc.p2);
+      const zd = sideOfEdge(vd, ebd.p1, ebd.p2);
+      if (zc === 0 || zd === 0 || zc === zd) continue;
+
+      const sumD = fc.dist2 + fd.dist2;
+      if (sumD < bestSumD2) {
+        bestSumD2 = sumD;
+        bestK = k;
+      }
+    }
+
+    if (bestK < 0) continue;
+
+    seenVtx.add(vKey);
+    const ebd = ED[bestK];
+    const distShow = Math.sqrt(
+      Math.min(
+        distSegFoot(vc, EC[bestK].p1, EC[bestK].p2).dist2,
+        distSegFoot(vd, ebd.p1, ebd.p2).dist2
+      )
+    );
+
+    const rec = {
+      ri,
+      pi,
+      flatSegIndex: D[ri].flatSegIndex,
+      edgeK: bestK,
+      vc: { x: vc.x, y: vc.y },
+      vd: { x: vd.x, y: vd.y },
+      neighborLabel: eLabel(ebd.run, ebd.ei),
+    };
+    records.push(rec);
+
+    reasons.push(
+      `相對鄰線錯邊：` +
+        `${vLabel(D[ri], pi)}；` +
+        `參考鄰線 ${rec.neighborLabel}（頂點距該線約 ${distShow.toFixed(1)} 格）。` +
+        `正規化前後分列該直線兩側（已跑到鄰線另一邊）。`
+    );
+  }
+
+  return { records, reasons };
 }
 
-// ─── 主函式 ───────────────────────────────────────────────────────────────────
-
 /**
- * 比對正規化前（c3）與正規化後（d3）的幾何拓撲。
+ * 僅「鄰線錯邊」比對（給 UI 與修正後驗證）。
  * @param {unknown[]} c3Segments
  * @param {unknown[]} d3Segments
  */
@@ -363,170 +360,192 @@ export function analyzeCoordNormalizeTopology(c3Segments, d3Segments) {
     topologyPreserved: true,
     summaryZh: '',
     reasons: /** @type {string[]} */ ([]),
+    neighborFlipCount: 0,
     nonDegree2VertexCountBefore: 0,
     nonDegree2VertexCountAfter: 0,
     componentCountBefore: 0,
     componentCountAfter: 0,
     statsCaptionZh: '',
+    /** 若有錯邊，按鈕「修正」可執行 */
+    hasNeighborFlips: false,
+    structMatch: false,
   };
 
   if (!C.length || !D.length) {
     out.skipped = true;
-    out.summaryZh = '路網資料為空，略過比對。';
+    out.summaryZh = '路網資料為空，略過相鄰錯邊比對。';
     return out;
   }
 
-  // ── 結構對齊檢查 ──────────────────────────────────────────────────────────
   let structMatch = C.length === D.length;
   if (!structMatch) {
     out.topologyPreserved = false;
-    out.reasons.push(`路段數不同：正規化前 ${C.length} 段，後 ${D.length} 段。`);
+    out.reasons.push(
+      `路段數不同：正規化前 ${C.length} 段、後 ${D.length} 段，無法做鄰線錯邊對照。`
+    );
   } else {
     for (let i = 0; i < C.length; i++) {
       if (C[i].pts.length !== D[i].pts.length) {
         structMatch = false;
         out.topologyPreserved = false;
         out.reasons.push(
-          `路線「${C[i].routeName}」的折線頂點數改變：${C[i].pts.length} → ${D[i].pts.length}（正規化可能截斷或增加了頂點）。`
+          `路線「${C[i].routeName}」折線頂點數改變：${C[i].pts.length} → ${D[i].pts.length}，無法對點位做錯邊對照。`
         );
       }
     }
   }
+
+  out.structMatch = structMatch;
 
   const EC = mkEdges(C);
   const ED = mkEdges(D);
 
-  /* 邊太多時限速（避免 O(E²) 跑太久） */
-  const EDGE_CAP = 4000;
-  const edgeTooMany = EC.length > EDGE_CAP || ED.length > EDGE_CAP;
-  if (edgeTooMany) {
-    out.reasons.push(
-      `邊數過多（正規化前 ${EC.length} 條、後 ${ED.length} 條），僅抽查前 ${EDGE_CAP} 條邊的交叉／重疊。`
-    );
-  }
-  const ecCheck = edgeTooMany ? EC.slice(0, EDGE_CAP) : EC;
-  const edCheck = edgeTooMany ? ED.slice(0, EDGE_CAP) : ED;
-
-  const MAX = 12;
-
-  // ── 檢查 1：新增交叉點 ────────────────────────────────────────────────────
-  const crossIssues = /** @type {string[]} */ ([]);
-
   if (structMatch) {
-    /* 精確模式：逐邊對比（ecCheck[k] 對應 edCheck[k]） */
-    for (let i = 0; i < edCheck.length && crossIssues.length < MAX; i++) {
-      for (let j = i + 1; j < edCheck.length && crossIssues.length < MAX; j++) {
-        if (isAdj(edCheck[i], edCheck[j])) continue;
-        const xD = segCross(edCheck[i].p1, edCheck[i].p2, edCheck[j].p1, edCheck[j].p2);
-        if (!xD) continue;
-        const xC =
-          i < ecCheck.length && j < ecCheck.length
-            ? segCross(ecCheck[i].p1, ecCheck[i].p2, ecCheck[j].p1, ecCheck[j].p2)
-            : null;
-        if (xC) continue; // 原本就有交叉
-        crossIssues.push(
-          `新增交叉點 ${pFmt(xD)}：${eLabel(edCheck[i].run, edCheck[i].ei)} 與 ${eLabel(edCheck[j].run, edCheck[j].ei)} 在正規化後互交。`
-        );
-      }
-    }
+    const { reasons, records } = collectNeighborFlipRecords(C, D, EC, ED, {
+      maxRecords: 80,
+    });
+    out.reasons.push(...reasons);
+    out.neighborFlipCount = records.length;
+    out.hasNeighborFlips = records.length > 0;
+    if (records.length > 0) out.topologyPreserved = false;
   } else {
-    /* 備援模式：路線對為單位 */
-    const checked = new Set();
-    for (let i = 0; i < edCheck.length && crossIssues.length < MAX; i++) {
-      for (let j = i + 1; j < edCheck.length && crossIssues.length < MAX; j++) {
-        if (edCheck[i].ri === edCheck[j].ri) continue;
-        const pk = `${Math.min(edCheck[i].ri, edCheck[j].ri)}|${Math.max(edCheck[i].ri, edCheck[j].ri)}`;
-        if (checked.has(pk)) continue;
-        const xD = segCross(edCheck[i].p1, edCheck[i].p2, edCheck[j].p1, edCheck[j].p2);
-        if (!xD) continue;
-        checked.add(pk);
-        if (routePairHasCross(ecCheck, edCheck[i].ri, edCheck[j].ri)) continue;
-        crossIssues.push(
-          `新增交叉：路線「${edCheck[i].run.routeName}」與「${edCheck[j].run.routeName}」在 ${pFmt(xD)} 附近相交，正規化前未相交。`
-        );
-      }
-    }
+    out.hasNeighborFlips = false;
   }
-
-  // ── 檢查 2：新增路線重疊 ──────────────────────────────────────────────────
-  const overlapIssues = /** @type {string[]} */ ([]);
-
-  if (structMatch) {
-    for (let i = 0; i < edCheck.length && overlapIssues.length < MAX; i++) {
-      for (let j = i + 1; j < edCheck.length && overlapIssues.length < MAX; j++) {
-        if (isAdj(edCheck[i], edCheck[j])) continue;
-        const ovD = segOverlap(edCheck[i].p1, edCheck[i].p2, edCheck[j].p1, edCheck[j].p2);
-        if (!ovD) continue;
-        const ovC =
-          i < ecCheck.length && j < ecCheck.length
-            ? segOverlap(ecCheck[i].p1, ecCheck[i].p2, ecCheck[j].p1, ecCheck[j].p2)
-            : null;
-        if (ovC) continue;
-        overlapIssues.push(
-          `新增路線重疊（約 ${pFmt(ovD)}）：${eLabel(edCheck[i].run, edCheck[i].ei)} 與 ${eLabel(edCheck[j].run, edCheck[j].ei)} 在正規化後共線重合。`
-        );
-      }
-    }
-  } else {
-    const checked = new Set();
-    for (let i = 0; i < edCheck.length && overlapIssues.length < MAX; i++) {
-      for (let j = i + 1; j < edCheck.length && overlapIssues.length < MAX; j++) {
-        if (edCheck[i].ri === edCheck[j].ri) continue;
-        const pk = `${Math.min(edCheck[i].ri, edCheck[j].ri)}|${Math.max(edCheck[i].ri, edCheck[j].ri)}`;
-        if (checked.has(pk)) continue;
-        const ovD = segOverlap(edCheck[i].p1, edCheck[i].p2, edCheck[j].p1, edCheck[j].p2);
-        if (!ovD) continue;
-        checked.add(pk);
-        if (routePairHasOverlap(ecCheck, edCheck[i].ri, edCheck[j].ri)) continue;
-        overlapIssues.push(
-          `新增路線重疊：路線「${edCheck[i].run.routeName}」與「${edCheck[j].run.routeName}」在 ${pFmt(ovD)} 附近共線重合，正規化前未重疊。`
-        );
-      }
-    }
-  }
-
-  // ── 檢查 3：轉彎方向翻轉（點跑到鄰邊另一側） ──────────────────────────
-  const bendIssues = /** @type {string[]} */ ([]);
-
-  if (structMatch) {
-    for (let ri = 0; ri < C.length && bendIssues.length < MAX; ri++) {
-      const rc = C[ri];
-      const rd = D[ri];
-      for (let pi = 1; pi + 1 < rc.pts.length && bendIssues.length < MAX; pi++) {
-        const sc = bendSign(rc.pts[pi - 1], rc.pts[pi], rc.pts[pi + 1]);
-        const sd = bendSign(rd.pts[pi - 1], rd.pts[pi], rd.pts[pi + 1]);
-        if (sc !== 0 && sd !== 0 && sc !== sd) {
-          bendIssues.push(
-            `${vLabel(rd, pi)} 的轉彎方向翻轉（原${sc > 0 ? '左' : '右'}轉 → 現${sd > 0 ? '左' : '右'}轉），` +
-              `此點正規化後可能跑到鄰近路段另一側。`
-          );
-        }
-      }
-    }
-  }
-
-  // ── 檢查 4：頂點相對「他路線」之左右側翻面（須結構對齊、邊索引一致） ────
-  const neighborSideIssues = structMatch
-    ? collectNeighborSideFlips(C, D, EC, ED, {})
-    : /** @type {string[]} */ ([]);
-
-  // ── 彙整結果 ──────────────────────────────────────────────────────────────
-  out.reasons.push(...crossIssues, ...overlapIssues, ...bendIssues, ...neighborSideIssues);
-  if (out.reasons.length > 0) out.topologyPreserved = false;
 
   if (out.topologyPreserved) {
-    out.summaryZh =
-      '未偵測到新增路段相交／共線重合、自身折線轉向翻側，或未偵測到頂點對鄰線側向翻出。';
+    out.summaryZh = '未偵測到頂點相對鄰路線「錯邊」（位移到另一側）之情事。';
+  } else if (out.neighborFlipCount > 0) {
+    out.summaryZh = `偵測到 ${out.neighborFlipCount} 處相對鄰線錯邊（點位移到鄰線另一側），詳見列表。`;
   } else {
-    const ps = [];
-    if (crossIssues.length) ps.push(`新增交叉 ${crossIssues.length} 處`);
-    if (overlapIssues.length) ps.push(`新增重疊 ${overlapIssues.length} 處`);
-    if (bendIssues.length) ps.push(`轉向翻側 ${bendIssues.length} 處`);
-    if (neighborSideIssues.length) ps.push(`對鄰線側翻出 ${neighborSideIssues.length} 處`);
-    out.summaryZh = ps.length ? ps.join('、') + '。' : '發現問題，請見下方列表。';
+    out.summaryZh =
+      out.reasons.length > 0 ? out.reasons[0] + '（詳見列表）。' : '比對發現問題，請見列表。';
   }
 
-  out.statsCaptionZh = `路線 ${C.length}、折線段 ${EC.length}；${structMatch ? '含頂點對「他路線邊」之側向對照（先處理有車站名的頂點）。' : '結構未對齊，僅能比對相交／重合。'}`;
+  out.statsCaptionZh = `僅檢查「相對他路線邊」之左右側錯位；路線 ${C.length} 條、折線段 ${EC.length}；有站名頂點優先掃描。`;
 
   return out;
+}
+
+/**
+ * 將 d3 路網中錯邊頂點逐一修正（最小法向位移至正確半平面），每步重驗，不可留下錯邊。
+ *
+ * @param {unknown[]} c3Segments  正規化前參考（只讀）
+ * @param {unknown[]} d3Segments  會被深拷貝後修改
+ * @returns {{
+ *   ok: boolean,
+ *   patched: unknown[],
+ *   moveLines: string[],
+ *   iterations: number,
+ *   topologyCheck: ReturnType<typeof analyzeCoordNormalizeTopology>,
+ *   errorZh?: string,
+ * }}
+ */
+export function applyNeighborSideTopologyFix(c3Segments, d3Segments) {
+  const emptyTc = () =>
+    analyzeCoordNormalizeTopology(c3Segments, Array.isArray(d3Segments) ? d3Segments : []);
+
+  if (!Array.isArray(d3Segments) || d3Segments.length === 0) {
+    return {
+      ok: false,
+      patched: [],
+      moveLines: [],
+      iterations: 0,
+      topologyCheck: emptyTc(),
+      errorZh: 'd3 路網為空，無法修正。',
+    };
+  }
+
+  const patched = JSON.parse(JSON.stringify(d3Segments));
+  const moveLines = /** @type {string[]} */ ([]);
+  const maxIter = 500;
+  let stepCount = 0;
+
+  while (stepCount < maxIter) {
+    const C = toRuns(c3Segments);
+    const D = toRuns(patched);
+    const EC = mkEdges(C);
+    const ED = mkEdges(D);
+    const { records } = collectNeighborFlipRecords(C, D, EC, ED, { maxRecords: 1 });
+    if (records.length === 0) break;
+
+    const r = records[0];
+    const ebc = EC[r.edgeK];
+    const ebd = ED[r.edgeK];
+    const targetSign = sideOfEdge(r.vc, ebc.p1, ebc.p2);
+    if (targetSign !== 1 && targetSign !== -1) {
+      return {
+        ok: false,
+        patched,
+        moveLines,
+        iterations: stepCount,
+        topologyCheck: analyzeCoordNormalizeTopology(c3Segments, patched),
+        errorZh: `頂點 ${vLabel(D[r.ri], r.pi)} 在參考鄰線上幾乎共線，無法自動決定要移向哪一側，請手動調整。`,
+      };
+    }
+
+    const vd = D[r.ri].pts[r.pi];
+    const newPt = minimalGridMoveToSide(vd, ebd.p1, ebd.p2, targetSign);
+    if (!newPt) {
+      return {
+        ok: false,
+        patched,
+        moveLines,
+        iterations: stepCount,
+        topologyCheck: analyzeCoordNormalizeTopology(c3Segments, patched),
+        errorZh: `無法為 ${vLabel(D[r.ri], r.pi)} 計算最近合法格點（鄰線可能過短）。`,
+      };
+    }
+
+    const flatArr = normalizeSpaceNetworkDataToFlatSegments(patched);
+    const seg = flatArr[r.flatSegIndex];
+    if (!seg?.points?.[r.pi]) {
+      return {
+        ok: false,
+        patched,
+        moveLines,
+        iterations: stepCount,
+        topologyCheck: analyzeCoordNormalizeTopology(c3Segments, patched),
+        errorZh: '內部索引與路網結構不一致，無法寫入該頂點。',
+      };
+    }
+
+    const beforeFmt = pFmt(vd);
+    if (!setFlatPointMutate(seg, r.pi, newPt.x, newPt.y)) {
+      return {
+        ok: false,
+        patched,
+        moveLines,
+        iterations: stepCount,
+        topologyCheck: analyzeCoordNormalizeTopology(c3Segments, patched),
+        errorZh: '寫入座標失敗（頂點格式非 [x,y] 或 {x,y}）。',
+      };
+    }
+
+    moveLines.push(
+      `網格座標（移動前 → 移動後）${beforeFmt} → ${pFmt(newPt)}；本線頂點 ${vLabel(
+        D[r.ri],
+        r.pi
+      )}；參照鄰線 ${r.neighborLabel}`
+    );
+    stepCount++;
+  }
+
+  const topologyCheck = analyzeCoordNormalizeTopology(c3Segments, patched);
+  const ok = topologyCheck.topologyPreserved && !topologyCheck.hasNeighborFlips;
+
+  if (!ok && topologyCheck.hasNeighborFlips) {
+    return {
+      ok: false,
+      patched,
+      moveLines,
+      iterations: stepCount,
+      topologyCheck,
+      errorZh:
+        stepCount >= maxIter
+          ? `已處理 ${maxIter} 次仍無法完全消除鄰線錯邊（可能互相牽制），請手動微調剩餘頂點。`
+          : `修正後仍有鄰線錯邊，請檢查路網或手動調整。`,
+    };
+  }
+
+  return { ok, patched, moveLines, iterations: stepCount, topologyCheck };
 }
