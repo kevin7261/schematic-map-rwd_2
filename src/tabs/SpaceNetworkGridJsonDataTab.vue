@@ -139,7 +139,7 @@
           const rows = mapDrawnExportRowsFromJsonDrawRoot(layer.jsonData, layer.dataJson);
           return Array.isArray(rows) && rows.length > 0;
         }
-        /** 「版面網格·座標正規化」等：upper 為 space-layout+json-viewer 但非 json 繪製；以路網／匯出 JSON 為主 */
+        /** 「版面網格·座標正規化」：與 OSM 管線共用 Upper json-viewer；以路網／匯出 JSON 為主 */
         if (layer.layerId === 'json_grid_coord_normalized') {
           return true;
         }
@@ -185,7 +185,7 @@
     if (activeResolvedLayer.value?.layerId === 'json_grid_coord_normalized') {
       return '圖層 spaceNetworkGridJsonData／processedJsonData（c3→d3 與測試_4 相同結構；記憶體）';
     }
-    return '圖層 dataJson（含均勻網格封裝時與 jsonData 並存；記憶體）';
+    return '圖層 dataJson／jsonData（記憶體）';
   });
 
   /** 空白狀態主文案（內容區） */

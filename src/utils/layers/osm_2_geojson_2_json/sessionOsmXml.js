@@ -2,7 +2,7 @@
 
 export const LAYER_ID = 'osm_2_geojson_2_json';
 
-/** 版面均勻格／JSON 檢視（與 OSM 管線鏡像）：圖層 id 為 json_grid_coord_normalized */
+/** 是否為「座標正規化」圖層（json_grid_coord_normalized）；供 OSM 管線 JSON 檢視等沿用 */
 export function isSpaceLayoutUniformGridViewerLayerId(layerId) {
   return layerId === 'json_grid_coord_normalized';
 }

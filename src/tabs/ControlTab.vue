@@ -52,11 +52,7 @@
     mapFlatSegmentsToExportRowsOrNull,
     exportRowToControlStationNodes,
   } from '@/utils/taipeiTest3/flatSegmentsToGeojsonStyleExportRows.js';
-  import {
-    isMapDrawnRoutesExportArray,
-    mapDrawnExportRowsFromJsonDrawRoot,
-    wrapJsonDrawDataJsonWithUniformGrid,
-  } from '@/utils/mapDrawnRoutesImport.js';
+  import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
   import { taipeiK4MapK3TabJsonToPlotPxForDisplay } from '@/utils/taipeiK4SpaceNetworkPlotPx.js';
   import { buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid } from '@/utils/taipeiK4ControlDiagnosticsSegments.js';
   import {
@@ -67,11 +63,6 @@
     towardCenterMoveLabel,
   } from '../utils/gridNormalizationMinDistance.js';
   import { buildMapDrawnRoutesExport } from '@/utils/exportMapDrawnRoutesFromLayer.js';
-  import {
-    buildMapDrawnStationUniformRefinementGridWithMeta,
-    applyLayoutViewerCompressEmptyBands,
-    annotateMapDrawnStationNodesWithUniformGridCellIndices,
-  } from '@/utils/stationUniformGridGeoJson.js';
   import { isRegisteredNetworkDrawSketchSn4LayerId } from '@/utils/networkDrawSketchSn4PipelineLayers.js';
   import {
     getSchematicPlotBoundsFromLayer,
@@ -3745,62 +3736,6 @@
     }
   };
 
-  /** json 繪製：全域均勻網格（每軸 4→16→64…），寫入 layoutUniformGridGeoJson + meta（space-layout-grid-viewer） */
-  const onGenerateJsonDrawUniformGridClick = () => {
-    dataStore.syncOsm2DataJsonMirrorFromParent();
-    const lay = dataStore.findLayerById('json_grid_coord_normalized');
-    if (!lay) return;
-    const rows = mapDrawnExportRowsFromJsonDrawRoot(lay.jsonData, lay.dataJson);
-    if (!isMapDrawnRoutesExportArray(rows) || rows.length === 0) {
-      window.alert(
-        '尚無路段匯出資料可用於網格。請先在「Map」對應圖層以畫線模式繪製路段，並確認上方「OSM → GeoJSON → JSON」已有路段 JSON。'
-      );
-      return;
-    }
-    const { geojson, meta } = buildMapDrawnStationUniformRefinementGridWithMeta(rows);
-    if (meta) annotateMapDrawnStationNodesWithUniformGridCellIndices(rows, meta);
-    lay.layoutUniformGridGeoJson = geojson;
-    lay.layoutUniformGridMeta = meta;
-    lay.dataJson = wrapJsonDrawDataJsonWithUniformGrid(rows, geojson, meta);
-    dataStore.saveLayerState('json_grid_coord_normalized', {
-      layoutUniformGridGeoJson: geojson,
-      layoutUniformGridMeta: meta,
-      dataJson: lay.dataJson,
-      jsonData: lay.jsonData,
-    });
-  };
-
-  /** 刪除整條無站之列／欄後，將路段與均勻格線重整到壓縮座標（僅適用經緯細分網格、尚未壓縮） */
-  const onCompressJsonDrawUniformGridEmptyBandsClick = () => {
-    const lay = dataStore.findLayerById('json_grid_coord_normalized');
-    if (!lay) return;
-    const divBefore =
-      lay.layoutUniformGridMeta?.mode === 'wgs84'
-        ? Math.max(1, Math.floor(Number(lay.layoutUniformGridMeta.divisionsPerAxis)) || 1)
-        : null;
-    const r = applyLayoutViewerCompressEmptyBands(lay);
-    if (!r) {
-      window.alert('無法壓縮：請先按「產生均勻細分網格」，且須為經緯模式（尚未壓縮過空列／欄）。');
-      return;
-    }
-    if (
-      divBefore != null &&
-      typeof r.nx === 'number' &&
-      typeof r.ny === 'number' &&
-      r.nx === divBefore &&
-      r.ny === divBefore
-    ) {
-      window.alert('目前沒有「整欄或整列皆無站點」的條帶可刪除；資料與格線維持不變。');
-    }
-    dataStore.saveLayerState('json_grid_coord_normalized', {
-      jsonData: lay.jsonData,
-      dataJson: lay.dataJson,
-      geojsonData: lay.geojsonData,
-      layoutUniformGridGeoJson: lay.layoutUniformGridGeoJson,
-      layoutUniformGridMeta: lay.layoutUniformGridMeta,
-    });
-  };
-
   const onTaipeiOsmSpaceGridLocalFileInputChange = async (event) => {
     const input = event.target;
     const file = input.files && input.files[0];
@@ -6639,37 +6574,6 @@
             >
               未偵測到錯邊時無法按下「修正」，也不會產生座標變更紀錄。若肉眼仍覺得站在鄰線另一側，可能是該點超出「近距離鄰線」掃描範圍，需手動調整或放寬演算法閾值。
             </div>
-          </div>
-        </div>
-
-        <!-- 座標正規化圖層：經緯路段均勻網格（space-layout-grid-viewer） -->
-        <div
-          v-if="layer.layerId === 'json_grid_coord_normalized'"
-          class="pb-3 mb-3 border-bottom"
-        >
-          <div class="my-title-xs-gray pb-2">版面均勻網格</div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
-            @click="onGenerateJsonDrawUniformGridClick"
-          >
-            產生均勻細分網格（每格至多一站）
-          </button>
-          <button
-            type="button"
-            class="btn rounded-pill border my-font-size-xs text-nowrap w-100 my-cursor-pointer mb-2"
-            @click="onCompressJsonDrawUniformGridEmptyBandsClick"
-          >
-            刪除無站之整列／欄並重整格線與座標
-          </button>
-          <div class="text-muted" style="font-size: 11px; line-height: 1.45">
-            自父圖層同步之 <code class="small">jsonData</code> 取路段
-            <strong>segment</strong>
-            內站點經緯度；先對全域外框<strong>每軸切 4 段</strong>（共 4×4＝16
-            格），若有格內多於一站則<strong>再每軸 ×4</strong
-            >（16×16→256→…），直到每格至多一站或達細分上限。在
-            <code class="small">space-layout-grid-viewer</code>
-            繪製最終<strong>直角格線</strong>。重複按鈕會覆寫格線。
           </div>
         </div>
 
