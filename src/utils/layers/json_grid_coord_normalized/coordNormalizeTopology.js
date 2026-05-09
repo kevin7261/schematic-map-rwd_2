@@ -2,8 +2,7 @@
  * 座標正規化後「相對鄰路線錯邊」比對與修正（c3 vs d3）
  *
  * 只檢查：頂點相對他路線有向線段是否從正規化前一側跑到另一側（如南勢角、淡水站）。
- * 「修正」：將該頂點沿對照鄰線之法向做最小位移至正確半平面（格點四捨五入），
- * 循序套用並每次重驗，直到無錯邊或無法收斂。
+ * 「修正」：將該頂點移至鄰線正確半平面內之格點；若可與前後鄰點形成水平／垂直折線則優先選離原點最近者，否則取任意最近合法格點，再退到法向微移。
  */
 
 import { normalizeSpaceNetworkDataToFlatSegments } from '@/utils/gridNormalizationMinDistance.js';
@@ -167,6 +166,74 @@ function mkEdges(runs) {
   return E;
 }
 
+function dist2xy(ax, ay, bx, by) {
+  const dx = ax - bx,
+    dy = ay - by;
+  return dx * dx + dy * dy;
+}
+
+/** 兩點連線是否為水平或垂直（網格四捨五入後與整數格點 cand 對齊） */
+function edgeIsAxisAlignedGrid(p, q) {
+  const px = Math.round(p.x),
+    py = Math.round(p.y);
+  const qx = Math.round(q.x),
+    qy = Math.round(q.y);
+  return px === qx || py === qy;
+}
+
+/**
+ * 移動後頂點若與鄰接點形成之兩段（或端點一段）皆為水平／垂直折線。
+ */
+function vertexNeighborsOrthoOk(prev, cand, next, pi, nPts) {
+  if (nPts < 2) return true;
+  if (pi <= 0) {
+    return !!(next && edgeIsAxisAlignedGrid(cand, next));
+  }
+  if (pi >= nPts - 1) {
+    return !!(prev && edgeIsAxisAlignedGrid(prev, cand));
+  }
+  return (
+    !!(prev && edgeIsAxisAlignedGrid(prev, cand)) && !!(next && edgeIsAxisAlignedGrid(cand, next))
+  );
+}
+
+/**
+ * 在鄰線正確半平面上搜尋格點：優先「本線與前後鄰接段皆水平或垂直」且離 vd 最近者；
+ * 若無則取半平面內離 vd 任意最近格點；搜尋框內仍無則回傳 null（改由呼叫端用法向啟發）。
+ */
+function nearestGridOnNeighborSidePreferOrtho(vd, a, b, targetSign, prev, next, pi, nPts, searchR) {
+  const R = Math.max(8, Math.min(searchR ?? 56, 120));
+  let bestAny = null;
+  let bestAnyD = Infinity;
+  let bestOrtho = null;
+  let bestOrthoD = Infinity;
+  const vdx = vd.x,
+    vdy = vd.y;
+  const bx = Math.round(vdx);
+  const by = Math.round(vdy);
+
+  for (let dx = -R; dx <= R; dx++) {
+    for (let dy = -R; dy <= R; dy++) {
+      const ox = bx + dx;
+      const oy = by + dy;
+      const cand = { x: ox, y: oy };
+      if (sideOfEdge(cand, a, b) !== targetSign) continue;
+      const d = dist2xy(ox, oy, vdx, vdy);
+      if (d < bestAnyD) {
+        bestAnyD = d;
+        bestAny = cand;
+      }
+      if (vertexNeighborsOrthoOk(prev, cand, next, pi, nPts) && d < bestOrthoD) {
+        bestOrthoD = d;
+        bestOrtho = cand;
+      }
+    }
+  }
+
+  if (bestOrtho) return bestOrtho;
+  return bestAny;
+}
+
 /**
  * 對鄰線 d3 邊段，將頂點做最小法向位移，使 sideOf 與 c3 參考側 targetSign 一致；輸出格點整數。
  *
@@ -228,6 +295,15 @@ function minimalGridMoveToSide(vd, a, b, targetSign) {
   if (cand) return cand;
   cand = tryPt(vd.x - nx * s, vd.y - ny * s);
   return cand;
+}
+
+/**
+ * 先嘗試「正側＋與前後鄰點構成水平／垂直折線」之最近格點，否則正側任意最近，最後法向啟發。
+ */
+function gridMoveToSidePreferOrtho(vd, a, b, targetSign, prev, next, pi, nPts) {
+  const g = nearestGridOnNeighborSidePreferOrtho(vd, a, b, targetSign, prev, next, pi, nPts, 72);
+  if (g) return g;
+  return minimalGridMoveToSide(vd, a, b, targetSign);
 }
 
 function setFlatPointMutate(flatSeg, pi, x, y) {
@@ -294,12 +370,7 @@ function collectNeighborFlipRecords(C, D, EC, ED, opts) {
       const fd = distSegFoot(vd, ebd.p1, ebd.p2);
 
       if (fc.dist2 > Rnear2 || fd.dist2 > Rnear2) continue;
-      if (
-        fc.t <= edgeEps ||
-        fc.t >= 1 - edgeEps ||
-        fd.t <= edgeEps ||
-        fd.t >= 1 - edgeEps
-      )
+      if (fc.t <= edgeEps || fc.t >= 1 - edgeEps || fd.t <= edgeEps || fd.t >= 1 - edgeEps)
         continue;
 
       const zc = sideOfEdge(vc, ebc.p1, ebc.p2);
@@ -484,7 +555,11 @@ export function applyNeighborSideTopologyFix(c3Segments, d3Segments) {
     }
 
     const vd = D[r.ri].pts[r.pi];
-    const newPt = minimalGridMoveToSide(vd, ebd.p1, ebd.p2, targetSign);
+    const runPts = D[r.ri].pts;
+    const nRun = runPts.length;
+    const prevV = r.pi > 0 ? runPts[r.pi - 1] : null;
+    const nextV = r.pi + 1 < nRun ? runPts[r.pi + 1] : null;
+    const newPt = gridMoveToSidePreferOrtho(vd, ebd.p1, ebd.p2, targetSign, prevV, nextV, r.pi, nRun);
     if (!newPt) {
       return {
         ok: false,
