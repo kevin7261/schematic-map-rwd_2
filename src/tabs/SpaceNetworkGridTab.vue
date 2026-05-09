@@ -3539,7 +3539,7 @@
     const xRange = xMax - xMin;
     const yRange = yMax - yMin;
 
-    /** taipei_d3／e3／…、`json_grid_coord_normalized`：整數座標系，背景與軸每 1 單位一條線／一個刻度 */
+    /** taipei_d3／e3／…、`json_grid_coord_normalized`／`json_grid_from_coord_normalized`：整數座標系，背景與軸每 1 單位一條線／一個刻度（每格一線） */
     const isTaipeiD3CoordNormalizeLayer =
       layerTab === 'taipei_d3' ||
       layerTab === 'taipei_sn4_d' ||
@@ -3562,6 +3562,7 @@
       layerTab === 'taipei_g3_dp_2' ||
       layerTab === 'taipei_h3_dp_2' ||
       layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
+      layerTab === 'json_grid_from_coord_normalized' ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
     /** 經緯度或小範圍連續座標：整數步長會變成 1 導致刻度迴圈為空，改以 d3.ticks 產生網格與軸刻度 */

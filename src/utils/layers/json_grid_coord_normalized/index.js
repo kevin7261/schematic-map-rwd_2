@@ -9,6 +9,7 @@ export {
 export {
   applyOsm2DataJsonSyncedLayerFromParent,
   resetJsonGridCoordNormalizedPipelineFields,
+  syncJsonGridCoordNormalizedDataJsonFromPipeline,
   syncOsm2DataJsonMirrorFromParent,
   jsonGridCoordNormalizedPersistPayload,
   mirrorResetAndPersistJsonGridCoordNormalized,

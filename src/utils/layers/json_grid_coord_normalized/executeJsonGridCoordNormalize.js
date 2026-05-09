@@ -2,7 +2,8 @@
 
 /**
  * 「JSON·網格·座標正規化」圖層：單鍵 **b→c→d**（見 `layerId`：'json_grid_coord_normalized'）。
- * 開啟本圖層時已由 dataStore 自 `osm_2_geojson_2_json` 複製 `dataJson`／`geojsonData`。
+ * 開啟本圖層時已由 dataStore 自 `osm_2_geojson_2_json` 複製 `dataJson`／`geojsonData`；
+ * 每次正規化／刪空欄列／鄰線修正成功後會將匯出列寫回 `dataJson`／`jsonData`／`geojsonData` 並 persist，供下游圖層鏡像讀取。
  */
 
 import { useDataStore } from '@/stores/dataStore.js';
@@ -19,7 +20,11 @@ import {
 } from './coordNormalizeTopology.js';
 import { pruneGridLinesWithoutConnectVertices } from '@/utils/taipeiDataProcTest3/f3ToG3PruneEmptyGridLines.js';
 import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
-import { jsonGridCoordNormalizedPersistPayload } from './mirrorFromOsm2Layer.js';
+import {
+  jsonGridCoordNormalizedPersistPayload,
+  syncJsonGridCoordNormalizedDataJsonFromPipeline,
+} from './mirrorFromOsm2Layer.js';
+import { syncJsonGridFromCoordNormalizedMirrorFromParent } from './mirrorFromCoordNormalizedLayer.js';
 
 export function executeJsonGridCoordNormalize() {
   const dataStore = useDataStore();
@@ -101,19 +106,12 @@ export function executeJsonGridCoordNormalize() {
 
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, out.flatSegs);
 
-  dataStore.saveLayerState('json_grid_coord_normalized', {
-    spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
-    spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
-    spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
-    spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
-    showStationPlacement: false,
-    processedJsonData: layer.processedJsonData,
-    dashboardData: layer.dashboardData,
-    jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
-    jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
-    dataOSM: layer.dataOSM,
-    isLoaded: true,
-  });
+  syncJsonGridCoordNormalizedDataJsonFromPipeline(layer);
+  dataStore.saveLayerState('json_grid_coord_normalized', jsonGridCoordNormalizedPersistPayload(layer));
+  syncJsonGridFromCoordNormalizedMirrorFromParent(
+    (id) => dataStore.findLayerById(id),
+    dataStore.saveLayerState,
+  );
 
   return true;
 }
@@ -218,7 +216,12 @@ export function executeJsonGridCoordNormalizedPruneEmptyGridLines() {
 
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, S_strokes);
 
+  syncJsonGridCoordNormalizedDataJsonFromPipeline(layer);
   dataStore.saveLayerState('json_grid_coord_normalized', jsonGridCoordNormalizedPersistPayload(layer));
+  syncJsonGridFromCoordNormalizedMirrorFromParent(
+    (id) => dataStore.findLayerById(id),
+    dataStore.saveLayerState,
+  );
 
   return {
     ok: true,
@@ -306,18 +309,12 @@ export function executeJsonGridNeighborTopologyFix() {
 
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, r.patched);
 
-  dataStore.saveLayerState('json_grid_coord_normalized', {
-    spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
-    spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
-    spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,
-    spaceNetworkGridJsonData_StationData: layer.spaceNetworkGridJsonData_StationData,
-    processedJsonData: layer.processedJsonData,
-    dashboardData: layer.dashboardData,
-    jsonGridNeighborFixPersist: layer.jsonGridNeighborFixPersist,
-    jsonGridCoordNormalizeReferenceC3: layer.jsonGridCoordNormalizeReferenceC3,
-    dataOSM: layer.dataOSM,
-    isLoaded: layer.isLoaded,
-  });
+  syncJsonGridCoordNormalizedDataJsonFromPipeline(layer);
+  dataStore.saveLayerState('json_grid_coord_normalized', jsonGridCoordNormalizedPersistPayload(layer));
+  syncJsonGridFromCoordNormalizedMirrorFromParent(
+    (id) => dataStore.findLayerById(id),
+    dataStore.saveLayerState,
+  );
 
   return {
     ok: true,

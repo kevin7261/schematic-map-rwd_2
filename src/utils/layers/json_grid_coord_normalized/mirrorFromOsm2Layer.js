@@ -5,6 +5,7 @@
 
 import { LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID } from '../osm_2_geojson_2_json/sessionOsmXml.js';
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
+import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
 import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from './layerIds.js';
 import { syncJsonGridFromCoordNormalizedMirrorFromParent } from './mirrorFromCoordNormalizedLayer.js';
 
@@ -27,6 +28,36 @@ export function applyOsm2DataJsonSyncedLayerFromParent(findLayerById, derivedLay
   derivedLayer.isLoaded = true;
   derivedLayer.layoutUniformGridGeoJson = null;
   derivedLayer.layoutUniformGridMeta = null;
+}
+
+/**
+ * 將正規化管線產物寫回本圖層 dataJson／jsonData 與 geojsonData（與 OSM 管線同型之匯出列），
+ * 供 JSON 檢視與下游 json_grid_from_coord_normalized 鏡像讀取。
+ */
+export function syncJsonGridCoordNormalizedDataJsonFromPipeline(layer) {
+  if (!layer) return;
+  let rows = Array.isArray(layer.processedJsonData) ? layer.processedJsonData : null;
+  if (
+    (!rows || rows.length === 0) &&
+    Array.isArray(layer.spaceNetworkGridJsonData) &&
+    layer.spaceNetworkGridJsonData.length > 0
+  ) {
+    try {
+      rows = flatSegmentsToGeojsonStyleExportRows(layer.spaceNetworkGridJsonData);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('syncJsonGridCoordNormalizedDataJsonFromPipeline：自路網匯出列失敗', e);
+      rows = null;
+    }
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  const arr = JSON.parse(JSON.stringify(rows));
+  layer.jsonData = arr;
+  layer.dataJson = arr;
+  layer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(arr, {
+    stationPoints: 'endpoints',
+    routeLine: 'endpoints',
+  });
 }
 
 /** 版面網格·座標正規化：清除直線化／正規化產物以改從新複製之 dataJson 重跑 */

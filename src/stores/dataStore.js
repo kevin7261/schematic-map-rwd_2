@@ -165,7 +165,6 @@ import {
   mirrorResetAndPersistJsonGridFromCoordNormalized,
   reloadJsonGridFromCoordNormalizedLayer,
 } from '../utils/layers/json_grid_coord_normalized/mirrorFromCoordNormalizedLayer.js';
-import { JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID } from '../utils/layers/json_grid_coord_normalized/layerIds.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
@@ -356,7 +355,7 @@ export const useDataStore = defineStore(
             jsonGridCoordNormalizeReferenceC3: null,
           },
           {
-            layerId: JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
+            layerId: 'json_grid_from_coord_normalized',
             layerName: '自座標正規化 dataJson（預留）',
             visible: false,
             isLoading: false,
@@ -2111,7 +2110,7 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
-      if (layer.visible && layer.layerId === JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID) {
+      if (layer.visible && layer.layerId === 'json_grid_from_coord_normalized') {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
@@ -3258,7 +3257,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID) {
+      if (layerId === 'json_grid_from_coord_normalized') {
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }
