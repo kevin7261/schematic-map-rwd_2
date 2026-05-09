@@ -390,6 +390,8 @@ export const useDataStore = defineStore(
             hideFromMap: true,
             display: true,
             highlightedSegmentIndex: null,
+            /** Control「下一頂點」：共點群組移至此格可嚴格增加橫豎比例時之建議格 */
+            jsonGridFromCoordSuggestTargetGrid: null,
             squareGridCellsTaipeiTest3: false,
             dataOSM: null,
             dataGeojson: null,

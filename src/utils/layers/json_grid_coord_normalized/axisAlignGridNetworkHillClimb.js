@@ -96,8 +96,8 @@ function segmentsCollinearOverlap(x1, y1, x2, y2, x3, y3, x4, y4) {
   if (len1 === 0) return false;
   // 投影用同方向分量（取較大者以避免除以 0）
   const ref = Math.abs(dx1) >= Math.abs(dy1) ? dx1 : dy1;
-  const proj3 = Math.abs(dx1) >= Math.abs(dy1) ? (x3 - x1) : (y3 - y1);
-  const proj4 = Math.abs(dx1) >= Math.abs(dy1) ? (x4 - x1) : (y4 - y1);
+  const proj3 = Math.abs(dx1) >= Math.abs(dy1) ? x3 - x1 : y3 - y1;
+  const proj4 = Math.abs(dx1) >= Math.abs(dy1) ? x4 - x1 : y4 - y1;
   const t3 = proj3 / ref;
   const t4 = proj4 / ref;
   const tMin = Math.min(t3, t4);
@@ -122,6 +122,38 @@ function hasInvalidGeometry(segments) {
       // 共線重疊（路線疊在同一格線上）
       if (segmentsCollinearOverlap(e1.x1, e1.y1, e1.x2, e1.y2, e2.x1, e2.y1, e2.x2, e2.y2)) {
         return true;
+      }
+    }
+  }
+  if (hasVertexStrictlyOnForeignOpenEdge(segments)) return true;
+  return false;
+}
+
+/** 頂點落在**其他**線段之開放內部（非該線段端點座標） */
+function pointStrictlyInteriorOnSegment(px, py, ax, ay, bx, by) {
+  const cross = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+  if (cross !== 0) return false;
+  const minx = Math.min(ax, bx);
+  const maxx = Math.max(ax, bx);
+  const miny = Math.min(ay, by);
+  const maxy = Math.max(ay, by);
+  if (px < minx || px > maxx || py < miny || py > maxy) return false;
+  if ((px === ax && py === ay) || (px === bx && py === by)) return false;
+  return true;
+}
+
+function hasVertexStrictlyOnForeignOpenEdge(segments) {
+  const edges = buildEdges(segments);
+  if (!edges) return true;
+  for (let si = 0; si < segments.length; si++) {
+    const pts = segments[si]?.points;
+    if (!Array.isArray(pts)) continue;
+    for (let pi = 0; pi < pts.length; pi++) {
+      const [px, py] = getXY(pts[pi]);
+      for (const e of edges) {
+        const onEnd = (px === e.x1 && py === e.y1) || (px === e.x2 && py === e.y2);
+        if (onEnd) continue;
+        if (pointStrictlyInteriorOnSegment(px, py, e.x1, e.y1, e.x2, e.y2)) return true;
       }
     }
   }
@@ -257,7 +289,8 @@ export function runAxisAlignHillClimb(flatSegments, opts = {}) {
     return {
       ok: false,
       reason: 'crossing-initial',
-      message: '目前路網已有線段內部交叉或路線重疊（共線），無法在「不允許交叉／重疊」下自動橫豎化。',
+      message:
+        '目前路網已有線段內部交叉、路線重疊（共線）或頂點落於他線之上，無法在「不允許交叉／重疊」下自動橫豎化。',
     };
   }
 
@@ -266,8 +299,7 @@ export function runAxisAlignHillClimb(flatSegments, opts = {}) {
     return {
       ok: false,
       reason: 'co-point-initial',
-      message:
-        '初值路網有同一格上屬於不同共點群組之頂點（非預期）；請檢查資料。',
+      message: '初值路網有同一格上屬於不同共點群組之頂點（非預期）；請檢查資料。',
     };
   }
 
@@ -290,5 +322,95 @@ export function runAxisAlignHillClimb(flatSegments, opts = {}) {
     costBefore,
     costAfter: cost,
     improved: cost < costBefore,
+  };
+}
+
+/**
+ * 在目前路網下，將與 (segIdx,ptIdx) 共點之群組移至 bbox 內任一格點，
+ * 使總斜段權重嚴格下降且滿足共點／無交叉／無共線重疊／無頂點落於他線開放內部。
+ * 若多個目標同權重，取曼哈頓距離最近者。
+ *
+ * @returns {{ ok: boolean, target: {x:number,y:number}|null, costBefore?: number, costAfter?: number, improved?: boolean, message?: string }}
+ */
+export function findBestCoPointGroupTargetOnGrid(flatSegments, segIdx, ptIdx) {
+  if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
+    return { ok: false, target: null, message: '沒有路段資料' };
+  }
+  const work = JSON.parse(JSON.stringify(flatSegments));
+  syncAllEndpoints(work);
+  if (hasInvalidGeometry(work)) {
+    return { ok: false, target: null, message: '目前路網已有交叉、重疊或頂點落線，無法評估建議格。' };
+  }
+  const initialGroupIdByVertex = buildInitialCoPointGroupIdByVertex(work);
+  if (!occupancyNoDistinctCoPointsMerged(work, initialGroupIdByVertex)) {
+    return { ok: false, target: null, message: '共點群組資料異常。' };
+  }
+
+  const groupMap = buildGroups(work);
+  const anchor = work[segIdx]?.points?.[ptIdx];
+  if (!anchor) return { ok: false, target: null, message: '頂點不存在。' };
+  const [cx, cy] = getXY(anchor);
+  const key = `${cx},${cy}`;
+  const group = groupMap.get(key);
+  if (!group?.length || !group.some((g) => g.si === segIdx && g.pi === ptIdx)) {
+    return { ok: false, target: null, message: '無法對齊共點群組。' };
+  }
+  const groupRefs = [...group];
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const seg of work) {
+    const pts = seg?.points;
+    if (!Array.isArray(pts)) continue;
+    for (const p of pts) {
+      const [x, y] = getXY(p);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  const cost0 = totalCost(work);
+  if (!Number.isFinite(minX)) {
+    return { ok: true, target: null, costBefore: cost0, costAfter: cost0, improved: false };
+  }
+
+  let bestCost = Infinity;
+  let bestDist = Infinity;
+  let bestTarget = null;
+
+  for (let ty = minY; ty <= maxY; ty++) {
+    for (let tx = minX; tx <= maxX; tx++) {
+      const dx = tx - cx;
+      const dy = ty - cy;
+      if (dx === 0 && dy === 0) continue;
+      const trial = JSON.parse(JSON.stringify(work));
+      applyGroupDelta(trial, groupRefs, dx, dy);
+      if (!occupancyNoDistinctCoPointsMerged(trial, initialGroupIdByVertex)) continue;
+      if (!buildEdges(trial)) continue;
+      if (hasInvalidGeometry(trial)) continue;
+      const c = totalCost(trial);
+      if (c >= cost0) continue;
+      const dist = Math.abs(tx - cx) + Math.abs(ty - cy);
+      if (c < bestCost || (c === bestCost && dist < bestDist)) {
+        bestCost = c;
+        bestDist = dist;
+        bestTarget = { x: tx, y: ty };
+      }
+    }
+  }
+
+  if (bestTarget == null) {
+    return { ok: true, target: null, costBefore: cost0, costAfter: cost0, improved: false };
+  }
+  return {
+    ok: true,
+    target: bestTarget,
+    costBefore: cost0,
+    costAfter: bestCost,
+    improved: true,
   };
 }

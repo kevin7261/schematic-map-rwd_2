@@ -93,6 +93,7 @@
     getOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
   import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from '@/utils/layers/json_grid_coord_normalized/index.js';
+  import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
   import { uniformGridCellFromLayoutMeta } from '@/utils/stationUniformGridGeoJson.js';
 
@@ -6007,6 +6008,64 @@
           .attr('stroke-width', 1);
       }
     }
+
+    // json_grid_from_coord_normalized：Control「下一頂點」— 橘圈目前頂點，綠圈可平移共點群組以減少斜段之建議格
+    if (layerTab === 'json_grid_from_coord_normalized') {
+      const hlLayer = dataStore.findLayerById('json_grid_from_coord_normalized');
+      const hl = hlLayer?.highlightedSegmentIndex;
+      if (
+        hlLayer &&
+        Array.isArray(hl) &&
+        hl.length >= 2 &&
+        Number.isFinite(Number(hl[0])) &&
+        Number.isFinite(Number(hl[1]))
+      ) {
+        const resolved = resolveB3InputSpaceNetwork(hlLayer);
+        const flat =
+          resolved?.spaceNetwork?.length > 0
+            ? normalizeSpaceNetworkDataToFlatSegments(
+                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+              )
+            : [];
+        const si = Number(hl[0]);
+        const pi = Number(hl[1]);
+        const seg = flat[si];
+        const pt = seg?.points?.[pi];
+        if (pt) {
+          const gx = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+          const gy = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+          if (Number.isFinite(gx) && Number.isFinite(gy)) {
+            zoomGroup
+              .append('g')
+              .attr('class', 'json-grid-from-coord-vertex-highlight')
+              .style('pointer-events', 'none')
+              .append('circle')
+              .attr('cx', xScale(gx))
+              .attr('cy', yScale(gy))
+              .attr('r', 14)
+              .attr('fill', 'rgba(255, 152, 0, 0.28)')
+              .attr('stroke', '#ff6600')
+              .attr('stroke-width', 3.5);
+          }
+        }
+      }
+      const sg = hlLayer?.jsonGridFromCoordSuggestTargetGrid;
+      const sx = sg != null ? Number(sg.x) : NaN;
+      const sy = sg != null ? Number(sg.y) : NaN;
+      if (Number.isFinite(sx) && Number.isFinite(sy)) {
+        zoomGroup
+          .append('g')
+          .attr('class', 'json-grid-from-coord-suggest-highlight')
+          .style('pointer-events', 'none')
+          .append('circle')
+          .attr('cx', xScale(sx))
+          .attr('cy', yScale(sy))
+          .attr('r', 14)
+          .attr('fill', 'rgba(76, 175, 80, 0.22)')
+          .attr('stroke', '#2e7d32')
+          .attr('stroke-width', 3.5);
+      }
+    }
   };
 
   /**
@@ -6253,7 +6312,13 @@
       if (!activeLayerTab.value) return null;
       const lid = activeLayerTab.value;
       const layer = dataStore.findLayerById(lid);
-      return layer?.highlightedSegmentIndex ?? null;
+      if (!layer) return null;
+      if (layer.layerId === 'json_grid_from_coord_normalized') {
+        const hl = layer.highlightedSegmentIndex;
+        const sg = layer.jsonGridFromCoordSuggestTargetGrid;
+        return `${hl?.[0] ?? ''},${hl?.[1] ?? ''}|${sg?.x ?? ''},${sg?.y ?? ''}`;
+      }
+      return layer.highlightedSegmentIndex ?? null;
     },
     async (newVal, oldVal) => {
       const same =

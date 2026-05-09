@@ -32,6 +32,7 @@
     executeJsonGridCoordNormalizedPruneEmptyGridLines,
     executeJsonGridNeighborTopologyFix,
     resolveB3InputSpaceNetwork,
+    findBestCoPointGroupTargetOnGrid,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { getIcon } from '@/utils/utils.js';
 
@@ -3777,6 +3778,36 @@
     return out;
   };
 
+  /** 手動步進頂點列表索引（每按一次 highlight 下一筆，循環） */
+  const jsonGridFromCoordVertexStep = ref(-1);
+
+  const advanceJsonGridFromCoordVertexHighlight = () => {
+    const lyr = dataStore.findLayerById('json_grid_from_coord_normalized');
+    const list = lyr ? jsonGridFromCoordNormalizedVertexList(lyr) : [];
+    if (!lyr || !list.length) {
+      window.alert('尚無頂點；請先有路網資料。');
+      return;
+    }
+    jsonGridFromCoordVertexStep.value = (jsonGridFromCoordVertexStep.value + 1) % list.length;
+    const it = list[jsonGridFromCoordVertexStep.value];
+    lyr.highlightedSegmentIndex = [it.segIdx, it.ptIdx];
+
+    let suggest = null;
+    const resolved = resolveB3InputSpaceNetwork(lyr);
+    if (resolved?.spaceNetwork?.length) {
+      const flat = normalizeSpaceNetworkDataToFlatSegments(
+        JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+      );
+      const r = findBestCoPointGroupTargetOnGrid(flat, it.segIdx, it.ptIdx);
+      if (r?.ok && r.improved && r.target) suggest = { x: r.target.x, y: r.target.y };
+    }
+    lyr.jsonGridFromCoordSuggestTargetGrid = suggest;
+    dataStore.saveLayerState('json_grid_from_coord_normalized', {
+      highlightedSegmentIndex: lyr.highlightedSegmentIndex,
+      jsonGridFromCoordSuggestTargetGrid: suggest,
+    });
+  };
+
   /** JSON·網格·座標正規化（單鍵 b→c→d） */
   const onJsonGridCoordNormalizeClick = async () => {
     if (isExecuting.value) return;
@@ -6707,6 +6738,20 @@
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">所有頂點列表</div>
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
+              style="min-height: 28px"
+              :disabled="jsonGridFromCoordNormalizedVertexList(layer).length === 0"
+              @click="advanceJsonGridFromCoordVertexHighlight"
+            >
+              下一頂點（示意圖 highlight）
+            </button>
+          </div>
+          <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
+            每按一次只 highlight 列表下一頂點（橘圈）。若在 bbox 內整數格存在「與該共點群組一併平移、斜段權重嚴格下降且無新增交叉／重疊／頂點落線」之格，會再以綠圈標示曼哈頓距離最近者；否則僅橘圈。
+          </div>
           <div
             v-if="jsonGridFromCoordNormalizedVertexList(layer).length === 0"
             class="text-muted my-font-size-xs"

@@ -37,3 +37,4 @@ export {
   executeJsonGridNeighborTopologyFix,
 } from './executeJsonGridCoordNormalize.js';
 export { executeJsonGridFromCoordNormalizedAxisAlign } from './executeJsonGridFromCoordNormalizedAxisAlign.js';
+export { findBestCoPointGroupTargetOnGrid } from './axisAlignGridNetworkHillClimb.js';

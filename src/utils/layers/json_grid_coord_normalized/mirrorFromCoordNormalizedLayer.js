@@ -69,6 +69,7 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
   lyr.dataTableData = null;
   lyr.layerInfoData = null;
   lyr.highlightedSegmentIndex = null;
+  lyr.jsonGridFromCoordSuggestTargetGrid = null;
   lyr.layoutUniformGridGeoJson = null;
   lyr.layoutUniformGridMeta = null;
   lyr.showStationPlacement = true;
@@ -98,6 +99,7 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
     dataTableData: layer.dataTableData,
     layerInfoData: layer.layerInfoData,
     highlightedSegmentIndex: layer.highlightedSegmentIndex,
+    jsonGridFromCoordSuggestTargetGrid: layer.jsonGridFromCoordSuggestTargetGrid ?? null,
     showStationPlacement: layer.showStationPlacement,
   };
   if (!omitLoadingFlags) {
