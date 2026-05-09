@@ -31,6 +31,7 @@
     executeJsonGridCoordNormalize,
     executeJsonGridCoordNormalizedPruneEmptyGridLines,
     executeJsonGridNeighborTopologyFix,
+    resolveB3InputSpaceNetwork,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { getIcon } from '@/utils/utils.js';
 
@@ -3717,6 +3718,65 @@
     return 'bg-secondary bg-opacity-10 text-body border border-secondary border-opacity-25';
   };
 
+  /**
+   * `json_grid_from_coord_normalized`：由路網（或 geojson／dataJson 建網）列舉每段折線上之所有頂點。
+   * @returns {Array<{ row: number, segIdx: number, ptIdx: number, routeName: string, x: number, y: number, role: string, label: string }>}
+   */
+  const jsonGridFromCoordNormalizedVertexList = (lyr) => {
+    if (!lyr || lyr.layerId !== 'json_grid_from_coord_normalized') return [];
+    const resolved = resolveB3InputSpaceNetwork(lyr);
+    if (!resolved?.spaceNetwork?.length) return [];
+    const flat = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+    );
+    const out = [];
+    let row = 0;
+    for (let segIdx = 0; segIdx < flat.length; segIdx++) {
+      const seg = flat[segIdx];
+      const routeName = String(seg.route_name ?? seg.name ?? 'Unknown');
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const nodes = Array.isArray(seg.nodes) ? seg.nodes : [];
+      const nPts = pts.length;
+      for (let ptIdx = 0; ptIdx < nPts; ptIdx++) {
+        const pt = pts[ptIdx];
+        const x = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+        const y = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+        const n = nodes[ptIdx];
+        let role = '';
+        if (n?.node_type === 'connect') role = 'connect';
+        else if (n?.node_type === 'line') role = 'line';
+        else if (ptIdx === 0) role = 'start';
+        else if (ptIdx === nPts - 1) role = 'end';
+        else role = 'bend';
+        let label = '';
+        if (n && typeof n === 'object') {
+          const sn = String(n.station_name ?? n.tags?.station_name ?? n.tags?.name ?? '').trim();
+          const cn = n.connect_number ?? n.tags?.connect_number;
+          if (sn) label = cn != null && String(cn) !== '' ? `${sn}（轉乘#${cn}）` : sn;
+          else if (cn != null && String(cn) !== '') label = `轉乘#${cn}`;
+          else if (n.node_type === 'connect') label = '轉乘點';
+        }
+        if (!label) {
+          if (ptIdx === 0) label = '起點';
+          else if (ptIdx === nPts - 1) label = '終點';
+          else label = '—';
+        }
+        row += 1;
+        out.push({
+          row,
+          segIdx,
+          ptIdx,
+          routeName,
+          x: Number.isFinite(x) ? Math.round(x) : x,
+          y: Number.isFinite(y) ? Math.round(y) : y,
+          role,
+          label,
+        });
+      }
+    }
+    return out;
+  };
+
   /** JSON·網格·座標正規化（單鍵 b→c→d） */
   const onJsonGridCoordNormalizeClick = async () => {
     if (isExecuting.value) return;
@@ -3768,9 +3828,7 @@
         return;
       }
       if (r.noop) {
-        window.alert(
-          '目前沒有「整欄或整列皆無 connect（紅／藍）頂點」可刪除；路網維持不變。'
-        );
+        window.alert('目前沒有「整欄或整列皆無 connect（紅／藍）頂點」可刪除；路網維持不變。');
       }
     } catch (err) {
       console.error(err);
@@ -6518,7 +6576,9 @@
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
               <div>
                 <strong>拓撲比對（c3 vs d3）</strong>
-                <span class="text-muted ms-1" style="font-size: 10px">僅偵測點位移到「鄰線另一側」</span>
+                <span class="text-muted ms-1" style="font-size: 10px"
+                  >僅偵測點位移到「鄰線另一側」</span
+                >
               </div>
               <button
                 type="button"
@@ -6541,7 +6601,9 @@
               </button>
             </div>
             <div
-              v-if="layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped"
+              v-if="
+                layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped
+              "
               class="mt-1"
             >
               {{ layer.dashboardData.topologyCheck.summaryZh }}
@@ -6601,7 +6663,9 @@
               </div>
             </div>
             <div
-              v-if="layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped"
+              v-if="
+                layer.dashboardData?.topologyCheck && !layer.dashboardData.topologyCheck.skipped
+              "
               class="mt-1 text-muted"
               style="font-size: 10px"
             >
@@ -6634,6 +6698,52 @@
             style="font-size: 10px; line-height: 1.45"
           >
             完成「座標正規化」並顯示上方拓撲比對後，即可刪除無 connect 之整欄／列。
+          </div>
+        </div>
+
+        <!-- json_grid_from_coord_normalized：所有頂點列表 -->
+        <div
+          v-if="layer.layerId === 'json_grid_from_coord_normalized'"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">所有頂點列表</div>
+          <div
+            v-if="jsonGridFromCoordNormalizedVertexList(layer).length === 0"
+            class="text-muted my-font-size-xs"
+            style="line-height: 1.45"
+          >
+            尚無路網可列點。請開啟本圖層以自「座標正規化」複製 dataJson／geojson，或貼入
+            <code class="small">spaceNetworkGridJsonData</code>。
+          </div>
+          <div
+            v-else
+            class="border rounded overflow-auto bg-body"
+            style="max-height: 280px; font-size: 11px"
+          >
+            <table class="table table-sm table-bordered mb-0 align-middle">
+              <thead class="sticky-top bg-secondary bg-opacity-10">
+                <tr class="text-nowrap">
+                  <th>#</th>
+                  <th>路段序</th>
+                  <th>頂點序</th>
+                  <th>路線名</th>
+                  <th>(x,y)</th>
+                  <th>類型</th>
+                  <th>標籤</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="it in jsonGridFromCoordNormalizedVertexList(layer)" :key="'gcpt-' + it.row">
+                  <td>{{ it.row }}</td>
+                  <td>{{ it.segIdx }}</td>
+                  <td>{{ it.ptIdx }}</td>
+                  <td class="text-break" style="max-width: 120px">{{ it.routeName }}</td>
+                  <td class="text-nowrap">({{ it.x }}, {{ it.y }})</td>
+                  <td>{{ it.role }}</td>
+                  <td class="text-break" style="max-width: 140px">{{ it.label }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 

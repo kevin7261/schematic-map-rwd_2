@@ -22,6 +22,7 @@ export {
   mirrorResetAndPersistJsonGridFromCoordNormalized,
   reloadJsonGridFromCoordNormalizedLayer,
   syncJsonGridFromCoordNormalizedMirrorFromParent,
+  syncJsonGridFromCoordDataJsonFromPipeline,
 } from './mirrorFromCoordNormalizedLayer.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
 export {
@@ -35,3 +36,4 @@ export {
   executeJsonGridCoordNormalizedPruneEmptyGridLines,
   executeJsonGridNeighborTopologyFix,
 } from './executeJsonGridCoordNormalize.js';
+export { executeJsonGridFromCoordNormalizedAxisAlign } from './executeJsonGridFromCoordNormalizedAxisAlign.js';

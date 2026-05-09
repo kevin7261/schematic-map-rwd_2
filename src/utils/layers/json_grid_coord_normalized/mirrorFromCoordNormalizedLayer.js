@@ -3,10 +3,40 @@
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
+import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
 import {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
 } from './layerIds.js';
+
+/**
+ * 將本圖層路網匯出列寫入 dataJson／jsonData／geojsonData（與座標正規化父層語意一致）。
+ */
+export function syncJsonGridFromCoordDataJsonFromPipeline(layer) {
+  if (!layer) return;
+  let rows = Array.isArray(layer.processedJsonData) ? layer.processedJsonData : null;
+  if (
+    (!rows || rows.length === 0) &&
+    Array.isArray(layer.spaceNetworkGridJsonData) &&
+    layer.spaceNetworkGridJsonData.length > 0
+  ) {
+    try {
+      rows = flatSegmentsToGeojsonStyleExportRows(layer.spaceNetworkGridJsonData);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('syncJsonGridFromCoordDataJsonFromPipeline：自路網匯出列失敗', e);
+      rows = null;
+    }
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  const arr = JSON.parse(JSON.stringify(rows));
+  layer.jsonData = arr;
+  layer.dataJson = arr;
+  layer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(arr, {
+    stationPoints: 'endpoints',
+    routeLine: 'endpoints',
+  });
+}
 
 export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, derivedLayer) {
   const parent = findLayerById(JSON_GRID_COORD_NORMALIZED_LAYER_ID);

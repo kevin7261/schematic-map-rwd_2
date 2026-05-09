@@ -61,7 +61,8 @@ export function executeJsonGridCoordNormalize() {
     layer.processedJsonData = out.rows ?? null;
   }
 
-  const prevDash = layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
+  const prevDash =
+    layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
   const persistFix = layer.jsonGridNeighborFixPersist;
   let fixLog =
     Array.isArray(prevDash.neighborTopologyFixLog) && prevDash.neighborTopologyFixLog.length
@@ -107,10 +108,13 @@ export function executeJsonGridCoordNormalize() {
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, out.flatSegs);
 
   syncJsonGridCoordNormalizedDataJsonFromPipeline(layer);
-  dataStore.saveLayerState('json_grid_coord_normalized', jsonGridCoordNormalizedPersistPayload(layer));
+  dataStore.saveLayerState(
+    'json_grid_coord_normalized',
+    jsonGridCoordNormalizedPersistPayload(layer)
+  );
   syncJsonGridFromCoordNormalizedMirrorFromParent(
     (id) => dataStore.findLayerById(id),
-    dataStore.saveLayerState,
+    dataStore.saveLayerState
   );
 
   return true;
@@ -165,7 +169,8 @@ export function executeJsonGridCoordNormalizedPruneEmptyGridLines() {
     console.error('刪空欄列：匯出 processedJsonData 失敗', e);
   }
 
-  const prevDash = layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
+  const prevDash =
+    layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
   const persistFix = layer.jsonGridNeighborFixPersist;
   let fixLog =
     Array.isArray(prevDash.neighborTopologyFixLog) && prevDash.neighborTopologyFixLog.length
@@ -217,10 +222,13 @@ export function executeJsonGridCoordNormalizedPruneEmptyGridLines() {
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, S_strokes);
 
   syncJsonGridCoordNormalizedDataJsonFromPipeline(layer);
-  dataStore.saveLayerState('json_grid_coord_normalized', jsonGridCoordNormalizedPersistPayload(layer));
+  dataStore.saveLayerState(
+    'json_grid_coord_normalized',
+    jsonGridCoordNormalizedPersistPayload(layer)
+  );
   syncJsonGridFromCoordNormalizedMirrorFromParent(
     (id) => dataStore.findLayerById(id),
-    dataStore.saveLayerState,
+    dataStore.saveLayerState
   );
 
   return {
@@ -251,11 +259,16 @@ export function executeJsonGridNeighborTopologyFix() {
 
   const sn = layer.spaceNetworkGridJsonData;
   if (!Array.isArray(sn) || sn.length === 0) {
-    return { ok: false, message: '本層尚無正規化後路網（spaceNetworkGridJsonData）', moveLines: [] };
+    return {
+      ok: false,
+      message: '本層尚無正規化後路網（spaceNetworkGridJsonData）',
+      moveLines: [],
+    };
   }
 
   const hasStoredC3 =
-    Array.isArray(layer.jsonGridCoordNormalizeReferenceC3) && layer.jsonGridCoordNormalizeReferenceC3.length > 0;
+    Array.isArray(layer.jsonGridCoordNormalizeReferenceC3) &&
+    layer.jsonGridCoordNormalizeReferenceC3.length > 0;
   const c3ForFix = hasStoredC3 ? layer.jsonGridCoordNormalizeReferenceC3 : c3Prep.c3Network;
 
   if (!hasStoredC3) {
@@ -267,7 +280,8 @@ export function executeJsonGridNeighborTopologyFix() {
   const { resolved } = c3Prep;
   const r = applyNeighborSideTopologyFix(c3ForFix, sn);
 
-  const baseDash = layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
+  const baseDash =
+    layer.dashboardData && typeof layer.dashboardData === 'object' ? layer.dashboardData : {};
   layer.dashboardData = {
     ...baseDash,
     topologyCheck: r.topologyCheck,
@@ -284,7 +298,7 @@ export function executeJsonGridNeighborTopologyFix() {
     stale: false,
   };
   layer.jsonGridNeighborFixPersist =
-    r.moveLines?.length > 0 ? persistPayload : layer.jsonGridNeighborFixPersist ?? null;
+    r.moveLines?.length > 0 ? persistPayload : (layer.jsonGridNeighborFixPersist ?? null);
 
   if (!r.ok) {
     dataStore.saveLayerState('json_grid_coord_normalized', {
@@ -310,10 +324,13 @@ export function executeJsonGridNeighborTopologyFix() {
   writeLayoutNormalizedLayerDataOsmFromNetwork(layer, r.patched);
 
   syncJsonGridCoordNormalizedDataJsonFromPipeline(layer);
-  dataStore.saveLayerState('json_grid_coord_normalized', jsonGridCoordNormalizedPersistPayload(layer));
+  dataStore.saveLayerState(
+    'json_grid_coord_normalized',
+    jsonGridCoordNormalizedPersistPayload(layer)
+  );
   syncJsonGridFromCoordNormalizedMirrorFromParent(
     (id) => dataStore.findLayerById(id),
-    dataStore.saveLayerState,
+    dataStore.saveLayerState
   );
 
   return {

@@ -355,6 +355,7 @@ export const useDataStore = defineStore(
             jsonGridCoordNormalizeReferenceC3: null,
           },
           {
+            /** 自父層「座標正規化」鏡像 dataJson（預留下游） */
             layerId: 'json_grid_from_coord_normalized',
             layerName: '自座標正規化 dataJson（預留）',
             visible: false,
