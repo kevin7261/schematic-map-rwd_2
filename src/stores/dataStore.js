@@ -121,8 +121,8 @@ import {
 } from '../utils/dataProcessor.js';
 
 import {
-  LINE_ORTHOGONAL_LAYER_ID,
   POINT_ORTHOGONAL_LAYER_ID,
+  isLineOrthogonalTowardCenterLayerId,
 } from '../utils/layers/json_grid_coord_normalized/layerIds.js';
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
@@ -407,9 +407,54 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
           {
-            /** 路網正交段往紅十字／示意中心縮進；dataJson 優先自 point_orthogonal，見 mirrorFromCoordNormalizedLayer */
+            /** 路網正交段往紅十字／示意中心縮進（佇序：列→欄）；dataJson 優先自 point_orthogonal，見 mirrorFromCoordNormalizedLayer */
             layerId: 'orthogonal_toward_center',
             layerName: '站點與路線往中心聚集',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            jsonGridFromCoordSuggestTargetGrid: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
+            /** 與前一層同演算法；控制台「朝十字縮進」隊列順序為欄（x）整表→列（y）整表 */
+            layerId: 'orthogonal_toward_center_vert_first',
+            layerName: '站點與路線往中心聚集（先直後橫）',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -2164,7 +2209,10 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
-      if (layer.visible && (layer.layerId === POINT_ORTHOGONAL_LAYER_ID || layer.layerId === LINE_ORTHOGONAL_LAYER_ID)) {
+      if (
+        layer.visible &&
+        (layer.layerId === POINT_ORTHOGONAL_LAYER_ID || isLineOrthogonalTowardCenterLayerId(layer.layerId))
+      ) {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
@@ -3311,7 +3359,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === POINT_ORTHOGONAL_LAYER_ID || layerId === LINE_ORTHOGONAL_LAYER_ID) {
+      if (layerId === POINT_ORTHOGONAL_LAYER_ID || isLineOrthogonalTowardCenterLayerId(layerId)) {
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }

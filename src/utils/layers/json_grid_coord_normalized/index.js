@@ -7,6 +7,9 @@ export {
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
   POINT_ORTHOGONAL_LAYER_ID,
   LINE_ORTHOGONAL_LAYER_ID,
+  LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
+  LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+  isLineOrthogonalTowardCenterLayerId,
 } from './layerIds.js';
 export {
   applyOsm2DataJsonSyncedLayerFromParent,

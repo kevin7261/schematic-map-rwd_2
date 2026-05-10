@@ -95,7 +95,7 @@
   import {
     JSON_GRID_COORD_NORMALIZED_LAYER_ID,
     POINT_ORTHOGONAL_LAYER_ID,
-    LINE_ORTHOGONAL_LAYER_ID,
+    isLineOrthogonalTowardCenterLayerId,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -3568,7 +3568,7 @@
       layerTab === 'taipei_h3_dp_2' ||
       layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
       layerTab === POINT_ORTHOGONAL_LAYER_ID ||
-      layerTab === LINE_ORTHOGONAL_LAYER_ID ||
+      isLineOrthogonalTowardCenterLayerId(layerTab) ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
     /** 經緯度或小範圍連續座標：整數步長會變成 1 導致刻度迴圈為空，改以 d3.ticks 產生網格與軸刻度 */
@@ -6015,12 +6015,12 @@
     }
 
     // point_orthogonal／temp：Control「下一頂點」— 橘圈；temp「朝紅十字」列＝橘線／點，欄＝藍虛線／點
-    if (layerTab === POINT_ORTHOGONAL_LAYER_ID || layerTab === LINE_ORTHOGONAL_LAYER_ID) {
+    if (layerTab === POINT_ORTHOGONAL_LAYER_ID || isLineOrthogonalTowardCenterLayerId(layerTab)) {
       const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;
       /** temp「朝紅十字」列／欄：列＝橘實線；欄＝藍虛線（便於區分水平／垂直階段）。 */
       const towardCrossAxis =
-        layerTab === LINE_ORTHOGONAL_LAYER_ID
+        isLineOrthogonalTowardCenterLayerId(layerTab)
           ? hlLayer?.lineOrthoTowardCrossHighlightTableAxis
           : null;
       const isColTowardCrossHl = towardCrossAxis === 'col';
@@ -6032,7 +6032,7 @@
       const towardCrossPtStroke = isColTowardCrossHl ? '#0d47a1' : '#ff6600';
 
       if (
-        layerTab === LINE_ORTHOGONAL_LAYER_ID &&
+        isLineOrthogonalTowardCenterLayerId(layerTab) &&
         hlLayer &&
         Array.isArray(hl) &&
         hl[0] === 'orthoBundle' &&
@@ -6094,7 +6094,7 @@
       }
 
       if (
-        layerTab === LINE_ORTHOGONAL_LAYER_ID &&
+        isLineOrthogonalTowardCenterLayerId(layerTab) &&
         hlLayer &&
         Array.isArray(hl) &&
         hl[0] === 'ortho' &&
@@ -6173,9 +6173,9 @@
           const gy = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
           if (Number.isFinite(gx) && Number.isFinite(gy)) {
             const ptFill =
-              layerTab === LINE_ORTHOGONAL_LAYER_ID ? towardCrossPtFill : 'rgba(255, 152, 0, 0.28)';
+              isLineOrthogonalTowardCenterLayerId(layerTab) ? towardCrossPtFill : 'rgba(255, 152, 0, 0.28)';
             const ptStroke =
-              layerTab === LINE_ORTHOGONAL_LAYER_ID ? towardCrossPtStroke : '#ff6600';
+              isLineOrthogonalTowardCenterLayerId(layerTab) ? towardCrossPtStroke : '#ff6600';
             zoomGroup
               .append('g')
               .attr('class', 'json-grid-from-coord-vertex-highlight')
@@ -6208,7 +6208,7 @@
       }
 
       /** temp：最近一次「朝紅十字縮進」之格位移預覽（灰圈＝舊、青圈＝新；與線網資料一致） */
-      if (layerTab === LINE_ORTHOGONAL_LAYER_ID && hlLayer) {
+      if (isLineOrthogonalTowardCenterLayerId(layerTab) && hlLayer) {
         const mp = hlLayer.lineOrthoTowardCrossMovePreview;
         const fx = mp != null ? Number(mp.fromGx) : NaN;
         const fy = mp != null ? Number(mp.fromGy) : NaN;
@@ -6257,7 +6257,7 @@
       }
 
       /** temp：紅虛線十字 — 若有鎖定中心格則固定於該格，否則為繪區 bbox 幾何中點（四捨五入） */
-      if (layerTab === LINE_ORTHOGONAL_LAYER_ID) {
+      if (isLineOrthogonalTowardCenterLayerId(layerTab)) {
         const fc = hlLayer?.lineOrthoTowardCrossFrozenCenter;
         const useFrozen =
           fc != null &&
@@ -6553,18 +6553,18 @@
       if (!layer) return null;
       if (
         layer.layerId === POINT_ORTHOGONAL_LAYER_ID ||
-        layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+        isLineOrthogonalTowardCenterLayerId(layer.layerId)
       ) {
         const hl = layer.highlightedSegmentIndex;
         const sg = layer.jsonGridFromCoordSuggestTargetGrid;
         const mp =
-          layer.layerId === LINE_ORTHOGONAL_LAYER_ID ? layer.lineOrthoTowardCrossMovePreview ?? null : null;
+          isLineOrthogonalTowardCenterLayerId(layer.layerId) ? layer.lineOrthoTowardCrossMovePreview ?? null : null;
         const fz =
-          layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+          isLineOrthogonalTowardCenterLayerId(layer.layerId)
             ? layer.lineOrthoTowardCrossFrozenCenter ?? null
             : null;
         const hxAxis =
-          layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+          isLineOrthogonalTowardCenterLayerId(layer.layerId)
             ? layer.lineOrthoTowardCrossHighlightTableAxis ?? null
             : null;
         return JSON.stringify([

@@ -78,7 +78,7 @@
   } from '@/utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
   import {
     POINT_ORTHOGONAL_LAYER_ID,
-    LINE_ORTHOGONAL_LAYER_ID,
+    isLineOrthogonalTowardCenterLayerId,
   } from '@/utils/layers/json_grid_coord_normalized/layerIds.js';
   import {
     minimalLineStringFeatureCollectionFromRouteExportRows,
@@ -147,7 +147,7 @@
         if (
           layer.layerId === 'json_grid_coord_normalized' ||
           layer.layerId === POINT_ORTHOGONAL_LAYER_ID ||
-          layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+          isLineOrthogonalTowardCenterLayerId(layer.layerId)
         ) {
           return true;
         }
@@ -193,7 +193,7 @@
     if (
       activeResolvedLayer.value?.layerId === 'json_grid_coord_normalized' ||
       activeResolvedLayer.value?.layerId === POINT_ORTHOGONAL_LAYER_ID ||
-      activeResolvedLayer.value?.layerId === LINE_ORTHOGONAL_LAYER_ID
+      isLineOrthogonalTowardCenterLayerId(activeResolvedLayer.value?.layerId)
     ) {
       return '圖層 spaceNetworkGridJsonData／processedJsonData（c3→d3 與測試_4 相同結構；記憶體）';
     }
@@ -210,7 +210,7 @@
     if (
       activeResolvedLayer.value?.layerId === 'json_grid_coord_normalized' ||
       activeResolvedLayer.value?.layerId === POINT_ORTHOGONAL_LAYER_ID ||
-      activeResolvedLayer.value?.layerId === LINE_ORTHOGONAL_LAYER_ID
+      isLineOrthogonalTowardCenterLayerId(activeResolvedLayer.value?.layerId)
     ) {
       return '尚無 spaceNetworkGridJsonData；請貼入 c3 路網或自 taipei_sn4_c 複製後再檢視';
     }
@@ -294,7 +294,7 @@
     if (
       layer.layerId === 'json_grid_coord_normalized' ||
       layer.layerId === POINT_ORTHOGONAL_LAYER_ID ||
-      layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+      isLineOrthogonalTowardCenterLayerId(layer.layerId)
     ) {
       const sn = layer.spaceNetworkGridJsonData;
       if (Array.isArray(sn) && sn.length > 0) {

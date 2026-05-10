@@ -11,7 +11,7 @@
    * Vue 3 Composition API 核心功能引入
    * 提供響應式數據管理、計算屬性、生命週期鉤子等現代化 Vue 開發功能
    */
-  import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+  import { ref, computed, watch, nextTick, onUnmounted, reactive } from 'vue';
 
   /**
    * Pinia 狀態管理庫引入
@@ -39,7 +39,8 @@
     jsonGridFromCoordNormalizedPersistPayload,
     executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
     POINT_ORTHOGONAL_LAYER_ID,
-    LINE_ORTHOGONAL_LAYER_ID,
+    LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
+    LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     tryOrthoTowardCrossNudgeFromReportItem,
     applyLineOrthoHubBlueDiagonalPrepassSegments,
@@ -3874,14 +3875,14 @@
   };
 
   /**
-   * `temp`（LINE_ORTHOGONAL_LAYER_ID）：由路網拆出格點折線之水平邊、垂直邊（斜邊不列入表內，僅計數）。
+   * 「往中心聚集」線網層：由路網拆出格點折線之水平邊、垂直邊（斜邊不列入表內，僅計數）。
    * 同一路線（同一段 polyline）上連續且共線之橫／豎邊合併為一列（邊序為起迄索引）。
    * `runsInOrder` 與 horizontal／vertical 皆依路線名（zh-Hant）再依幾何排序，供 Control 總表與「下一條」步進。
    * @returns {{ horizontal: Array, vertical: Array, runsInOrder: Array, diagonalCount: number }}
    */
   const jsonGridLineOrthogonalAxisLineLists = (lyr) => {
     const empty = { horizontal: [], vertical: [], runsInOrder: [], diagonalCount: 0 };
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return empty;
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return empty;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return empty;
     const flat = normalizeSpaceNetworkDataToFlatSegments(
@@ -4064,6 +4065,134 @@
       run.rowAll = rAll;
     }
     return { horizontal, vertical, runsInOrder, diagonalCount };
+  };
+
+  /**
+   * 整數軸上區間 [lo,hi]（格座標），相接或重疊則併成一條。
+   * @param {Array<{ lo: number, hi: number }>} intervals
+   */
+  const merge1DGridLineIntervals = (intervals) => {
+    if (!Array.isArray(intervals) || intervals.length === 0) return [];
+    const s = intervals
+      .map((it) => ({
+        lo: Math.min(Number(it.lo), Number(it.hi)),
+        hi: Math.max(Number(it.lo), Number(it.hi)),
+      }))
+      .filter((it) => Number.isFinite(it.lo) && Number.isFinite(it.hi) && it.hi > it.lo)
+      .sort((a, b) => a.lo - b.lo);
+    if (!s.length) return [];
+    const out = [];
+    let cur = { ...s[0] };
+    for (let i = 1; i < s.length; i++) {
+      const n = s[i];
+      if (n.lo <= cur.hi) cur.hi = Math.max(cur.hi, n.hi);
+      else {
+        out.push(cur);
+        cur = { ...n };
+      }
+    }
+    out.push(cur);
+    return out;
+  };
+
+  /**
+   * 固定網格 y：各 route 上之橫段投到 x 軸後，跨 route 區間可相接則算**同一條**，回傳每條 span（格步）。
+   */
+  const globalMergedHorizontalLineSpansFromRuns = (horizontal) => {
+    const byY = new Map();
+    for (const h of horizontal) {
+      const y = Math.round(Number(h.y));
+      const lo = Math.min(Number(h.xMin), Number(h.xMax));
+      const hi = Math.max(Number(h.xMin), Number(h.xMax));
+      if (!Number.isFinite(y) || !Number.isFinite(lo) || !Number.isFinite(hi)) continue;
+      if (!byY.has(y)) byY.set(y, []);
+      byY.get(y).push({ lo, hi });
+    }
+    const spans = [];
+    for (const intvs of byY.values()) {
+      for (const m of merge1DGridLineIntervals(intvs)) {
+        spans.push(m.hi - m.lo);
+      }
+    }
+    return spans;
+  };
+
+  /** 固定網格 x：直段跨 route 在 y 上合併 */
+  const globalMergedVerticalLineSpansFromRuns = (vertical) => {
+    const byX = new Map();
+    for (const v of vertical) {
+      const x = Math.round(Number(v.x));
+      const lo = Math.min(Number(v.yMin), Number(v.yMax));
+      const hi = Math.max(Number(v.yMin), Number(v.yMax));
+      if (!Number.isFinite(x) || !Number.isFinite(lo) || !Number.isFinite(hi)) continue;
+      if (!byX.has(x)) byX.set(x, []);
+      byX.get(x).push({ lo, hi });
+    }
+    const spans = [];
+    for (const intvs of byX.values()) {
+      for (const m of merge1DGridLineIntervals(intvs)) {
+        spans.push(m.hi - m.lo);
+      }
+    }
+    return spans;
+  };
+
+  /**
+   * 與 {@link jsonGridLineOrthogonalAxisLineLists} 一致之格步／斜線計數。
+   * 「條數與平均長度」：**跨 route**，同網格 y（橫）或同 x（直）上投影子區間相接則併一條（不必同 route_name）。
+   */
+  const jsonGridLineOrthogonalHVEdgeTotals = (lyr) => {
+    const { horizontal, vertical, diagonalCount } = jsonGridLineOrthogonalAxisLineLists(lyr);
+    const sumSpan = (arr) =>
+      arr.reduce((s, it) => {
+        const sp = Number(it?.span);
+        return s + (Number.isFinite(sp) && sp > 0 ? sp : 0);
+      }, 0);
+    const hvSteps = sumSpan(horizontal) + sumSpan(vertical);
+    const d = Math.max(0, Math.round(Number(diagonalCount)) || 0);
+    const total = hvSteps + d;
+    const ratioPct = total > 0 ? (100 * hvSteps) / total : null;
+
+    const spansH = globalMergedHorizontalLineSpansFromRuns(horizontal);
+    const spansV = globalMergedVerticalLineSpansFromRuns(vertical);
+    const sumHglob = spansH.reduce((a, b) => a + b, 0);
+    const sumVglob = spansV.reduce((a, b) => a + b, 0);
+    const nH = spansH.length;
+    const nV = spansV.length;
+    const nHVLines = nH + nV;
+    const avgH = nH > 0 ? sumHglob / nH : null;
+    const avgV = nV > 0 ? sumVglob / nV : null;
+    const avgHV = nHVLines > 0 ? (sumHglob + sumVglob) / nHVLines : null;
+    return {
+      hvSteps,
+      diagonalEdges: d,
+      total,
+      ratioPct,
+      nH,
+      nV,
+      nHVLines,
+      avgH,
+      avgV,
+      avgHV,
+    };
+  };
+
+  /** 兩個「往中心聚集」圖層按鈕下顯示：HV／斜線／合計、HV 佔比、同軸跨路線相接之橫／豎「條」平均長度。 */
+  const jsonGridLineOrthogonalHVEdgeRatioLabel = (lyr) => {
+    const t = jsonGridLineOrthogonalHVEdgeTotals(lyr);
+    if (t.total <= 0) {
+      return '尚無可計數邊段（請開啟本圖層並確認路網資料）。';
+    }
+    const pct = t.ratioPct != null ? `${t.ratioPct.toFixed(1)}%` : '—';
+    const base = `水平＋垂直 ${t.hvSteps} 斜線 ${t.diagonalEdges} 合計 ${t.total} （水平＋垂直占全部可計數邊 ${pct}）`;
+    if (t.nHVLines <= 0) {
+      return `${base}。無水平／垂直線（僅斜線或其它）。`;
+    }
+    const fmt = (x) => (x != null && Number.isFinite(x) ? x.toFixed(1) : '—');
+    const avgAll = fmt(t.avgHV);
+    const partH = t.nH > 0 ? `水平 ${t.nH} 條均 ${fmt(t.avgH)}` : '水平 0 條';
+    const partV = t.nV > 0 ? `垂直 ${t.nV} 條均 ${fmt(t.avgV)}` : '垂直 0 條';
+    return `${base}。同網格橫線／直線上跨路線可相接則併一條：共 ${t.nHVLines} 條，平均長度 ${avgAll} 格步（${partH}；${partV}）。`;
   };
 
   /**
@@ -4411,7 +4540,7 @@
       centerCx: null,
       centerCy: null,
     };
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return empty;
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return empty;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return empty;
     const flat = normalizeSpaceNetworkDataToFlatSegments(
@@ -4776,21 +4905,57 @@
     return { rowTable, colTable, centerCx, centerCy };
   };
 
-  /** `temp`：依隊列對當項設 highlight；（單次 Pulse 可至多格至「沿中心向／邊數變多」最佳處；否則只移一格；連按／自動再行下一隊列項。） */
-  const lineOrthoTowardCrossSeqIdx = ref(0);
-  const lineOrthoTowardCrossLastHint = ref('');
-  /** 列／欄表 :key bump：路網座標更新後強制 Vue 重建表格（離紅線 y／xΔ 來自新路網）。 */
-  const lineOrthoTowardCrossTableBump = ref(0);
+  /** `temp`／「先直後橫」層：依隊列對當項設 highlight；（單次 Pulse 可至多格至「沿中心向／邊數變多」最佳處；否則只移一格；連按／自動再行下一隊列項。） */
+  function makeLineOrthoTowardCrossUiState() {
+    return {
+      seqIdx: 0,
+      lastHint: '',
+      tableBump: 0,
+      autoActive: false,
+      autoNoMoveStreak: 0,
+      oneClickRunning: false,
+    };
+  }
+  /** @type Record<string, ReturnType<typeof makeLineOrthoTowardCrossUiState>> */
+  const lineOrthoTowardCrossUiByLayerId = reactive(
+    Object.fromEntries(LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.map((id) => [id, makeLineOrthoTowardCrossUiState()])),
+  );
+  /** @type Record<string, ReturnType<typeof setInterval> | null> */
+  const lineOrthoTowardCrossAutoTimerByLayerId = {};
+  /** @type Record<string, boolean> */
+  const lineOrthoTowardCrossAutoTickBusyByLayerId = {};
+  for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+    lineOrthoTowardCrossAutoTimerByLayerId[id] = null;
+    lineOrthoTowardCrossAutoTickBusyByLayerId[id] = false;
+  }
+
+  const lineOrthoTowardCrossUiFor = (lyr) =>
+    lyr?.layerId ? lineOrthoTowardCrossUiByLayerId[lyr.layerId] ?? null : null;
+
+  /** 一輪隊列之短標（停止自動時提示用） */
+  const lineOrthoTowardCrossCycleShortLabel = (lyr) =>
+    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID ? '欄→列' : '列→欄';
+
+  /** 綠鍵／說明：整表循環順序 */
+  const lineOrthoTowardCrossCycleLongLabel = (lyr) =>
+    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID ? '欄整表→列整表' : '列整表→欄整表';
+
   const LINE_ORTHO_TOWARD_CROSS_AUTO_MS = 1000;
   /** 一鍵完成：與「自動」同條件停滯前，單次最多 pulse 數（防異常迴圈） */
   const LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES = 20000;
 
-  let lineOrthoTowardCrossAutoTimerId = null;
-  const lineOrthoTowardCrossAutoActive = ref(false);
-  let lineOrthoTowardCrossAutoTickBusy = false;
-  /** 自動模式：連續無縮進的 pulse 次數；達當前隊列長度（一輪列＋欄）則停 */
-  const lineOrthoTowardCrossAutoNoMoveStreak = ref(0);
-  const lineOrthoTowardCrossOneClickRunning = ref(false);
+  const stopLineOrthoTowardCrossAuto = (onlyLayerId = null) => {
+    for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+      if (onlyLayerId != null && id !== onlyLayerId) continue;
+      if (lineOrthoTowardCrossAutoTimerByLayerId[id] != null) {
+        clearInterval(lineOrthoTowardCrossAutoTimerByLayerId[id]);
+        lineOrthoTowardCrossAutoTimerByLayerId[id] = null;
+      }
+      lineOrthoTowardCrossUiByLayerId[id].autoActive = false;
+      lineOrthoTowardCrossUiByLayerId[id].autoNoMoveStreak = 0;
+      lineOrthoTowardCrossAutoTickBusyByLayerId[id] = false;
+    }
+  };
 
   /** 對照「縮進前／後」路網，取代表頂點四捨五入格座標。供 temp 圖層位移預覽（示意圖灰／青圈）。 */
   const computeLineOrthoTowardCrossMovePreview = (beforeSegs, afterSegs, it, picksMap) => {
@@ -4845,12 +5010,12 @@
 
   const buildLineOrthoTowardCrossQueueAndReport = (lyr) => {
     const empty = { queue: [], report: null };
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return empty;
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return empty;
     const rep = jsonGridLineOrthogonalRowColPointOrLineReport(lyr);
-    const queue = [
-      ...rep.rowTable.map((it) => ({ tableAxis: 'row', it })),
-      ...rep.colTable.map((it) => ({ tableAxis: 'col', it })),
-    ];
+    const rowFirst = lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID;
+    const rows = rep.rowTable.map((it) => ({ tableAxis: 'row', it }));
+    const cols = rep.colTable.map((it) => ({ tableAxis: 'col', it }));
+    const queue = rowFirst ? [...rows, ...cols] : [...cols, ...rows];
     return { queue, report: rep };
   };
 
@@ -4891,16 +5056,6 @@
       );
     }
     return lines.join('\n');
-  };
-
-  const stopLineOrthoTowardCrossAuto = () => {
-    if (lineOrthoTowardCrossAutoTimerId != null) {
-      clearInterval(lineOrthoTowardCrossAutoTimerId);
-      lineOrthoTowardCrossAutoTimerId = null;
-    }
-    lineOrthoTowardCrossAutoActive.value = false;
-    lineOrthoTowardCrossAutoTickBusy = false;
-    lineOrthoTowardCrossAutoNoMoveStreak.value = 0;
   };
 
   /**
@@ -4952,7 +5107,8 @@
    * @returns {Promise<boolean>} 是否發生評估類嚴重失敗（!r.ok，需視情況中斷自動／批次）
    */
   async function pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert = false } = {}) {
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value)
+    const uiLine = lineOrthoTowardCrossUiFor(lyr);
+    if (!lyr || !uiLine || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) || isExecuting.value)
       return { evaluationFailed: false, earlyExit: true };
     lyr.lineOrthoTowardCrossMovePreview = null;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
@@ -4967,7 +5123,7 @@
     lockLineOrthoTowardCrossCenterFromFlatIfUnset(lyr, flat);
     const { queue, report } = buildLineOrthoTowardCrossQueueAndReport(lyr);
     if (!queue.length) {
-      lineOrthoTowardCrossLastHint.value = '無列／欄表項目可處理。';
+      uiLine.lastHint = '無列／欄表項目可處理。';
       return { evaluationFailed: false, earlyExit: true };
     }
     if (
@@ -4981,11 +5137,11 @@
     }
     const picksBeforeOrthoMove = buildOrthoGridRoundedVertexPickIndex(flat);
 
-    const idx = lineOrthoTowardCrossSeqIdx.value % queue.length;
+    const idx = uiLine.seqIdx % queue.length;
     const { tableAxis, it } = queue[idx];
     const posLabel = `#${idx + 1}/${queue.length} ${tableAxis === 'row' ? '列(y)' : '欄(x)'} · ${it.kind}`;
 
-    lineOrthoTowardCrossSeqIdx.value = (idx + 1) % queue.length;
+    uiLine.seqIdx = (idx + 1) % queue.length;
 
     let workingFlat = shallowCloneOrthoSegmentsSynced(flat);
     const frozenIds = buildInitialOrthoCoPointGroups(workingFlat);
@@ -5010,10 +5166,10 @@
       const hi = lineOrthoTowardCrossReportItemHighlight(lyr, flat, pk, tableAxis, it);
       lyr.highlightedSegmentIndex = hi;
       lyr.lineOrthoTowardCrossHighlightTableAxis = hi ? tableAxis : null;
-      await dataStore.saveLayerState(LINE_ORTHOGONAL_LAYER_ID, {
+      await dataStore.saveLayerState(lyr.layerId, {
         ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
       });
-      lineOrthoTowardCrossLastHint.value = formatLineOrthoTowardCrossHint(
+      uiLine.lastHint = formatLineOrthoTowardCrossHint(
         posLabel,
         stepCount,
         haltReason,
@@ -5046,7 +5202,7 @@
     let itemForHl = it;
 
     if (stepCount > 0) {
-      lineOrthoTowardCrossTableBump.value += 1;
+      uiLine.tableBump += 1;
       lyr.lineOrthoTowardCrossMovePreview = computeLineOrthoTowardCrossMovePreview(
         flat,
         workingFlat,
@@ -5083,11 +5239,11 @@
     lyr.highlightedSegmentIndex = hi;
     lyr.lineOrthoTowardCrossHighlightTableAxis = hi ? tableAxis : null;
 
-    await dataStore.saveLayerState(LINE_ORTHOGONAL_LAYER_ID, {
+    await dataStore.saveLayerState(lyr.layerId, {
       ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
     });
 
-    lineOrthoTowardCrossLastHint.value = formatLineOrthoTowardCrossHint(
+    uiLine.lastHint = formatLineOrthoTowardCrossHint(
       posLabel,
       stepCount,
       haltReason,
@@ -5108,81 +5264,99 @@
   }
 
   const onLineOrthoTowardCrossStepClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    if (
+      !lyr ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      isExecuting.value
+    )
+      return;
     await pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert: false });
   };
 
   const startLineOrthoTowardCrossAuto = async (lyr) => {
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    const uiA = lineOrthoTowardCrossUiFor(lyr);
+    if (
+      !lyr ||
+      !uiA ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      isExecuting.value
+    )
+      return;
     if (lineOrthoTowardCrossQueueLength(lyr) === 0) {
       window.alert('無列／欄表項目，無法自動執行。');
       return;
     }
-    if (lineOrthoTowardCrossOneClickRunning.value) return;
+    if (uiA.oneClickRunning) return;
     stopLineOrthoTowardCrossAuto();
     await maybeLineOrthoHubBlueDiagonalPrepassOnce(lyr);
-    lineOrthoTowardCrossAutoNoMoveStreak.value = 0;
-    lineOrthoTowardCrossAutoActive.value = true;
-    lineOrthoTowardCrossAutoTimerId = setInterval(async () => {
+    const layerIdForTimer = lyr.layerId;
+    uiA.autoNoMoveStreak = 0;
+    uiA.autoActive = true;
+    lineOrthoTowardCrossAutoTimerByLayerId[layerIdForTimer] = setInterval(async () => {
+      const uiTick = lineOrthoTowardCrossUiByLayerId[layerIdForTimer];
       if (
-        !lineOrthoTowardCrossAutoActive.value ||
-        lineOrthoTowardCrossAutoTickBusy ||
+        !uiTick?.autoActive ||
+        lineOrthoTowardCrossAutoTickBusyByLayerId[layerIdForTimer] ||
         isExecuting.value ||
-        lineOrthoTowardCrossOneClickRunning.value
+        uiTick.oneClickRunning
       )
         return;
-      lineOrthoTowardCrossAutoTickBusy = true;
+      lineOrthoTowardCrossAutoTickBusyByLayerId[layerIdForTimer] = true;
       try {
-        const lyr2 = dataStore.findLayerById(LINE_ORTHOGONAL_LAYER_ID);
-        if (!lyr2 || lyr2.layerId !== LINE_ORTHOGONAL_LAYER_ID) return;
+        const lyr2 = dataStore.findLayerById(layerIdForTimer);
+        if (!lyr2 || lyr2.layerId !== layerIdForTimer) return;
         if (lineOrthoTowardCrossQueueLength(lyr2) === 0) {
           stopLineOrthoTowardCrossAuto();
-          lineOrthoTowardCrossLastHint.value =
-            `${lineOrthoTowardCrossLastHint.value || ''}\n（自動執行已停止：隊列為空）`.trim();
+          uiTick.lastHint = `${uiTick.lastHint || ''}\n（自動執行已停止：隊列為空）`.trim();
           return;
         }
         const r = await pulseOnceLineOrthoTowardCross(lyr2, { muteEvalErrorAlert: true });
         if (r?.evaluationFailed) {
           stopLineOrthoTowardCrossAuto();
-          lineOrthoTowardCrossLastHint.value = `${
-            lineOrthoTowardCrossLastHint.value || ''
-          }\n（自動執行已停止：發生評估／路網／儲存錯誤，見上文。）`.trim();
+          uiTick.lastHint = `${uiTick.lastHint || ''}\n（自動執行已停止：發生評估／路網／儲存錯誤，見上文。）`.trim();
         } else if (!r?.earlyExit) {
           const qRound = buildLineOrthoTowardCrossQueueAndReport(lyr2).queue.length;
           const moved = Number(r?.stepCount) > 0;
           if (moved) {
-            lineOrthoTowardCrossAutoNoMoveStreak.value = 0;
+            uiTick.autoNoMoveStreak = 0;
           } else if (qRound > 0) {
-            lineOrthoTowardCrossAutoNoMoveStreak.value += 1;
-            if (lineOrthoTowardCrossAutoNoMoveStreak.value >= qRound) {
+            uiTick.autoNoMoveStreak += 1;
+            if (uiTick.autoNoMoveStreak >= qRound) {
               stopLineOrthoTowardCrossAuto();
-              lineOrthoTowardCrossLastHint.value = `${
-                lineOrthoTowardCrossLastHint.value || ''
-              }\n（自動執行已停止：已連續跑完一輪隊列（列→欄共 ${qRound} 項）皆無縮進。）`.trim();
+              const ord = lineOrthoTowardCrossCycleShortLabel(lyr2);
+              uiTick.lastHint = `${uiTick.lastHint || ''}\n（自動執行已停止：已連續跑完一輪隊列（${ord} 共 ${qRound} 項）皆無縮進。）`.trim();
             }
           }
         }
       } finally {
-        lineOrthoTowardCrossAutoTickBusy = false;
+        lineOrthoTowardCrossAutoTickBusyByLayerId[layerIdForTimer] = false;
       }
     }, LINE_ORTHO_TOWARD_CROSS_AUTO_MS);
   };
 
   const toggleLineOrthoTowardCrossAuto = (lyr) => {
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return;
-    if (lineOrthoTowardCrossAutoActive.value) stopLineOrthoTowardCrossAuto();
+    const uiT = lineOrthoTowardCrossUiFor(lyr);
+    if (!lyr || !uiT || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return;
+    if (uiT.autoActive) stopLineOrthoTowardCrossAuto();
     else startLineOrthoTowardCrossAuto(lyr);
   };
 
   const onLineOrthoTowardCrossFinishAllClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    const uiF = lineOrthoTowardCrossUiFor(lyr);
+    if (
+      !lyr ||
+      !uiF ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      isExecuting.value
+    )
+      return;
     stopLineOrthoTowardCrossAuto();
     const { queue } = buildLineOrthoTowardCrossQueueAndReport(lyr);
     if (!queue.length) {
-      lineOrthoTowardCrossLastHint.value = '無列／欄表項目可處理。';
+      uiF.lastHint = '無列／欄表項目可處理。';
       return;
     }
-    lineOrthoTowardCrossOneClickRunning.value = true;
+    uiF.oneClickRunning = true;
     const summaries = [];
     let totalSteps = 0;
     let aborted = false;
@@ -5232,7 +5406,8 @@
       if (aborted) {
         hdrMain = `一鍵完成：因錯誤中止；已紀錄 ${summaries.length} 段（通常最後一行為中止原因）。累計縮進格數約 ${totalSteps}。`;
       } else if (stagnationStop) {
-        hdrMain = `一鍵完成：已執行至「連續一輪隊列（列→欄）皆無縮進」為止（與自動執行停止條件相同）。共 ${pulseCount} 次 pulse，累計縮進約 ${totalSteps} 格。`;
+        const ordStop = lineOrthoTowardCrossCycleShortLabel(lyr);
+        hdrMain = `一鍵完成：已執行至「連續一輪隊列（${ordStop}）皆無縮進」為止（與自動執行停止條件相同）。共 ${pulseCount} 次 pulse，累計縮進約 ${totalSteps} 格。`;
       } else if (hitMaxPulses) {
         hdrMain = `一鍵完成：已跑滿單次上限 ${LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES} 次 pulse，累計縮進約 ${totalSteps} 格。`;
       } else {
@@ -5249,11 +5424,11 @@
       ]
         .filter(Boolean)
         .join('\n');
-      lineOrthoTowardCrossLastHint.value = `${hdr}\n\n${summaries.join('\n')}`.trim();
+      uiF.lastHint = `${hdr}\n\n${summaries.join('\n')}`.trim();
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
     } finally {
-      lineOrthoTowardCrossOneClickRunning.value = false;
+      uiF.oneClickRunning = false;
     }
   };
 
@@ -5290,9 +5465,11 @@
     writeLayoutNormalizedLayerDataOsmFromNetwork(lyr, segments);
     syncJsonGridFromCoordDataJsonFromPipeline(lyr);
     lyr.jsonGridFromCoordSuggestTargetGrid = null;
-    if (lyr.layerId === LINE_ORTHOGONAL_LAYER_ID) return;
-    const lineOrtho = dataStore.findLayerById(LINE_ORTHOGONAL_LAYER_ID);
-    if (lineOrtho) lineOrtho.lineOrthoTowardCrossMovePreview = null;
+    if (LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return;
+    for (const oid of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+      const lo = dataStore.findLayerById(oid);
+      if (lo) lo.lineOrthoTowardCrossMovePreview = null;
+    }
     refreshLineOrthogonalFromPointOrthogonalIfVisible(
       dataStore.findLayerById.bind(dataStore),
       dataStore.saveLayerState.bind(dataStore)
@@ -5300,7 +5477,12 @@
   };
 
   const maybeLineOrthoHubBlueDiagonalPrepassOnce = async (lyr) => {
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    if (
+      !lyr ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      isExecuting.value
+    )
+      return;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return;
     const flatIn = normalizeSpaceNetworkDataToFlatSegments(
@@ -5309,7 +5491,7 @@
     const { segments: passSegs, moves } = applyLineOrthoHubBlueDiagonalPrepassSegments(flatIn);
     if (!moves) return;
     applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, passSegs);
-    await dataStore.saveLayerState(LINE_ORTHOGONAL_LAYER_ID, {
+    await dataStore.saveLayerState(lyr.layerId, {
       ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
     });
     await nextTick();
@@ -8656,12 +8838,24 @@
           </div>
         </div>
 
-        <!-- temp：各列／欄 HV 線段（表格：站名＋座標） -->
-        <div v-if="layer.layerId === LINE_ORTHOGONAL_LAYER_ID" class="pb-3 mb-3 border-bottom">
+        <!-- 往中心聚集（列→欄 或 欄→列）：各列／欄 HV 線段（表格：站名＋座標） -->
+        <div
+          v-if="LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(layer.layerId)"
+          class="pb-3 mb-3 border-bottom"
+        >
           <div class="my-title-xs-gray pb-2">各列（y）／各欄（x）：點或線</div>
           <template
             v-for="loReport in [jsonGridLineOrthogonalRowColPointOrLineReport(layer)]"
-            :key="'lo-temp-axis-' + lineOrthoTowardCrossTableBump + '-' + loReport.rowTable.length + '-' + loReport.colTable.length"
+            :key="
+              'lo-temp-axis-' +
+              layer.layerId +
+              '-' +
+              (lineOrthoTowardCrossUiFor(layer)?.tableBump ?? 0) +
+              '-' +
+              loReport.rowTable.length +
+              '-' +
+              loReport.colTable.length
+            "
           >
             <div
               v-if="loReport.rowTable.length === 0 && loReport.colTable.length === 0"
@@ -8677,6 +8871,8 @@
                 >：未鎖定時為全路網頂點包圍盒中點；第一次「朝紅十字縮進」會<strong>鎖定</strong>該格，之後不因路網位移而漂移（與網格線座標基準一致）。縮進為<strong>整格共點平移</strong>並受硬約束，不會任意斷邊；若沿路徑能提升水平／垂直邊數，單次可<strong>一次平移多格</strong>至該向「邊數最佳」處，否則只移一格。列出順序：
                 <strong>0 → +1 → −1 → +2 → −2 → …</strong>。<strong>yΔ／xΔ</strong>
                 為相對<strong>該</strong>基準格之<strong>網格列／欄距</strong>（非重新編號）。
+                <strong>單鍵／自動循環處理順序：{{ lineOrthoTowardCrossCycleLongLabel(layer) }}</strong
+                >（下方兩表仍「先列後欄」僅為閱讀排版）。
                 <template v-if="loReport.centerCx != null && loReport.centerCy != null">
                   目前基準格座標（約）為 ({{ loReport.centerCx }}, {{ loReport.centerCy }})。
                 </template>
@@ -8687,12 +8883,12 @@
                 :disabled="
                   isExecuting ||
                   lineOrthoTowardCrossQueueLength(layer) === 0 ||
-                  lineOrthoTowardCrossAutoActive ||
-                  lineOrthoTowardCrossOneClickRunning
+                  lineOrthoTowardCrossUiFor(layer)?.autoActive ||
+                  lineOrthoTowardCrossUiFor(layer)?.oneClickRunning
                 "
                 @click="onLineOrthoTowardCrossStepClick(layer)"
               >
-                朝紅十字縮進至頂（順序：列整表→欄整表，循環）；當項以橘線／橘圈標示。
+                朝紅十字縮進至頂（順序：{{ lineOrthoTowardCrossCycleLongLabel(layer) }}，循環）；當項以橘線／橘圈標示。
               </button>
               <button
                 type="button"
@@ -8700,12 +8896,12 @@
                 :disabled="
                   isExecuting ||
                   lineOrthoTowardCrossQueueLength(layer) === 0 ||
-                  lineOrthoTowardCrossOneClickRunning
+                  lineOrthoTowardCrossUiFor(layer)?.oneClickRunning
                 "
                 @click="toggleLineOrthoTowardCrossAuto(layer)"
               >
                 {{
-                  lineOrthoTowardCrossAutoActive
+                  lineOrthoTowardCrossUiFor(layer)?.autoActive
                     ? '停止自動（每秒一次縮進）'
                     : '自動執行：先嘗試將 hub 紅 connect－末端藍 connect 斜鄰段改橫／直（僅開啟自動時首輪一次），之後每秒仿單鍵縮進'
                 }}
@@ -8716,19 +8912,25 @@
                 :disabled="
                   isExecuting ||
                   lineOrthoTowardCrossQueueLength(layer) === 0 ||
-                  lineOrthoTowardCrossAutoActive ||
-                  lineOrthoTowardCrossOneClickRunning
+                  lineOrthoTowardCrossUiFor(layer)?.autoActive ||
+                  lineOrthoTowardCrossUiFor(layer)?.oneClickRunning
                 "
                 @click="onLineOrthoTowardCrossFinishAllClick(layer)"
               >
                 一鍵完成：開頭先嘗試將 hub 紅 connect－末端藍 connect 斜鄰段改橫／直（僅批次首輪一次），再反覆縮進至「一整輪隊列皆無可改善」為止並於下方顯示彙總
               </button>
               <div
-                v-if="lineOrthoTowardCrossLastHint"
+                class="border rounded bg-body px-2 py-1 mb-2 text-secondary"
+                style="font-size: 10px; line-height: 1.5"
+              >
+                {{ jsonGridLineOrthogonalHVEdgeRatioLabel(layer) }}
+              </div>
+              <div
+                v-if="lineOrthoTowardCrossUiFor(layer)?.lastHint"
                 class="text-muted mb-2"
                 style="font-size: 10px; line-height: 1.45; white-space: pre-wrap"
               >
-                {{ lineOrthoTowardCrossLastHint }}
+                {{ lineOrthoTowardCrossUiFor(layer).lastHint }}
               </div>
               <div class="small text-secondary mb-1">列（row／離紅線 y）</div>
               <div

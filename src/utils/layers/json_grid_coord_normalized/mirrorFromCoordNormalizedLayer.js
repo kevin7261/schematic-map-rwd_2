@@ -1,6 +1,6 @@
 /**
  * 衍生圖層：`point_orthogonal` 自「座標正規化」複製 dataJson／jsonData；
- * `orthogonal_toward_center`（{@link LINE_ORTHOGONAL_LAYER_ID}）優先自 `point_orthogonal` 複製；若該層尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
+ * 「站點與路線往中心聚集」兩種線網層優先自 `point_orthogonal` 複製；若尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
@@ -8,8 +8,9 @@ import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSe
 import {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
-  LINE_ORTHOGONAL_LAYER_ID,
   POINT_ORTHOGONAL_LAYER_ID,
+  isLineOrthogonalTowardCenterLayerId,
+  LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
 } from './layerIds.js';
 
 /**
@@ -42,10 +43,9 @@ export function syncJsonGridFromCoordDataJsonFromPipeline(layer) {
 }
 
 export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, derivedLayer) {
-  const sourceId =
-    derivedLayer?.layerId === LINE_ORTHOGONAL_LAYER_ID
-      ? POINT_ORTHOGONAL_LAYER_ID
-      : JSON_GRID_COORD_NORMALIZED_LAYER_ID;
+  const sourceId = isLineOrthogonalTowardCenterLayerId(derivedLayer?.layerId)
+    ? POINT_ORTHOGONAL_LAYER_ID
+    : JSON_GRID_COORD_NORMALIZED_LAYER_ID;
   const parentOrtho = findLayerById(sourceId);
   let raw =
     parentOrtho && Array.isArray(parentOrtho.dataJson)
@@ -54,7 +54,7 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
         ? parentOrtho.jsonData
         : null;
   if (
-    derivedLayer?.layerId === LINE_ORTHOGONAL_LAYER_ID &&
+    isLineOrthogonalTowardCenterLayerId(derivedLayer?.layerId) &&
     (!Array.isArray(raw) || raw.length === 0)
   ) {
     const norm = findLayerById(JSON_GRID_COORD_NORMALIZED_LAYER_ID);
@@ -156,15 +156,20 @@ export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, s
   if (follow?.visible) {
     mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, follow);
   }
-  const lineOrtho = findLayerById(LINE_ORTHOGONAL_LAYER_ID);
-  if (lineOrtho?.visible) {
-    mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, lineOrtho);
+  for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+    const lineOrtho = findLayerById(id);
+    if (lineOrtho?.visible) {
+      mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, lineOrtho);
+    }
   }
 }
 
-/** 站點層寫入後，若 {@link LINE_ORTHOGONAL_LAYER_ID} 開啟則自 `point_orthogonal` 重鏡像並 persist */
+/** 站點層寫入後，任一「往中心聚集」線網層開啟則自 `point_orthogonal` 重鏡像並 persist */
 export function refreshLineOrthogonalFromPointOrthogonalIfVisible(findLayerById, saveLayerState) {
-  const line = findLayerById(LINE_ORTHOGONAL_LAYER_ID);
-  if (!line?.visible) return;
-  mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, line);
+  for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+    const line = findLayerById(id);
+    if (line?.visible) {
+      mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, line);
+    }
+  }
 }
