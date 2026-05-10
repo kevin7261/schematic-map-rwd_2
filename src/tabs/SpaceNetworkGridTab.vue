@@ -97,6 +97,7 @@
     POINT_ORTHOGONAL_LAYER_ID,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     isLineOrthogonalTowardCenterLayerId,
+    isOrthogonalVhDataJsonDrawMirrorLayerId,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -3571,6 +3572,7 @@
       layerTab === POINT_ORTHOGONAL_LAYER_ID ||
       layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
       isLineOrthogonalTowardCenterLayerId(layerTab) ||
+      isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab) ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
     /** 經緯度或小範圍連續座標：整數步長會變成 1 導致刻度迴圈為空，改以 d3.ticks 產生網格與軸刻度 */

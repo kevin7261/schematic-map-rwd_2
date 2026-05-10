@@ -8,9 +8,11 @@ export {
   POINT_ORTHOGONAL_LAYER_ID,
   LINE_ORTHOGONAL_LAYER_ID,
   LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
+  LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
   LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
   isLineOrthogonalTowardCenterLayerId,
+  isOrthogonalVhDataJsonDrawMirrorLayerId,
   isCoordNormalizedDataJsonMirrorFollowonLayerId,
 } from './layerIds.js';
 export {
@@ -30,6 +32,7 @@ export {
   reloadJsonGridFromCoordNormalizedLayer,
   syncJsonGridFromCoordNormalizedMirrorFromParent,
   refreshLineOrthogonalFromPointOrthogonalIfVisible,
+  refreshOrthogonalVhMirrorDrawLayerIfVisible,
   syncJsonGridFromCoordDataJsonFromPipeline,
 } from './mirrorFromCoordNormalizedLayer.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';

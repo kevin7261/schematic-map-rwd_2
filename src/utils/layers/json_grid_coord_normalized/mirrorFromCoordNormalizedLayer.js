@@ -1,6 +1,7 @@
 /**
  * 衍生圖層：`point_orthogonal` 自「座標正規化」複製 dataJson／jsonData；
  * 「站點與路線往中心聚集」兩種線網層優先自 `point_orthogonal` 複製；若尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
+ * `orthogonal_toward_center_vh_draw` 僅鏡像 `orthogonal_toward_center_vh` 之 dataJson／geojson 供繪製。
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
@@ -11,6 +12,8 @@ import {
   POINT_ORTHOGONAL_LAYER_ID,
   isLineOrthogonalTowardCenterLayerId,
   LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+  LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
+  LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
 } from './layerIds.js';
 
@@ -44,6 +47,25 @@ export function syncJsonGridFromCoordDataJsonFromPipeline(layer) {
 }
 
 export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, derivedLayer) {
+  if (derivedLayer?.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
+    const vh = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID);
+    const raw =
+      vh && Array.isArray(vh.dataJson)
+        ? vh.dataJson
+        : vh && Array.isArray(vh.jsonData)
+          ? vh.jsonData
+          : null;
+    const arr = Array.isArray(raw) ? JSON.parse(JSON.stringify(raw)) : null;
+    derivedLayer.jsonData = arr;
+    derivedLayer.dataJson = arr;
+    derivedLayer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(
+      Array.isArray(raw) ? raw : [],
+      { stationPoints: 'endpoints', routeLine: 'endpoints' },
+    );
+    derivedLayer.isLoaded = true;
+    return;
+  }
+
   const sourceId = isLineOrthogonalTowardCenterLayerId(derivedLayer?.layerId)
     ? POINT_ORTHOGONAL_LAYER_ID
     : JSON_GRID_COORD_NORMALIZED_LAYER_ID;
@@ -147,6 +169,9 @@ export function mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, 
     layer.layerId,
     jsonGridFromCoordNormalizedPersistPayload(layer, { omitLoadingFlags: true }),
   );
+  if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
+    refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState);
+  }
 }
 
 export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer) {
@@ -155,6 +180,9 @@ export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerS
   layer.isLoaded = true;
   layer.isLoading = false;
   saveLayerState(layer.layerId, jsonGridFromCoordNormalizedPersistPayload(layer));
+  if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
+    refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState);
+  }
 }
 
 /**
@@ -175,6 +203,15 @@ export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, s
   if (rb?.visible) {
     mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, rb);
   }
+  refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState);
+}
+
+/** `orthogonal_toward_center_vh_draw`：自 VH 往中心層複製 dataJson（VH 層或其他鏡像更新後呼叫） */
+export function refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState) {
+  const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+  if (draw?.visible) {
+    mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, draw);
+  }
 }
 
 /** 站點層寫入後，任一「往中心聚集」線網層開啟則自 `point_orthogonal` 重鏡像並 persist */
@@ -185,4 +222,5 @@ export function refreshLineOrthogonalFromPointOrthogonalIfVisible(findLayerById,
       mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, line);
     }
   }
+  refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState);
 }

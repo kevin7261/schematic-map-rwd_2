@@ -43,6 +43,7 @@
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
+    refreshOrthogonalVhMirrorDrawLayerIfVisible,
     tryOrthoTowardCrossNudgeFromReportItem,
     applyLineOrthoHubBlueDiagonalPrepassSegments,
     shallowCloneOrthoSegmentsSynced,
@@ -5273,6 +5274,12 @@
       await dataStore.saveLayerState(lyr.layerId, {
         ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
       });
+      if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
+        refreshOrthogonalVhMirrorDrawLayerIfVisible(
+          dataStore.findLayerById.bind(dataStore),
+          dataStore.saveLayerState.bind(dataStore),
+        );
+      }
       uiLine.lastHint = formatLineOrthoTowardCrossHint(
         posLabel,
         stepCount,
@@ -5346,6 +5353,12 @@
     await dataStore.saveLayerState(lyr.layerId, {
       ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
     });
+    if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
+      refreshOrthogonalVhMirrorDrawLayerIfVisible(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore),
+      );
+    }
 
     uiLine.lastHint = formatLineOrthoTowardCrossHint(
       posLabel,
@@ -5767,6 +5780,12 @@
     await dataStore.saveLayerState(lyr.layerId, {
       ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
     });
+    if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
+      refreshOrthogonalVhMirrorDrawLayerIfVisible(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore),
+      );
+    }
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
@@ -8479,6 +8498,18 @@
     URL.revokeObjectURL(url);
   };
 
+  const lineOrthoTowardCenterRoutesExportFilename = (layerId) =>
+    layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID
+      ? 'orthogonal_toward_center_vh_routes.json'
+      : 'orthogonal_toward_center_hv_routes.json';
+
+  /** `orthogonal_toward_center_hv`／`vh`：與 taipei_e／f 相同之地圖路段匯出 */
+  const downloadLineOrthoTowardCenterRoutesJson = (layer) => {
+    const id = layer?.layerId;
+    if (!id || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(id)) return;
+    downloadMapDrawnExportJson(id, lineOrthoTowardCenterRoutesExportFilename(id));
+  };
+
   /** 測試_4 taipei_sn4_a：下載 WGS84 GeoJSON */
   const downloadNetworkDrawSketchSn4GeoJson = (sketchLayerId) => {
     const lid =
@@ -9297,6 +9328,14 @@
                 @click="onLineOrthoTowardCrossFinishAllClick(layer)"
               >
                 一鍵完成：開頭先嘗試將 hub 紅 connect－末端藍 connect 斜鄰段改橫／直（僅批次首輪一次），再反覆縮進至「一整輪隊列皆無可改善」為止並於下方顯示彙總
+              </button>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary mb-2"
+                :disabled="isExecuting || !(layer.spaceNetworkGridJsonData?.length)"
+                @click="downloadLineOrthoTowardCenterRoutesJson(layer)"
+              >
+                下載 JSON（路段匯出格式，與 taipei_e／f 相同）
               </button>
               <div
                 class="border rounded bg-body px-2 py-1 mb-2 text-secondary"
