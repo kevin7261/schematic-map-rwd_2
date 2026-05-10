@@ -158,6 +158,21 @@ export function isTaipeiTest3BcdeLayerTab(tab) {
   return tab != null && TAIPEI_TEST3_BCDEFG_LAYER_IDS.includes(tab);
 }
 
+/**
+ * e 階路網繪圖：對角線段以「先橫後豎」矩齒展開（僅視覺，與 applyHVZ／applyHVToE3 之鋸齒變體一致）。
+ * 用於尚未把資料邊全部硬化成純 H/V 前，仍可在圖上看到藍端→紅端方向之水平第一段等正交示意。
+ */
+export function isTaipeiE3DiagonalSawtoothDisplayLayerTab(tab) {
+  if (tab == null) return false;
+  return (
+    tab === 'taipei_e3' ||
+    tab === 'taipei_sn4_e' ||
+    tab === 'taipei_e3_dp' ||
+    tab === 'taipei_e3_dp_2' ||
+    tab === 'taipei_e3_dp_nd'
+  );
+}
+
 export function isTaipeiTest3BcdefLayerTab(tab) {
   return tab != null && TAIPEI_TEST3_BCDEFG_LAYER_IDS.includes(tab);
 }

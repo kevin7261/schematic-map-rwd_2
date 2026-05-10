@@ -42,10 +42,11 @@
     LINE_ORTHOGONAL_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     tryOrthoTowardCrossNudgeFromReportItem,
-    snapRedBlueTerminalEdgesTowardOrthoBeforeRound,
+    applyLineOrthoHubBlueDiagonalPrepassSegments,
     shallowCloneOrthoSegmentsSynced,
     buildInitialOrthoCoPointGroups,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
+  import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
   import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
   import { getIcon } from '@/utils/utils.js';
@@ -4532,63 +4533,79 @@
           if (ov !== ou) return ov - ou;
           return (v.span ?? 0) - (u.span ?? 0);
         });
-        /** @type {Array<{ segIdx: number, pi0: number, pi1: number }>} */
-        let orthoRuns = [];
-        let orthoLineHl = null;
-        let orthoHlBundle = null;
-        let orthoHlNote = undefined;
-        if (overlaps.length) {
-          orthoRuns = overlaps.map((h) => ({
-            segIdx: h.segIdx,
-            pi0: Math.min(h.startPtIdx, h.endPtIdx),
-            pi1: Math.max(h.startPtIdx, h.endPtIdx),
-          }));
-          orthoHlBundle = overlaps.map((h) => [
-            'ortho',
-            Number(h.segIdx),
-            Number(h.edgeIdxStart),
-            Number(h.edgeIdxEnd),
-          ]);
-          orthoLineHl = orthoHlBundle[0];
-          if (overlaps.length > 1) {
-            orthoHlNote = `表中「線」來自合併橫區間（${overlaps.length} 段重合）；橘色為全部重合區段（與表中列一致）；起迄取優先段（較緊貼合併區間端點者）頂點並依 x 排序。`;
-          }
-          const hPri = overlaps[0];
-          const segPri = flat[hPri.segIdx];
-          if (segPri?.points) {
-            const iLo = Math.min(hPri.startPtIdx, hPri.endPtIdx);
-            const iHi = Math.max(hPri.startPtIdx, hPri.endPtIdx);
-            const Va = hvVertexStationAndCoord(segPri, iLo);
-            const Vz = hvVertexStationAndCoord(segPri, iHi);
-            const ga = parseParenGridCoordOrtho(Va.coord);
-            const gz = parseParenGridCoordOrtho(Vz.coord);
-            if (ga && gz && ga.gy === yy && gz.gy === yy) {
-              if (ga.gx <= gz.gx) {
-                startA = Va;
-                endZ = Vz;
+        const overlapClusters =
+          overlaps.length > 1
+            ? clusterOrthoOverlapsForMergedBand(flat, overlaps)
+            : overlaps.length === 1
+              ? [[overlaps[0]]]
+              : [];
+
+        for (const group of overlapClusters.length ? overlapClusters : [null]) {
+          let startAG = startA;
+          let endZG = endZ;
+          /** @type {Array<{ segIdx: number, pi0: number, pi1: number }>} */
+          let orthoRuns = [];
+          let orthoLineHl = null;
+          let orthoHlBundle = null;
+          let orthoHlNote = undefined;
+          if (group?.length) {
+            orthoRuns = group.map((h) => ({
+              segIdx: h.segIdx,
+              pi0: Math.min(h.startPtIdx, h.endPtIdx),
+              pi1: Math.max(h.startPtIdx, h.endPtIdx),
+            }));
+            orthoHlBundle = group.map((h) => [
+              'ortho',
+              Number(h.segIdx),
+              Number(h.edgeIdxStart),
+              Number(h.edgeIdxEnd),
+            ]);
+            orthoLineHl = orthoHlBundle[0];
+            const nAll = overlaps.length;
+            const nGrp = group.length;
+            const nCl = overlapClusters.length;
+            if (nAll > 1 && nCl === 1) {
+              orthoHlNote = `表中「線」來自合併橫區間（${nAll} 段重合）；橘色為全部重合區段（與表中列一致）；起迄取優先段（較緊貼合併區間端點者）頂點並依 x 排序。`;
+            } else if (nCl > 1) {
+              orthoHlNote = `合併橫區間原含 ${nAll} 段重合，路網上拆成 ${nCl} 組互不相連；本列為其中一組（${nGrp} 段相連）；橘色僅標示本組。`;
+            }
+            const hPri = group[0];
+            const segPri = flat[hPri.segIdx];
+            if (segPri?.points) {
+              const iLo = Math.min(hPri.startPtIdx, hPri.endPtIdx);
+              const iHi = Math.max(hPri.startPtIdx, hPri.endPtIdx);
+              const Va = hvVertexStationAndCoord(segPri, iLo);
+              const Vz = hvVertexStationAndCoord(segPri, iHi);
+              const ga = parseParenGridCoordOrtho(Va.coord);
+              const gz = parseParenGridCoordOrtho(Vz.coord);
+              if (ga && gz && ga.gy === yy && gz.gy === yy) {
+                if (ga.gx <= gz.gx) {
+                  startAG = Va;
+                  endZG = Vz;
+                } else {
+                  startAG = Vz;
+                  endZG = Va;
+                }
               } else {
-                startA = Vz;
-                endZ = Va;
+                startAG = Va;
+                endZG = Vz;
               }
-            } else {
-              startA = Va;
-              endZ = Vz;
             }
           }
+          pushRow({
+            axisY: yy,
+            kind: '線',
+            routeName: b.routeLabel,
+            startStation: startAG.station,
+            startCoord: startAG.coord,
+            endStation: endZG.station,
+            endCoord: endZG.coord,
+            orthoHlNote,
+            orthoRuns: orthoRuns.length ? orthoRuns : undefined,
+            orthoHl: orthoLineHl ?? undefined,
+            orthoHlBundle: orthoHlBundle ?? undefined,
+          });
         }
-        pushRow({
-          axisY: yy,
-          kind: '線',
-          routeName: b.routeLabel,
-          startStation: startA.station,
-          startCoord: startA.coord,
-          endStation: endZ.station,
-          endCoord: endZ.coord,
-          orthoHlNote,
-          orthoRuns: orthoRuns.length ? orthoRuns : undefined,
-          orthoHl: orthoLineHl ?? undefined,
-          orthoHlBundle: orthoHlBundle ?? undefined,
-        });
       }
     }
 
@@ -4616,62 +4633,78 @@
           if (ov !== ou) return ov - ou;
           return (v.span ?? 0) - (u.span ?? 0);
         });
-        let orthoRuns = [];
-        let orthoLineHl = null;
-        let orthoHlBundle = null;
-        let orthoHlNote = undefined;
-        if (overlaps.length) {
-          orthoRuns = overlaps.map((vv) => ({
-            segIdx: vv.segIdx,
-            pi0: Math.min(vv.startPtIdx, vv.endPtIdx),
-            pi1: Math.max(vv.startPtIdx, vv.endPtIdx),
-          }));
-          orthoHlBundle = overlaps.map((vv) => [
-            'ortho',
-            Number(vv.segIdx),
-            Number(vv.edgeIdxStart),
-            Number(vv.edgeIdxEnd),
-          ]);
-          orthoLineHl = orthoHlBundle[0];
-          if (overlaps.length > 1) {
-            orthoHlNote = `表中「線」來自合併直區間（${overlaps.length} 段重合）；橘色為全部重合區段；起迄取優先段（較緊貼合併區間端點者）頂點並依 y 排序。`;
-          }
-          const vPri = overlaps[0];
-          const segPri = flat[vPri.segIdx];
-          if (segPri?.points) {
-            const iLo = Math.min(vPri.startPtIdx, vPri.endPtIdx);
-            const iHi = Math.max(vPri.startPtIdx, vPri.endPtIdx);
-            const Va = hvVertexStationAndCoord(segPri, iLo);
-            const Vz = hvVertexStationAndCoord(segPri, iHi);
-            const ga = parseParenGridCoordOrtho(Va.coord);
-            const gz = parseParenGridCoordOrtho(Vz.coord);
-            if (ga && gz && ga.gx === xx && gz.gx === xx) {
-              if (ga.gy <= gz.gy) {
-                startA = Va;
-                endZ = Vz;
+        const overlapClustersCol =
+          overlaps.length > 1
+            ? clusterOrthoOverlapsForMergedBand(flat, overlaps)
+            : overlaps.length === 1
+              ? [[overlaps[0]]]
+              : [];
+
+        for (const group of overlapClustersCol.length ? overlapClustersCol : [null]) {
+          let startAG = startA;
+          let endZG = endZ;
+          let orthoRuns = [];
+          let orthoLineHl = null;
+          let orthoHlBundle = null;
+          let orthoHlNote = undefined;
+          if (group?.length) {
+            orthoRuns = group.map((vv) => ({
+              segIdx: vv.segIdx,
+              pi0: Math.min(vv.startPtIdx, vv.endPtIdx),
+              pi1: Math.max(vv.startPtIdx, vv.endPtIdx),
+            }));
+            orthoHlBundle = group.map((vv) => [
+              'ortho',
+              Number(vv.segIdx),
+              Number(vv.edgeIdxStart),
+              Number(vv.edgeIdxEnd),
+            ]);
+            orthoLineHl = orthoHlBundle[0];
+            const nAll = overlaps.length;
+            const nGrp = group.length;
+            const nCl = overlapClustersCol.length;
+            if (nAll > 1 && nCl === 1) {
+              orthoHlNote = `表中「線」來自合併直區間（${nAll} 段重合）；橘色為全部重合區段；起迄取優先段（較緊貼合併區間端點者）頂點並依 y 排序。`;
+            } else if (nCl > 1) {
+              orthoHlNote = `合併直區間原含 ${nAll} 段重合，路網上拆成 ${nCl} 組互不相連；本列為其中一組（${nGrp} 段相連）；橘色僅標示本組。`;
+            }
+            const vPri = group[0];
+            const segPri = flat[vPri.segIdx];
+            if (segPri?.points) {
+              const iLo = Math.min(vPri.startPtIdx, vPri.endPtIdx);
+              const iHi = Math.max(vPri.startPtIdx, vPri.endPtIdx);
+              const Va = hvVertexStationAndCoord(segPri, iLo);
+              const Vz = hvVertexStationAndCoord(segPri, iHi);
+              const ga = parseParenGridCoordOrtho(Va.coord);
+              const gz = parseParenGridCoordOrtho(Vz.coord);
+              if (ga && gz && ga.gx === xx && gz.gx === xx) {
+                if (ga.gy <= gz.gy) {
+                  startAG = Va;
+                  endZG = Vz;
+                } else {
+                  startAG = Vz;
+                  endZG = Va;
+                }
               } else {
-                startA = Vz;
-                endZ = Va;
+                startAG = Va;
+                endZG = Vz;
               }
-            } else {
-              startA = Va;
-              endZ = Vz;
             }
           }
+          pushCol({
+            axisX: xx,
+            kind: '線',
+            routeName: b.routeLabel,
+            startStation: startAG.station,
+            startCoord: startAG.coord,
+            endStation: endZG.station,
+            endCoord: endZG.coord,
+            orthoHlNote,
+            orthoRuns: orthoRuns.length ? orthoRuns : undefined,
+            orthoHl: orthoLineHl ?? undefined,
+            orthoHlBundle: orthoHlBundle ?? undefined,
+          });
         }
-        pushCol({
-          axisX: xx,
-          kind: '線',
-          routeName: b.routeLabel,
-          startStation: startA.station,
-          startCoord: startA.coord,
-          endStation: endZ.station,
-          endCoord: endZ.coord,
-          orthoHlNote,
-          orthoRuns: orthoRuns.length ? orthoRuns : undefined,
-          orthoHl: orthoLineHl ?? undefined,
-          orthoHlBundle: orthoHlBundle ?? undefined,
-        });
       }
     }
 
@@ -4743,7 +4776,7 @@
     return { rowTable, colTable, centerCx, centerCy };
   };
 
-  /** `temp`：依隊列對當項設 highlight；（單次 Pulse 至多往中心移一格，連按／自動再行下一格。） */
+  /** `temp`：依隊列對當項設 highlight；（單次 Pulse 可至多格至「沿中心向／邊數變多」最佳處；否則只移一格；連按／自動再行下一隊列項。） */
   const lineOrthoTowardCrossSeqIdx = ref(0);
   const lineOrthoTowardCrossLastHint = ref('');
   /** 列／欄表 :key bump：路網座標更新後強制 Vue 重建表格（離紅線 y／xΔ 來自新路網）。 */
@@ -4914,7 +4947,8 @@
   };
 
   /**
-   * 單按一次「朝紅十字縮進」：`clearMovePreview`、`queue[idx]`、`seqIdx+=1`；至多往中心挪**一格**。與自動排程同軌。
+   * 單按一次「朝紅十字縮進」：`clearMovePreview`、`queue[idx]`、`seqIdx+=1`；
+   * 若有合法位移能提升水平／垂直邊數則可走多格至該向最佳位置，否則只挪一格。與自動排程同軌。
    * @returns {Promise<boolean>} 是否發生評估類嚴重失敗（!r.ok，需視情況中斷自動／批次）
    */
   async function pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert = false } = {}) {
@@ -4955,8 +4989,7 @@
 
     let workingFlat = shallowCloneOrthoSegmentsSynced(flat);
     const frozenIds = buildInitialOrthoCoPointGroups(workingFlat);
-    const snapRes = snapRedBlueTerminalEdgesTowardOrthoBeforeRound(workingFlat, frozenIds);
-    let stepCount = snapRes.cellsMovedSum;
+    let stepCount = 0;
     let haltReason = '';
 
     const r = tryOrthoTowardCrossNudgeFromReportItem(
@@ -5000,11 +5033,11 @@
       } else {
         haltReason =
           r.message ||
-          '往中心移一格時，約束檢查未通過（交叉、路線共線重疊、頂點落線、非法併格或零長邊）；或會降低水平／垂直邊數而跳過。';
+          '朝中心位移時，約束檢查未通過（交叉、路線共線重疊、頂點落線、非法併格或零長邊）；或無法讓水平／垂直邊數變多亦無法只移一格而不降低邊數。';
       }
     } else {
       workingFlat = r.segments;
-      stepCount += r.cellsMoved ?? 1;
+      stepCount = r.cellsMoved ?? 1;
     }
 
     /** 套用後之重算報表／中心（離紅線 y／x 與新路網一致）— 無位移時沿用 pulse 開始時結果 */
@@ -5079,7 +5112,7 @@
     await pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert: false });
   };
 
-  const startLineOrthoTowardCrossAuto = (lyr) => {
+  const startLineOrthoTowardCrossAuto = async (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
     if (lineOrthoTowardCrossQueueLength(lyr) === 0) {
       window.alert('無列／欄表項目，無法自動執行。');
@@ -5087,6 +5120,7 @@
     }
     if (lineOrthoTowardCrossOneClickRunning.value) return;
     stopLineOrthoTowardCrossAuto();
+    await maybeLineOrthoHubBlueDiagonalPrepassOnce(lyr);
     lineOrthoTowardCrossAutoNoMoveStreak.value = 0;
     lineOrthoTowardCrossAutoActive.value = true;
     lineOrthoTowardCrossAutoTimerId = setInterval(async () => {
@@ -5155,6 +5189,7 @@
     let stagnationStop = false;
     let pulseCount = 0;
     try {
+      await maybeLineOrthoHubBlueDiagonalPrepassOnce(lyr);
       let noMoveStreak = 0;
       while (pulseCount < LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES) {
         const r = await pulseOnceLineOrthoTowardCross(lyr, {
@@ -5262,6 +5297,23 @@
       dataStore.findLayerById.bind(dataStore),
       dataStore.saveLayerState.bind(dataStore)
     );
+  };
+
+  const maybeLineOrthoHubBlueDiagonalPrepassOnce = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) return;
+    const flatIn = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+    );
+    const { segments: passSegs, moves } = applyLineOrthoHubBlueDiagonalPrepassSegments(flatIn);
+    if (!moves) return;
+    applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, passSegs);
+    await dataStore.saveLayerState(LINE_ORTHOGONAL_LAYER_ID, {
+      ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
+    });
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
   /**
@@ -8622,7 +8674,7 @@
               <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
                 僅統計<strong>水平、垂直線段</strong>（斜線略過）。<strong
                   >紅十字／yΔ／xΔ 基準格</strong
-                >：未鎖定時為全路網頂點包圍盒中點；第一次「朝紅十字縮進」會<strong>鎖定</strong>該格，之後不因路網位移而漂移（與網格線座標基準一致）。縮進為<strong>整格共點平移</strong>並受硬約束，不會任意斷邊。列出順序：
+                >：未鎖定時為全路網頂點包圍盒中點；第一次「朝紅十字縮進」會<strong>鎖定</strong>該格，之後不因路網位移而漂移（與網格線座標基準一致）。縮進為<strong>整格共點平移</strong>並受硬約束，不會任意斷邊；若沿路徑能提升水平／垂直邊數，單次可<strong>一次平移多格</strong>至該向「邊數最佳」處，否則只移一格。列出順序：
                 <strong>0 → +1 → −1 → +2 → −2 → …</strong>。<strong>yΔ／xΔ</strong>
                 為相對<strong>該</strong>基準格之<strong>網格列／欄距</strong>（非重新編號）。
                 <template v-if="loReport.centerCx != null && loReport.centerCy != null">
@@ -8655,7 +8707,7 @@
                 {{
                   lineOrthoTowardCrossAutoActive
                     ? '停止自動（每秒一次縮進）'
-                    : '自動執行：每秒仿單鍵縮進一次'
+                    : '自動執行：先嘗試將 hub 紅 connect－末端藍 connect 斜鄰段改橫／直（僅開啟自動時首輪一次），之後每秒仿單鍵縮進'
                 }}
               </button>
               <button
@@ -8669,7 +8721,7 @@
                 "
                 @click="onLineOrthoTowardCrossFinishAllClick(layer)"
               >
-                一鍵完成：反覆縮進至「一整輪隊列皆無可改善」為止（與自動執行停條件相同），並在下面顯示彙總
+                一鍵完成：開頭先嘗試將 hub 紅 connect－末端藍 connect 斜鄰段改橫／直（僅批次首輪一次），再反覆縮進至「一整輪隊列皆無可改善」為止並於下方顯示彙總
               </button>
               <div
                 v-if="lineOrthoTowardCrossLastHint"

@@ -61,7 +61,9 @@
     isTaipeiTestILayerTab,
     isTaipeiTest3BcdeLayerTab,
     isTaipeiTest3I3OrJ3LayerTab,
+    isTaipeiE3DiagonalSawtoothDisplayLayerTab,
   } from '@/utils/taipeiTestPipeline.js';
+  import { expandPolylineDiagonalsToSawtoothDisplay } from '@/utils/taipeiTest3/diagonalToSawtoothDisplay.js';
   import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
   import { rebuildTaipeiK4DrawFromFlatSegments } from '@/utils/taipeiK4RedrawChains.js';
 
@@ -4805,7 +4807,13 @@
       }
     };
 
-    const hvTransformPath = (path) => path;
+    const hvTransformPath = (path) => {
+      if (!Array.isArray(path) || path.length < 2) return path;
+      if (isTaipeiE3DiagonalSawtoothDisplayLayerTab(activeLayerTab.value)) {
+        return expandPolylineDiagonalsToSawtoothDisplay(path, 1);
+      }
+      return path;
+    };
 
     // 繪製路線（支援 LineString / MultiLineString）；有疊加網格時線一起移動
     routeFeatures.forEach((feature) => {

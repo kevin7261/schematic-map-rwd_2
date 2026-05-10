@@ -47,10 +47,8 @@ export {
   findBestCoPointGroupTargetOnGrid,
   applyBestCoPointGroupMoveOnGrid,
 } from './axisAlignGridNetworkHillClimb.js';
-export {
-  tryOrthoTowardCrossNudgeFromReportItem,
-  snapRedBlueTerminalEdgesTowardOrthoBeforeRound,
-} from './orthoNudgeTowardCrossCenter.js';
+export { tryOrthoTowardCrossNudgeFromReportItem } from './orthoNudgeTowardCrossCenter.js';
+export { applyLineOrthoHubBlueDiagonalPrepassSegments } from './lineOrthoHubBlueDiagonalPrepass.js';
 export {
   shallowCloneOrthoSegmentsSynced,
   buildInitialOrthoCoPointGroups,

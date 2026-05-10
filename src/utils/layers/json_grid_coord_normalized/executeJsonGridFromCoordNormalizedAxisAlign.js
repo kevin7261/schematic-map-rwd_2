@@ -2,6 +2,7 @@
 
 /**
  * 「站點移動水平垂直化」圖層（layerId：`point_orthogonal`）：格點路網四鄰橫豎化、刪空欄列等。
+ * 橫豎化每外輪先處理「hub 紅 connect − 末端藍 connect」斜鄰段：只平移藍端共點群使該段變 H／V，再進行既有的共點鄰格 hill climb。
  */
 
 import { useDataStore } from '@/stores/dataStore.js';
