@@ -530,7 +530,8 @@ export async function loadGeoJsonForRoutes(layer) {
 }
 
 /**
- * 讀取 public/data 下 .osm XML，於瀏覽器轉成路網 GeoJSON，欄位與 loadGeoJsonForRoutes 一致。
+ * 讀取 public/data 下路網來源檔，於瀏覽器轉成路網 GeoJSON，欄位與 loadGeoJsonForRoutes 一致。
+ * 圖層 `osm_2_geojson_2_json`：副檔名 `.geojson` 時依 JSON 解析；否則依 OSM XML 解析。
  *
  * @param {Object} layer
  * @param {string} [layer.osmFileName] - 相對於 /data/ 的檔名；未設定或空白時不發請求，回傳空路網
@@ -571,17 +572,20 @@ export async function loadOsmXmlAsGeoJsonForRoutes(layer) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const xmlText = await response.text();
+    const bodyText = await response.text();
     if (layer?.layerId === 'osm_2_geojson_2_json') {
-      const { osmXmlToOsm2GeojsonLoaderResult } = await import(
-        '@/utils/layers/osm_2_geojson_2_json/index.js'
-      );
-      return osmXmlToOsm2GeojsonLoaderResult(xmlText);
+      const { osmXmlToOsm2GeojsonLoaderResult, parseGeoJsonTextToOsm2GeojsonLoaderResult } =
+        await import('@/utils/layers/osm_2_geojson_2_json/index.js');
+      const lower = String(fileName).toLowerCase();
+      if (lower.endsWith('.geojson')) {
+        return parseGeoJsonTextToOsm2GeojsonLoaderResult(bodyText);
+      }
+      return osmXmlToOsm2GeojsonLoaderResult(bodyText);
     }
-    const geojson = osmXmlStringToGeoJsonFeatureCollection(xmlText);
+    const geojson = osmXmlStringToGeoJsonFeatureCollection(bodyText);
     return {
       ...buildStandardRouteGeoJsonLoadResult(geojson),
-      sourceOsmXmlText: xmlText,
+      sourceOsmXmlText: bodyText,
     };
   } catch (error) {
     console.error('❌ OSM XML 載入或轉 GeoJSON 失敗:', error);

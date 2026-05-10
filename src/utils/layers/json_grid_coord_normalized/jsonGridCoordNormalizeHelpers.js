@@ -58,9 +58,16 @@ export function writeLayoutNormalizedLayerDataOsmFromNetwork(layer, spaceNetwork
 
 /**
  * 本圖層路網輸入（b 或已存在之路網格狀資料）。
+ *
+ * @param {{ routeLineFromExportRows?: 'endpoints' | 'full' }} [options]
+ *   `full`：在僅有匯出列、`geojsonData` 曾以起迄視圖產製時，改自 `dataJson`／`jsonData` 還原
+ *   完整 routeCoordinates 折鏈（與 HV 統計／頂點表一致）。
  * @returns {{ spaceNetwork: unknown[], fromExistingSn: boolean } | null}
  */
-export function resolveB3InputSpaceNetwork(coordLayer) {
+export function resolveB3InputSpaceNetwork(coordLayer, options = {}) {
+  const routeLineFromRows =
+    options.routeLineFromExportRows === 'full' ? 'full' : 'endpoints';
+
   if (
     Array.isArray(coordLayer?.spaceNetworkGridJsonData) &&
     coordLayer.spaceNetworkGridJsonData.length > 0
@@ -68,27 +75,38 @@ export function resolveB3InputSpaceNetwork(coordLayer) {
     return { spaceNetwork: coordLayer.spaceNetworkGridJsonData, fromExistingSn: true };
   }
 
+  const raw = Array.isArray(coordLayer?.dataJson)
+    ? coordLayer.dataJson
+    : Array.isArray(coordLayer?.jsonData)
+      ? coordLayer.jsonData
+      : null;
+  const hasRaw = Array.isArray(raw) && raw.length > 0;
+
   let geojsonForExport = null;
-  const gj = coordLayer?.geojsonData;
-  if (gj?.type === 'FeatureCollection' && Array.isArray(gj.features) && gj.features.length > 0) {
-    geojsonForExport = gj;
+
+  if (routeLineFromRows === 'full' && hasRaw) {
+    geojsonForExport = minimalLineStringFeatureCollectionFromRouteExportRows(raw, {
+      stationPoints: 'all',
+      routeLine: 'full',
+    });
   }
+
   if (!geojsonForExport?.features?.length) {
-    const raw = Array.isArray(coordLayer?.dataJson)
-      ? coordLayer.dataJson
-      : Array.isArray(coordLayer?.jsonData)
-        ? coordLayer.jsonData
-        : null;
-    if (Array.isArray(raw) && raw.length > 0) {
-      geojsonForExport = minimalLineStringFeatureCollectionFromRouteExportRows(raw, {
-        stationPoints: 'endpoints',
-        routeLine: 'endpoints',
-      });
+    const gj = coordLayer?.geojsonData;
+    if (gj?.type === 'FeatureCollection' && Array.isArray(gj.features) && gj.features.length > 0) {
+      geojsonForExport = gj;
     }
+  }
+
+  if (!geojsonForExport?.features?.length && hasRaw) {
+    geojsonForExport = minimalLineStringFeatureCollectionFromRouteExportRows(raw, {
+      stationPoints: routeLineFromRows === 'full' ? 'all' : 'endpoints',
+      routeLine: routeLineFromRows,
+    });
   }
   if (!geojsonForExport?.features?.length) {
     console.warn(
-      'executeJsonGridCoordNormalize：本圖層無路網輸入（請於左側先開啟本圖層以自「OSM → GeoJSON → JSON」複製 dataJson／geojsonData，或貼入 spaceNetworkGridJsonData）'
+      'executeJsonGridCoordNormalize：本圖層無路網輸入（請於左側先開啟本圖層以自「OSM／GeoJSON → JSON」複製 dataJson／geojsonData，或貼入 spaceNetworkGridJsonData）'
     );
     return null;
   }

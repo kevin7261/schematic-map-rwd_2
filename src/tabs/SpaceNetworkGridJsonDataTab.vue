@@ -222,7 +222,7 @@
     if (!props.osmViewerMode) {
       return '沒有開啟的圖層或沒有空間網絡網格 JSON 數據';
     }
-    return '請先開啟「OSM → GeoJSON → JSON」、「json 繪製／json繪製·讀檔」或「版面網格·座標正規化」圖層（及其路段／路網資料）';
+    return '請先開啟「OSM／GeoJSON → JSON」、「json 繪製／json繪製·讀檔」或「版面網格·座標正規化」圖層（及其路段／路網資料）';
   });
 
   /**

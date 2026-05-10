@@ -6014,10 +6014,67 @@
       }
     }
 
-    // point_orthogonal／temp：Control「下一頂點」等— 橘圈目前頂點（line 之 Control 接入後沿用同欄位）
+    // point_orthogonal／temp：Control「下一頂點」— 橘圈頂點；temp「下一橫／豎線」— 橘線段
     if (layerTab === POINT_ORTHOGONAL_LAYER_ID || layerTab === LINE_ORTHOGONAL_LAYER_ID) {
       const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;
+
+      if (
+        layerTab === LINE_ORTHOGONAL_LAYER_ID &&
+        hlLayer &&
+        Array.isArray(hl) &&
+        hl[0] === 'ortho' &&
+        hl.length >= 4
+      ) {
+        const resolved = resolveB3InputSpaceNetwork(hlLayer);
+        const flat =
+          resolved?.spaceNetwork?.length > 0
+            ? normalizeSpaceNetworkDataToFlatSegments(
+                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+              )
+            : [];
+        const si = Number(hl[1]);
+        const e0 = Number(hl[2]);
+        const e1 = Number(hl[3]);
+        const seg = flat[si];
+        const pts = seg?.points;
+        if (
+          Array.isArray(pts) &&
+          Number.isFinite(e0) &&
+          Number.isFinite(e1) &&
+          e0 <= e1 &&
+          e1 < pts.length - 1
+        ) {
+          const pA = pts[e0];
+          const pB = pts[e1 + 1];
+          const gx0 = Array.isArray(pA) ? Number(pA[0]) : Number(pA?.x);
+          const gy0 = Array.isArray(pA) ? Number(pA[1]) : Number(pA?.y);
+          const gx1 = Array.isArray(pB) ? Number(pB[0]) : Number(pB?.x);
+          const gy1 = Array.isArray(pB) ? Number(pB[1]) : Number(pB?.y);
+          if (
+            Number.isFinite(gx0) &&
+            Number.isFinite(gy0) &&
+            Number.isFinite(gx1) &&
+            Number.isFinite(gy1)
+          ) {
+            zoomGroup
+              .append('g')
+              .attr('class', 'json-grid-line-orthogonal-axis-highlight')
+              .style('pointer-events', 'none')
+              .append('line')
+              .attr('x1', xScale(gx0))
+              .attr('y1', yScale(gy0))
+              .attr('x2', xScale(gx1))
+              .attr('y2', yScale(gy1))
+              .attr('stroke', '#ff6600')
+              .attr('stroke-width', 5)
+              .attr('stroke-linecap', 'round')
+              .attr('stroke-linejoin', 'round')
+              .attr('fill', 'none');
+          }
+        }
+      }
+
       if (
         hlLayer &&
         Array.isArray(hl) &&
@@ -6069,6 +6126,45 @@
           .attr('fill', 'rgba(76, 175, 80, 0.22)')
           .attr('stroke', '#2e7d32')
           .attr('stroke-width', 3.5);
+      }
+
+      /** temp：目前繪區座標 bbox 幾何中點（四捨五入）— 紅虛線十字（Normalize 或 GeoJSON 路徑皆可） */
+      if (layerTab === LINE_ORTHOGONAL_LAYER_ID) {
+        const bboxOk =
+          Number.isFinite(xMin) &&
+          Number.isFinite(xMax) &&
+          Number.isFinite(yMin) &&
+          Number.isFinite(yMax);
+        const spanOk = bboxOk && xMax > xMin && yMax > yMin;
+        if (bboxOk && spanOk) {
+          const cxG = Math.round((xMin + xMax) / 2);
+          const cyG = Math.round((yMin + yMax) / 2);
+          const crossG = zoomGroup
+            .append('g')
+            .attr('class', 'line-orthogonal-grid-center-crosshair')
+            .style('pointer-events', 'none');
+          const xL = margin.left;
+          const xR = margin.left + width;
+          const yT = margin.top;
+          const yB = margin.top + height;
+          const xP = xScale(cxG);
+          const yP = yScale(cyG);
+          const dash = '8,5';
+          const applyStrokeAttrs = (el) =>
+            el
+              .attr('stroke', '#e53935')
+              .attr('stroke-width', 2)
+              .attr('stroke-dasharray', dash)
+              .attr('opacity', 0.92)
+              .attr('vector-effect', 'non-scaling-stroke');
+          applyStrokeAttrs(
+            crossG.append('line').attr('x1', xP).attr('y1', yT).attr('x2', xP).attr('y2', yB)
+          );
+          applyStrokeAttrs(
+            crossG.append('line').attr('x1', xL).attr('y1', yP).attr('x2', xR).attr('y2', yP)
+          );
+          crossG.raise();
+        }
       }
     }
   };
@@ -6324,6 +6420,9 @@
       ) {
         const hl = layer.highlightedSegmentIndex;
         const sg = layer.jsonGridFromCoordSuggestTargetGrid;
+        if (Array.isArray(hl) && hl[0] === 'ortho') {
+          return `ortho:${hl[1]},${hl[2]},${hl[3]}|${sg?.x ?? ''},${sg?.y ?? ''}`;
+        }
         return `${hl?.[0] ?? ''},${hl?.[1] ?? ''}|${sg?.x ?? ''},${sg?.y ?? ''}`;
       }
       return layer.highlightedSegmentIndex ?? null;

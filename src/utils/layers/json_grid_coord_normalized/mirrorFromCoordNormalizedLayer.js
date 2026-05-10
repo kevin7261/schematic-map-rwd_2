@@ -1,5 +1,6 @@
 /**
- * 衍生圖層：`point_orthogonal` 與 `temp`（LINE_ORTHOGONAL_LAYER_ID）皆自「座標正規化」複製 dataJson／jsonData。
+ * 衍生圖層：`point_orthogonal` 自「座標正規化」複製 dataJson／jsonData；
+ * `temp`（LINE_ORTHOGONAL_LAYER_ID）優先自 `point_orthogonal` 複製；若該層尚無陣列則改讀「座標正規化」同一欄位（便於只開測試層也能顯示）。
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
@@ -8,6 +9,7 @@ import {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
   LINE_ORTHOGONAL_LAYER_ID,
+  POINT_ORTHOGONAL_LAYER_ID,
 } from './layerIds.js';
 
 /**
@@ -40,13 +42,29 @@ export function syncJsonGridFromCoordDataJsonFromPipeline(layer) {
 }
 
 export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, derivedLayer) {
-  const parent = findLayerById(JSON_GRID_COORD_NORMALIZED_LAYER_ID);
-  const raw =
-    parent && Array.isArray(parent.dataJson)
-      ? parent.dataJson
-      : parent && Array.isArray(parent.jsonData)
-        ? parent.jsonData
+  const sourceId =
+    derivedLayer?.layerId === LINE_ORTHOGONAL_LAYER_ID
+      ? POINT_ORTHOGONAL_LAYER_ID
+      : JSON_GRID_COORD_NORMALIZED_LAYER_ID;
+  const parentOrtho = findLayerById(sourceId);
+  let raw =
+    parentOrtho && Array.isArray(parentOrtho.dataJson)
+      ? parentOrtho.dataJson
+      : parentOrtho && Array.isArray(parentOrtho.jsonData)
+        ? parentOrtho.jsonData
         : null;
+  if (
+    derivedLayer?.layerId === LINE_ORTHOGONAL_LAYER_ID &&
+    (!Array.isArray(raw) || raw.length === 0)
+  ) {
+    const norm = findLayerById(JSON_GRID_COORD_NORMALIZED_LAYER_ID);
+    raw =
+      norm && Array.isArray(norm.dataJson)
+        ? norm.dataJson
+        : norm && Array.isArray(norm.jsonData)
+          ? norm.jsonData
+          : null;
+  }
   const arr = Array.isArray(raw) ? JSON.parse(JSON.stringify(raw)) : null;
   derivedLayer.jsonData = arr;
   derivedLayer.dataJson = arr;
@@ -140,7 +158,7 @@ export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, s
   }
 }
 
-/** 站點層寫入後，若 temp 圖層開啟則自「座標正規化」重鏡像並 persist */
+/** 站點層寫入後，若 temp 圖層開啟則自 `point_orthogonal` 重鏡像並 persist */
 export function refreshLineOrthogonalFromPointOrthogonalIfVisible(findLayerById, saveLayerState) {
   const line = findLayerById(LINE_ORTHOGONAL_LAYER_ID);
   if (!line?.visible) return;

@@ -11,6 +11,8 @@ export {
 export {
   osmXmlStringToGeojsonData,
   geojson_2_json,
+  geojsonObjectToOsm2GeojsonLoaderResult,
+  parseGeoJsonTextToOsm2GeojsonLoaderResult,
   osmXmlToOsm2GeojsonLoaderResult,
   parseLocalOsmXmlStringToRouteLoadResult,
 } from './pipeline.js';

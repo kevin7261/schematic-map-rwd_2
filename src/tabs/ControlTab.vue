@@ -24,6 +24,7 @@
     LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
     mergeOsm2GeojsonLoaderResultIntoLayer,
     osmXmlToOsm2GeojsonLoaderResult,
+    parseGeoJsonTextToOsm2GeojsonLoaderResult,
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
     setOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
@@ -3742,7 +3743,7 @@ import {
    */
   const jsonGridFromCoordNormalizedVertexList = (lyr) => {
     if (!lyr || lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID) return [];
-    const resolved = resolveB3InputSpaceNetwork(lyr);
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return [];
     const flat = normalizeSpaceNetworkDataToFlatSegments(
       JSON.parse(JSON.stringify(resolved.spaceNetwork))
@@ -3797,70 +3798,179 @@ import {
 
   /**
    * `temp`（LINE_ORTHOGONAL_LAYER_ID）：由路網拆出格點折線之水平邊、垂直邊（斜邊不列入表內，僅計數）。
-   * @returns {{ horizontal: Array<{ row: number, segIdx: number, edgeIdx: number, routeName: string, y: number, xMin: number, xMax: number, span: number }>, vertical: Array<{ row: number, segIdx: number, edgeIdx: number, routeName: string, x: number, yMin: number, yMax: number, span: number }>, diagonalCount: number }}
+   * 同一路線（同一段 polyline）上連續且共線之橫／豎邊合併為一列（邊序為起迄索引）。
+   * `runsInOrder` 與 horizontal／vertical 皆依路線名（zh-Hant）再依幾何排序，供 Control 總表與「下一條」步進。
+   * @returns {{ horizontal: Array, vertical: Array, runsInOrder: Array, diagonalCount: number }}
    */
   const jsonGridLineOrthogonalAxisLineLists = (lyr) => {
-    const empty = { horizontal: [], vertical: [], diagonalCount: 0 };
+    const empty = { horizontal: [], vertical: [], runsInOrder: [], diagonalCount: 0 };
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return empty;
-    const resolved = resolveB3InputSpaceNetwork(lyr);
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return empty;
     const flat = normalizeSpaceNetworkDataToFlatSegments(
       JSON.parse(JSON.stringify(resolved.spaceNetwork)),
     );
     const horizontal = [];
     const vertical = [];
+    const runsInOrder = [];
     let diagonalCount = 0;
+
+    const edgeKind = (pa, pb) => {
+      const x0 = Array.isArray(pa) ? Number(pa[0]) : Number(pa?.x);
+      const y0 = Array.isArray(pa) ? Number(pa[1]) : Number(pa?.y);
+      const x1 = Array.isArray(pb) ? Number(pb[0]) : Number(pb?.x);
+      const y1 = Array.isArray(pb) ? Number(pb[1]) : Number(pb?.y);
+      if (
+        !Number.isFinite(x0) ||
+        !Number.isFinite(y0) ||
+        !Number.isFinite(x1) ||
+        !Number.isFinite(y1)
+      ) {
+        return { kind: 'skip' };
+      }
+      const rx0 = Math.round(x0);
+      const ry0 = Math.round(y0);
+      const rx1 = Math.round(x1);
+      const ry1 = Math.round(y1);
+      if (rx0 === rx1 && ry0 === ry1) return { kind: 'skip' };
+      if (ry0 === ry1) return { kind: 'h', y: ry0 };
+      if (rx0 === rx1) return { kind: 'v', x: rx0 };
+      return { kind: 'd' };
+    };
+
     for (let segIdx = 0; segIdx < flat.length; segIdx++) {
       const seg = flat[segIdx];
       const routeName = String(seg.route_name ?? seg.name ?? 'Unknown');
       const pts = Array.isArray(seg.points) ? seg.points : [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p0 = pts[i];
-        const p1 = pts[i + 1];
-        const x0 = Array.isArray(p0) ? Number(p0[0]) : Number(p0?.x);
-        const y0 = Array.isArray(p0) ? Number(p0[1]) : Number(p0?.y);
-        const x1 = Array.isArray(p1) ? Number(p1[0]) : Number(p1?.x);
-        const y1 = Array.isArray(p1) ? Number(p1[1]) : Number(p1?.y);
-        if (
-          !Number.isFinite(x0) ||
-          !Number.isFinite(y0) ||
-          !Number.isFinite(x1) ||
-          !Number.isFinite(y1)
-        ) {
+      let i = 0;
+      while (i < pts.length - 1) {
+        const k0 = edgeKind(pts[i], pts[i + 1]);
+        if (k0.kind === 'skip') {
+          i += 1;
           continue;
         }
-        const rx0 = Math.round(x0);
-        const ry0 = Math.round(y0);
-        const rx1 = Math.round(x1);
-        const ry1 = Math.round(y1);
-        if (rx0 === rx1 && ry0 === ry1) continue;
-        if (ry0 === ry1) {
-          horizontal.push({
-            segIdx,
-            edgeIdx: i,
-            routeName,
-            y: ry0,
-            xMin: Math.min(rx0, rx1),
-            xMax: Math.max(rx0, rx1),
-            span: Math.abs(rx1 - rx0),
-          });
-        } else if (rx0 === rx1) {
-          vertical.push({
-            segIdx,
-            edgeIdx: i,
-            routeName,
-            x: rx0,
-            yMin: Math.min(ry0, ry1),
-            yMax: Math.max(ry0, ry1),
-            span: Math.abs(ry1 - ry0),
-          });
-        } else {
+        if (k0.kind === 'd') {
           diagonalCount += 1;
+          i += 1;
+          continue;
+        }
+        if (k0.kind === 'h') {
+          const yLine = k0.y;
+          let j = i;
+          while (j < pts.length - 2) {
+            const kn = edgeKind(pts[j + 1], pts[j + 2]);
+            if (kn.kind !== 'h' || kn.y !== yLine) break;
+            j += 1;
+          }
+          let xMin = Infinity;
+          let xMax = -Infinity;
+          let ixMin = null;
+          let ixMax = null;
+          for (let k = i; k <= j + 1; k++) {
+            const pt = pts[k];
+            const gx = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+            if (!Number.isFinite(gx)) continue;
+            const rx = Math.round(gx);
+            xMin = Math.min(xMin, rx);
+            xMax = Math.max(xMax, rx);
+          }
+          for (let k = i; k <= j + 1; k++) {
+            const pt = pts[k];
+            const gx = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+            if (!Number.isFinite(gx)) continue;
+            const rx = Math.round(gx);
+            if (rx === xMin && (ixMin === null || k < ixMin)) ixMin = k;
+            if (rx === xMax && (ixMax === null || k > ixMax)) ixMax = k;
+          }
+          const i0 = ixMin ?? i;
+          const i1 = ixMax ?? j + 1;
+          const item = {
+            segIdx,
+            edgeIdxStart: i,
+            edgeIdxEnd: j,
+            routeName,
+            y: yLine,
+            xMin,
+            xMax,
+            span: Math.abs(xMax - xMin),
+            startPtIdx: i0,
+            endPtIdx: i1,
+          };
+          horizontal.push(item);
+          runsInOrder.push({ kind: 'h', ...item });
+          i = j + 1;
+          continue;
+        }
+        if (k0.kind === 'v') {
+          const xLine = k0.x;
+          let j = i;
+          while (j < pts.length - 2) {
+            const kn = edgeKind(pts[j + 1], pts[j + 2]);
+            if (kn.kind !== 'v' || kn.x !== xLine) break;
+            j += 1;
+          }
+          let yMin = Infinity;
+          let yMax = -Infinity;
+          let iyMin = null;
+          let iyMax = null;
+          for (let k = i; k <= j + 1; k++) {
+            const pt = pts[k];
+            const gy = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+            if (!Number.isFinite(gy)) continue;
+            const ry = Math.round(gy);
+            yMin = Math.min(yMin, ry);
+            yMax = Math.max(yMax, ry);
+          }
+          for (let k = i; k <= j + 1; k++) {
+            const pt = pts[k];
+            const gy = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+            if (!Number.isFinite(gy)) continue;
+            const ry = Math.round(gy);
+            if (ry === yMin && (iyMin === null || k < iyMin)) iyMin = k;
+            if (ry === yMax && (iyMax === null || k > iyMax)) iyMax = k;
+          }
+          const j0 = iyMin ?? i;
+          const j1 = iyMax ?? j + 1;
+          const item = {
+            segIdx,
+            edgeIdxStart: i,
+            edgeIdxEnd: j,
+            routeName,
+            x: xLine,
+            yMin,
+            yMax,
+            span: Math.abs(yMax - yMin),
+            startPtIdx: j0,
+            endPtIdx: j1,
+          };
+          vertical.push(item);
+          runsInOrder.push({ kind: 'v', ...item });
+          i = j + 1;
         }
       }
     }
-    horizontal.sort((a, b) => (a.y !== b.y ? a.y - b.y : a.xMin - b.xMin));
-    vertical.sort((a, b) => (a.x !== b.x ? a.x - b.x : a.yMin - b.yMin));
+    const cmpRoute = (a, b) =>
+      String(a.routeName ?? '').localeCompare(String(b.routeName ?? ''), 'zh-Hant');
+    horizontal.sort((a, b) => {
+      const cr = cmpRoute(a, b);
+      if (cr !== 0) return cr;
+      if (a.y !== b.y) return a.y - b.y;
+      return a.xMin - b.xMin;
+    });
+    vertical.sort((a, b) => {
+      const cr = cmpRoute(a, b);
+      if (cr !== 0) return cr;
+      if (a.x !== b.x) return a.x - b.x;
+      return a.yMin - b.yMin;
+    });
+    runsInOrder.sort((a, b) => {
+      const cr = cmpRoute(a, b);
+      if (cr !== 0) return cr;
+      if (a.segIdx !== b.segIdx) return a.segIdx - b.segIdx;
+      if (a.edgeIdxStart !== b.edgeIdxStart) return a.edgeIdxStart - b.edgeIdxStart;
+      if (a.kind !== b.kind) return a.kind === 'h' ? -1 : 1;
+      return 0;
+    });
     let rh = 0;
     for (const h of horizontal) {
       rh += 1;
@@ -3871,7 +3981,359 @@ import {
       rv += 1;
       v.row = rv;
     }
-    return { horizontal, vertical, diagonalCount };
+    let rAll = 0;
+    for (const run of runsInOrder) {
+      rAll += 1;
+      run.rowAll = rAll;
+    }
+    return { horizontal, vertical, runsInOrder, diagonalCount };
+  };
+
+  /** 與示意圖紅十字對齊：由所有路段頂點之四捨五入 bbox 取幾何中心格座標（四捨五入） */
+  const gridOrthoCrossCenterRoundedFromFlat = (flat) => {
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    if (Array.isArray(flat)) {
+      for (const seg of flat) {
+        const pts = Array.isArray(seg?.points) ? seg.points : [];
+        for (const p of pts) {
+          const x = Array.isArray(p) ? Number(p[0]) : Number(p?.x);
+          const y = Array.isArray(p) ? Number(p[1]) : Number(p?.y);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          const rx = Math.round(x);
+          const ry = Math.round(y);
+          xMin = Math.min(xMin, rx);
+          xMax = Math.max(xMax, rx);
+          yMin = Math.min(yMin, ry);
+          yMax = Math.max(yMax, ry);
+        }
+      }
+    }
+    if (!Number.isFinite(xMin) || !Number.isFinite(xMax)) {
+      return { cx: 0, cy: 0 };
+    }
+    return {
+      cx: Math.round((xMin + xMax) / 2),
+      cy: Math.round((yMin + yMax) / 2),
+    };
+  };
+
+  /** 離十字中心的距離順序：0 → +1 → −1 → +2 → −2 → …（同 Δ 次要鍵為函數返回值） */
+  const compareOrbitSignedDelta = (da, db) => {
+    const aa = Math.abs(da);
+    const ab = Math.abs(db);
+    if (aa !== ab) return aa - ab;
+    if (da === 0 || db === 0) return da - db;
+    if (da > 0 && db < 0) return -1;
+    if (da < 0 && db > 0) return 1;
+    return da - db;
+  };
+
+  const formatSignedGridDelta = (d) => {
+    if (!Number.isFinite(d)) return '—';
+    if (d === 0) return '0';
+    return d > 0 ? `+${d}` : `${d}`;
+  };
+
+  /** 水平／垂直折線頂點：站名（與 point_orthogonal 頂點表一致規則）與網格座標字串 */
+  const hvVertexStationAndCoord = (seg, ptIdx) => {
+    const pts = Array.isArray(seg?.points) ? seg.points : [];
+    const nodes = Array.isArray(seg?.nodes) ? seg.nodes : [];
+    const nPts = pts.length;
+    const pt = pts[ptIdx];
+    let x = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+    let y = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+    const rx = Number.isFinite(x) ? Math.round(x) : x;
+    const ry = Number.isFinite(y) ? Math.round(y) : y;
+    const coordStr =
+      Number.isFinite(Number(rx)) && Number.isFinite(Number(ry)) ? `(${rx},${ry})` : '—';
+
+    const n = nodes?.[ptIdx];
+    let label = '';
+    if (n && typeof n === 'object') {
+      const sn = String(n.station_name ?? n.tags?.station_name ?? n.tags?.name ?? '').trim();
+      const cn = n.connect_number ?? n.tags?.connect_number;
+      if (sn) label = cn != null && String(cn) !== '' ? `${sn}（轉乘#${cn}）` : sn;
+      else if (cn != null && String(cn) !== '') label = `轉乘#${cn}`;
+      else if (n.node_type === 'connect') label = '轉乘點';
+    }
+    if (!label) {
+      if (ptIdx === 0) label = '起點';
+      else if (ptIdx === nPts - 1) label = '終點';
+      else label = '—';
+    }
+    return { station: label, coord: coordStr };
+  };
+
+  /** 同列／同欄相接或重疊之整數區間合併，路線名採並集並以 「／」 顯示 */
+  const mergeIntervalsWithRoutes = (items) => {
+    if (!Array.isArray(items) || items.length === 0) return [];
+    const sorted = [...items].sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+    let curLo = sorted[0].lo;
+    let curHi = sorted[0].hi;
+    const curRoutes = new Set(sorted[0].routes ?? []);
+    const outBare = [];
+    for (let i = 1; i < sorted.length; i++) {
+      const it = sorted[i];
+      if (it.lo <= curHi + 1) {
+        curHi = Math.max(curHi, it.hi);
+        const addSrc = it.routes instanceof Set ? it.routes : new Set(it.routes ?? []);
+        for (const r of addSrc) curRoutes.add(r);
+      } else {
+        outBare.push({ lo: curLo, hi: curHi, routes: new Set(curRoutes) });
+        curLo = it.lo;
+        curHi = it.hi;
+        curRoutes.clear();
+        const addSrc = it.routes instanceof Set ? it.routes : new Set(it.routes ?? []);
+        for (const r of addSrc) curRoutes.add(r);
+      }
+    }
+    outBare.push({ lo: curLo, hi: curHi, routes: new Set(curRoutes) });
+    return outBare.map((m) => {
+      const arr = [...m.routes].sort((a, b) =>
+        String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hant'),
+      );
+      const nonEmpty = arr.filter((s) => String(s ?? '').trim() !== '');
+      return {
+        lo: m.lo,
+        hi: m.hi,
+        routeLabel:
+          nonEmpty.length > 0 ? nonEmpty.join('／') : arr.length ? arr.join('／') : '—',
+      };
+    });
+  };
+
+  /** 各路網段頂點四捨五入索引（格座標 → 對應 (segIdx,ptIdx,route)…） */
+  const buildOrthoGridRoundedVertexPickIndex = (flat) => {
+    const m = new Map();
+    if (!Array.isArray(flat)) return m;
+    for (let segIdx = 0; segIdx < flat.length; segIdx++) {
+      const seg = flat[segIdx];
+      const routeName = String(seg.route_name ?? seg.name ?? '').trim();
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      for (let ptIdx = 0; ptIdx < pts.length; ptIdx++) {
+        const p = pts[ptIdx];
+        const x = Array.isArray(p) ? Number(p[0]) : Number(p?.x);
+        const y = Array.isArray(p) ? Number(p[1]) : Number(p?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const gx = Math.round(x);
+        const gy = Math.round(y);
+        const k = `${gx},${gy}`;
+        if (!m.has(k)) m.set(k, []);
+        m.get(k).push({
+          segIdx,
+          ptIdx,
+          route: routeName || 'Unknown',
+        });
+      }
+    }
+    return m;
+  };
+
+  const pickOrthoVertexStationPreferRouteOrder = (flat, picksMap, gx, gy) => {
+    const pts = picksMap.get(`${gx},${gy}`);
+    if (!pts || pts.length === 0) {
+      const coord =
+        Number.isFinite(gx) && Number.isFinite(gy) ? `(${gx},${gy})` : '—';
+      return { station: '—', coord };
+    }
+    const sorted = [...pts].sort((a, b) =>
+      String(a.route ?? '').localeCompare(String(b.route ?? ''), 'zh-Hant'),
+    );
+    const fst = sorted[0];
+    const seg = flat[fst.segIdx];
+    return hvVertexStationAndCoord(seg, fst.ptIdx);
+  };
+
+  const collectRoutesAtOrthoGridVertex = (picksMap, gx, gy) => {
+    const pts = picksMap.get(`${gx},${gy}`);
+    if (!pts?.length) return '—';
+    const r = [...new Set(pts.map((p) => String(p.route ?? '').trim() || 'Unknown'))].sort((a, b) =>
+      a.localeCompare(b, 'zh-Hant'),
+    );
+    return r.length ? r.join('／') : '—';
+  };
+
+  /**
+   * `temp`：**水平／垂直區段跨路線可相接處視為一串**後列「線」。**任一頂點若不在任一條該網格列上的水平區間覆蓋內**（僅評估 HV
+   * 區段組合結果）則為「點」。欄表對網格 x **垂直覆蓋**對稱處理。yΔ／xΔ 同上（紅十字中心）。
+   */
+  const jsonGridLineOrthogonalRowColPointOrLineReport = (lyr) => {
+    const empty = {
+      rowTable: [],
+      colTable: [],
+      centerCx: null,
+      centerCy: null,
+    };
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return empty;
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) return empty;
+    const flat = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+    );
+    const cross = gridOrthoCrossCenterRoundedFromFlat(flat);
+    const centerCx = cross.cx;
+    const centerCy = cross.cy;
+    const picksMap = buildOrthoGridRoundedVertexPickIndex(flat);
+    const { horizontal: horizontals, vertical: verticals } =
+      jsonGridLineOrthogonalAxisLineLists(lyr);
+
+    const horBandsByY = new Map();
+    for (const h of horizontals) {
+      const xa = Math.min(h.xMin, h.xMax);
+      const xb = Math.max(h.xMin, h.xMax);
+      const rn = String(h.routeName ?? '').trim();
+      const arr = horBandsByY.get(h.y) ?? [];
+      arr.push({ lo: xa, hi: xb, routes: new Set([rn || '']) });
+      horBandsByY.set(h.y, arr);
+    }
+    /** @type Map<number, Array<{ lo: number, hi: number, routeLabel: string }>> */
+    const mergedHRow = new Map();
+    for (const [yy, intervals] of horBandsByY) {
+      mergedHRow.set(yy, mergeIntervalsWithRoutes(intervals));
+    }
+
+    const verBandsByX = new Map();
+    for (const v of verticals) {
+      const ya = Math.min(v.yMin, v.yMax);
+      const yb = Math.max(v.yMin, v.yMax);
+      const rn = String(v.routeName ?? '').trim();
+      const arr = verBandsByX.get(v.x) ?? [];
+      arr.push({ lo: ya, hi: yb, routes: new Set([rn || '']) });
+      verBandsByX.set(v.x, arr);
+    }
+    const mergedVX = new Map();
+    for (const [xx, intervals] of verBandsByX) {
+      mergedVX.set(xx, mergeIntervalsWithRoutes(intervals));
+    }
+
+    const isCoveredHorizBand = (gx, gy) => {
+      const bands = mergedHRow.get(gy);
+      if (!bands?.length) return false;
+      return bands.some((b) => gx >= b.lo && gx <= b.hi);
+    };
+    const isCoveredVertBand = (gx, gy) => {
+      const bands = mergedVX.get(gx);
+      if (!bands?.length) return false;
+      return bands.some((b) => gy >= b.lo && gy <= b.hi);
+    };
+
+    const rowTable = [];
+    const colTable = [];
+
+    const pushRow = (o) => {
+      const dy = o.axisY - centerCy;
+      rowTable.push({
+        ...o,
+        deltaY: dy,
+        deltaYLabel: formatSignedGridDelta(dy),
+      });
+    };
+    const pushCol = (o) => {
+      const dx = o.axisX - centerCx;
+      colTable.push({
+        ...o,
+        deltaX: dx,
+        deltaXLabel: formatSignedGridDelta(dx),
+      });
+    };
+
+    for (const [yy, bands] of mergedHRow) {
+      for (const b of bands) {
+        const a = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, b.lo, yy);
+        const z = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, b.hi, yy);
+        pushRow({
+          axisY: yy,
+          kind: '線',
+          routeName: b.routeLabel,
+          startStation: a.station,
+          startCoord: a.coord,
+          endStation: z.station,
+          endCoord: z.coord,
+        });
+      }
+    }
+
+    for (const [xx, bands] of mergedVX) {
+      for (const b of bands) {
+        const a = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, xx, b.lo);
+        const z = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, xx, b.hi);
+        pushCol({
+          axisX: xx,
+          kind: '線',
+          routeName: b.routeLabel,
+          startStation: a.station,
+          startCoord: a.coord,
+          endStation: z.station,
+          endCoord: z.coord,
+        });
+      }
+    }
+
+    const seenDotRow = new Set();
+    const seenDotCol = new Set();
+    for (const key of picksMap.keys()) {
+      const [sx, sy] = key.split(',').map(Number);
+      if (!Number.isFinite(sx) || !Number.isFinite(sy)) continue;
+
+      if (!isCoveredHorizBand(sx, sy)) {
+        const dk = `${sx},${sy}`;
+        if (!seenDotRow.has(dk)) {
+          seenDotRow.add(dk);
+          const sc = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, sx, sy);
+          pushRow({
+            axisY: sy,
+            kind: '點',
+            routeName: collectRoutesAtOrthoGridVertex(picksMap, sx, sy),
+            startStation: sc.station,
+            startCoord: sc.coord,
+            endStation: '—',
+            endCoord: '—',
+          });
+        }
+      }
+
+      if (!isCoveredVertBand(sx, sy)) {
+        const dk = `${sx},${sy}`;
+        if (!seenDotCol.has(dk)) {
+          seenDotCol.add(dk);
+          const sc = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, sx, sy);
+          pushCol({
+            axisX: sx,
+            kind: '點',
+            routeName: collectRoutesAtOrthoGridVertex(picksMap, sx, sy),
+            startStation: sc.station,
+            startCoord: sc.coord,
+            endStation: '—',
+            endCoord: '—',
+          });
+        }
+      }
+    }
+
+    const cmpZh = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hant');
+    rowTable.sort((p, q) => {
+      const co = compareOrbitSignedDelta(p.deltaY, q.deltaY);
+      if (co !== 0) return co;
+      if (p.axisY !== q.axisY) return p.axisY - q.axisY;
+      if (p.kind !== q.kind) return p.kind === '線' ? -1 : 1;
+      const cr = cmpZh(p.routeName, q.routeName);
+      if (cr !== 0) return cr;
+      return cmpZh(p.startCoord, q.startCoord);
+    });
+    colTable.sort((p, q) => {
+      const co = compareOrbitSignedDelta(p.deltaX, q.deltaX);
+      if (co !== 0) return co;
+      if (p.axisX !== q.axisX) return p.axisX - q.axisX;
+      if (p.kind !== q.kind) return p.kind === '線' ? -1 : 1;
+      const cr = cmpZh(p.routeName, q.routeName);
+      if (cr !== 0) return cr;
+      return cmpZh(p.startCoord, q.startCoord);
+    });
+
+    return { rowTable, colTable, centerCx, centerCy };
   };
 
   /** 手動步進頂點列表索引（每按一次 highlight 下一筆，循環） */
@@ -3918,7 +4380,7 @@ import {
    * @returns {{ ok: boolean, applied: boolean, errorMessage?: string, targetGrid?: {x:number,y:number}, costBefore?: number, costAfter?: number }}
    */
   const tryJsonGridFromCoordApplyBestMoveAtVertex = (lyr, it) => {
-    const resolved = resolveB3InputSpaceNetwork(lyr);
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) {
       return { ok: false, applied: false, errorMessage: '沒有路網輸入。' };
     }
@@ -4127,7 +4589,7 @@ import {
       const ok = await Promise.resolve(executeJsonGridCoordNormalize());
       if (!ok) {
         window.alert(
-          '座標正規化失敗：請先在左側開啟「JSON·網格·座標正規化」圖層（會自動自「OSM → GeoJSON → JSON」複製 dataJson），或將路網貼入 spaceNetworkGridJsonData 後再試。'
+          '座標正規化失敗：請先在左側開啟「JSON·網格·座標正規化」圖層（會自動自「OSM／GeoJSON → JSON」複製 dataJson），或將路網貼入 spaceNetworkGridJsonData 後再試。'
         );
       } else {
         const layNorm = dataStore.findLayerById('json_grid_coord_normalized');
@@ -4222,17 +4684,26 @@ import {
     try {
       layer.isLoading = true;
       const text = await file.text();
-      setOsm2GeojsonSessionOsmXml(text);
-      const result = osmXmlToOsm2GeojsonLoaderResult(text);
-      layer.osmFileName = file.name;
-      mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, {
+      const nameLower = (file.name || '').toLowerCase();
+      const fromGeojson = nameLower.endsWith('.geojson');
+      let result;
+      const mergeOpts = {
         groupName: dataStore.findGroupNameByLayerId(OSM_2_GEOJSON_2_JSON_LAYER_ID),
-        sourceOsmXmlText: text,
-      });
+      };
+      if (fromGeojson) {
+        setOsm2GeojsonSessionOsmXml('');
+        result = parseGeoJsonTextToOsm2GeojsonLoaderResult(text);
+      } else {
+        setOsm2GeojsonSessionOsmXml(text);
+        result = osmXmlToOsm2GeojsonLoaderResult(text);
+        mergeOpts.sourceOsmXmlText = text;
+      }
+      layer.osmFileName = file.name;
+      mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, mergeOpts);
       dataStore.saveLayerState(layer.layerId, getOsm2GeojsonPersistPatchAfterLoaderMerge(layer));
       dataStore.syncOsm2DataJsonMirrorFromParent();
     } catch (err) {
-      console.error('本機 OSM 讀取失敗:', err);
+      console.error('本機 OSM／GeoJSON 讀取失敗:', err);
       layer.isLoading = false;
       dataStore.saveLayerState(layer.layerId, { isLoading: false });
     }
@@ -6863,33 +7334,37 @@ import {
           </div>
         </div>
 
-        <!-- osm_2_geojson_2_json：本機 .osm -->
+        <!-- osm_2_geojson_2_json：本機 .osm／.geojson -->
         <div v-if="layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">OSM 來源（本機檔）</div>
+          <div class="my-title-xs-gray pb-2">OSM／GeoJSON 來源（本機檔）</div>
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
             :disabled="layer.isLoading"
             @click="onTaipeiOsmSpaceGridPickLocalFileClick"
           >
-            選擇本機 .osm 並讀入
+            選擇本機 .osm 或 .geojson 並讀入
           </button>
           <div class="text-muted mb-3" style="font-size: 11px; line-height: 1.45">
-            僅支援本機選檔；無選檔時開啟圖層不會請求伺服器資料。
+            支援本機選 .osm（XML）或 .geojson（<code class="small">Feature</code>／<code class="small"
+              >FeatureCollection</code
+            >）；無選檔時開啟圖層不會請求伺服器資料。
           </div>
           <div class="my-title-xs-gray pb-1">流程說明（本機選檔）</div>
           <ol class="my-font-size-xs text-muted mb-2 ps-3" style="line-height: 1.55">
             <li>
-              <strong>讀檔並快取 XML</strong>：<code class="small"
-                >setOsm2GeojsonSessionOsmXml</code
-              >
-              寫入本次執行期間 OSM 字串；檔名寫入 <code class="small">osmFileName</code>。
+              <strong>讀檔</strong>：.osm 時以 <code class="small">setOsm2GeojsonSessionOsmXml</code>
+              快取 OSM 字串；.geojson 時清空 session，<code class="small">dataOSM</code> 由路網幾何產生簡易
+              XML。檔名寫入 <code class="small">osmFileName</code>。
             </li>
             <li>
-              <strong>XML → GeoJSON + 表格 + 路段陣列</strong>：<code class="small"
+              <strong>→ GeoJSON + 表格 + 路段陣列</strong>：<code class="small"
                 >osmXmlToOsm2GeojsonLoaderResult</code
               >
-              （<code class="small">osm_2_geojson_2_json/pipeline.js</code>）。
+              或 <code class="small">parseGeoJsonTextToOsm2GeojsonLoaderResult</code>（<code
+                class="small"
+                >osm_2_geojson_2_json/pipeline.js</code
+              >）。
             </li>
             <li>
               <strong>合併至圖層</strong>：<code class="small"
@@ -6930,7 +7405,7 @@ import {
             座標正規化（本層 dataJson／路網 → d3）
           </button>
           <div class="text-muted mt-2" style="font-size: 11px; line-height: 1.55">
-            <strong>開啟本圖層</strong>會自動自「OSM → GeoJSON → JSON」複製
+            <strong>開啟本圖層</strong>會自動自「OSM／GeoJSON → JSON」複製
             <code class="small">dataJson</code>／<code class="small">geojsonData</code>。<br />
             按鈕一次完成本層 <strong>b→c→d</strong>（內含原有路線整形與
             <code class="small">buildTaipeiD3FromC3Network</code>）；成功後將 d3 路網經
@@ -7192,83 +7667,106 @@ import {
           </div>
         </div>
 
-        <!-- temp：水平線／垂直線段清單 -->
+        <!-- temp：各列／欄 HV 線段（表格：站名＋座標） -->
         <div v-if="layer.layerId === LINE_ORTHOGONAL_LAYER_ID" class="pb-3 mb-3 border-bottom">
-          <div class="my-title-xs-gray pb-2">水平線／垂直線段清單</div>
-          <div
-            v-if="jsonGridLineOrthogonalAxisLineLists(layer).horizontal.length === 0 && jsonGridLineOrthogonalAxisLineLists(layer).vertical.length === 0"
-            class="text-muted my-font-size-xs"
-            style="line-height: 1.45"
+          <div class="my-title-xs-gray pb-2">各列（y）／各欄（x）：點或線</div>
+          <template
+            v-for="loReport in [jsonGridLineOrthogonalRowColPointOrLineReport(layer)]"
+            :key="
+              'lo-temp-axis-' +
+              loReport.rowTable.length +
+              '-' +
+              loReport.colTable.length
+            "
           >
-            尚無可列之橫豎邊。請確認站點層已有路網／dataJson 後再開啟本圖層。
-          </div>
-          <template v-else>
-            <div class="my-font-size-xs text-muted mb-1">
-              斜邊（未列入表）計數：{{ jsonGridLineOrthogonalAxisLineLists(layer).diagonalCount }}
-            </div>
-            <div class="my-title-xs-gray pb-1 mt-2">水平線（固定 y）</div>
             <div
-              class="border rounded overflow-auto bg-body mb-3"
-              style="max-height: 220px; font-size: 11px"
+              v-if="loReport.rowTable.length === 0 && loReport.colTable.length === 0"
+              class="text-muted my-font-size-xs"
+              style="line-height: 1.45"
             >
-              <table class="table table-sm table-bordered mb-0 align-middle">
-                <thead class="sticky-top bg-secondary bg-opacity-10">
-                  <tr class="text-nowrap">
-                    <th>#</th>
-                    <th>路段序</th>
-                    <th>邊序</th>
-                    <th>路線名</th>
-                    <th>y</th>
-                    <th>x 範圍</th>
-                    <th>格長</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="it in jsonGridLineOrthogonalAxisLineLists(layer).horizontal"
-                    :key="'lo-h-' + it.row"
-                  >
-                    <td>{{ it.row }}</td>
-                    <td>{{ it.segIdx }}</td>
-                    <td>{{ it.edgeIdx }}</td>
-                    <td class="text-break" style="max-width: 120px">{{ it.routeName }}</td>
-                    <td class="text-nowrap">{{ it.y }}</td>
-                    <td class="text-nowrap">[{{ it.xMin }}, {{ it.xMax }}]</td>
-                    <td>{{ it.span }}</td>
-                  </tr>
-                </tbody>
-              </table>
+              尚無可分類之資料。請開啟本圖層並確認已有路網（或已自「座標正規化」鏡像
+              dataJson）。
             </div>
-            <div class="my-title-xs-gray pb-1">垂直線（固定 x）</div>
-            <div class="border rounded overflow-auto bg-body" style="max-height: 220px; font-size: 11px">
-              <table class="table table-sm table-bordered mb-0 align-middle">
-                <thead class="sticky-top bg-secondary bg-opacity-10">
-                  <tr class="text-nowrap">
-                    <th>#</th>
-                    <th>路段序</th>
-                    <th>邊序</th>
-                    <th>路線名</th>
-                    <th>x</th>
-                    <th>y 範圍</th>
-                    <th>格長</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="it in jsonGridLineOrthogonalAxisLineLists(layer).vertical"
-                    :key="'lo-v-' + it.row"
-                  >
-                    <td>{{ it.row }}</td>
-                    <td>{{ it.segIdx }}</td>
-                    <td>{{ it.edgeIdx }}</td>
-                    <td class="text-break" style="max-width: 120px">{{ it.routeName }}</td>
-                    <td class="text-nowrap">{{ it.x }}</td>
-                    <td class="text-nowrap">[{{ it.yMin }}, {{ it.yMax }}]</td>
-                    <td>{{ it.span }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <template v-else>
+              <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
+                僅統計<strong>水平、垂直線段</strong>（斜線略過）。<strong>紅線中心</strong>取全路網頂點四捨五入包圍盒之中點（與示意圖十字對齊原則相同）。列出順序：
+                <strong>0 → +1 → −1 → +2 → −2 → …</strong>。<strong>yΔ／xΔ</strong>
+                為相對<strong>該</strong>中心之<strong>網格列／欄距</strong>（非重新編號）。
+                <template v-if="loReport.centerCx != null && loReport.centerCy != null">
+                  目前中心格座標（約）為 ({{ loReport.centerCx }}, {{ loReport.centerCy }})。
+                </template>
+              </div>
+              <div class="small text-secondary mb-1">列（row／離紅線 y）</div>
+              <div
+                class="border rounded overflow-auto bg-body mb-3"
+                style="max-height: 260px; font-size: 11px"
+              >
+                <table class="table table-sm table-bordered mb-0 align-middle">
+                  <thead class="sticky-top bg-secondary bg-opacity-10">
+                    <tr class="text-nowrap">
+                      <th>yΔ</th>
+                      <th>網格 y</th>
+                      <th>型</th>
+                      <th>路線名</th>
+                      <th>站名（起）</th>
+                      <th>座標（起）</th>
+                      <th>站名（迄）</th>
+                      <th>座標（迄）</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(it, ri) in loReport.rowTable"
+                      :key="'lo-rowt-' + it.deltaYLabel + '-' + it.axisY + '-' + ri + '-' + it.kind"
+                    >
+                      <td class="text-nowrap fw-semibold">{{ it.deltaYLabel }}</td>
+                      <td class="text-nowrap text-muted">{{ it.axisY }}</td>
+                      <td class="text-nowrap">{{ it.kind }}</td>
+                      <td class="text-break" style="max-width: 100px">{{ it.routeName }}</td>
+                      <td class="text-break" style="max-width: 120px">{{ it.startStation }}</td>
+                      <td class="text-nowrap">{{ it.startCoord }}</td>
+                      <td class="text-break" style="max-width: 120px">{{ it.endStation }}</td>
+                      <td class="text-nowrap">{{ it.endCoord }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="small text-secondary mb-1">欄（col／離紅線 x）</div>
+              <div
+                class="border rounded overflow-auto bg-body"
+                style="max-height: 260px; font-size: 11px"
+              >
+                <table class="table table-sm table-bordered mb-0 align-middle">
+                  <thead class="sticky-top bg-secondary bg-opacity-10">
+                    <tr class="text-nowrap">
+                      <th>xΔ</th>
+                      <th>網格 x</th>
+                      <th>型</th>
+                      <th>路線名</th>
+                      <th>站名（起）</th>
+                      <th>座標（起）</th>
+                      <th>站名（迄）</th>
+                      <th>座標（迄）</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(it, ci) in loReport.colTable"
+                      :key="'lo-colt-' + it.deltaXLabel + '-' + it.axisX + '-' + ci + '-' + it.kind"
+                    >
+                      <td class="text-nowrap fw-semibold">{{ it.deltaXLabel }}</td>
+                      <td class="text-nowrap text-muted">{{ it.axisX }}</td>
+                      <td class="text-nowrap">{{ it.kind }}</td>
+                      <td class="text-break" style="max-width: 100px">{{ it.routeName }}</td>
+                      <td class="text-break" style="max-width: 120px">{{ it.startStation }}</td>
+                      <td class="text-nowrap">{{ it.startCoord }}</td>
+                      <td class="text-break" style="max-width: 120px">{{ it.endStation }}</td>
+                      <td class="text-nowrap">{{ it.endCoord }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
           </template>
         </div>
 
@@ -10010,7 +10508,7 @@ import {
       id="taipei-osm-space-grid-local-file-input"
       type="file"
       class="d-none"
-      accept=".osm,.xml,application/xml,text/xml,*/*"
+      accept=".osm,.xml,.geojson,application/geo+json,application/json,application/xml,text/xml,*/*"
       @change="onTaipeiOsmSpaceGridLocalFileInputChange"
     />
   </div>

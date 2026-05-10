@@ -271,7 +271,7 @@ export const useDataStore = defineStore(
         groupLayers: [
           {
             layerId: 'osm_2_geojson_2_json',
-            layerName: 'OSM → GeoJSON → JSON',
+            layerName: 'OSM／GeoJSON → JSON',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -293,7 +293,7 @@ export const useDataStore = defineStore(
             geojsonLoader: loadOsmXmlAsGeoJsonForRoutes,
             processToDrawData: null,
             geojsonFileName: null,
-            /** 僅經 Control 本機選 .osm 載入後才有資料；無 osmFileName 時開圖層不請求伺服器（geojsonLoader 為空載入）。 */
+            /** 僅經 Control 本機選 .osm／.geojson 載入後才有資料；無 osmFileName 時開圖層不請求伺服器（geojsonLoader 為空載入）。 */
             osmFileName: null,
             jsonFileName: null,
             executeFunction: executeOsmGeojsonToTaipeiSn4ASpaceGrid,
@@ -401,7 +401,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
           {
-            /** 測試：自「座標正規化」鏡像 dataJson（與 point_orthogonal 同來源） */
+            /** 測試：dataJson 優先自 point_orthogonal；若該層尚無則自「座標正規化」同欄位（見 mirrorFromCoordNormalizedLayer） */
             layerId: 'temp',
             layerName: '測試',
             visible: false,
