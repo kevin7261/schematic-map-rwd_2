@@ -39,5 +39,16 @@ export {
   executeJsonGridCoordNormalizedPruneEmptyGridLines,
   executeJsonGridNeighborTopologyFix,
 } from './executeJsonGridCoordNormalize.js';
-export { executeJsonGridFromCoordNormalizedAxisAlign, executeJsonGridFromCoordNormalizedPruneEmptyGridLines } from './executeJsonGridFromCoordNormalizedAxisAlign.js';
-export { findBestCoPointGroupTargetOnGrid, applyBestCoPointGroupMoveOnGrid } from './axisAlignGridNetworkHillClimb.js';
+export {
+  executeJsonGridFromCoordNormalizedAxisAlign,
+  executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
+} from './executeJsonGridFromCoordNormalizedAxisAlign.js';
+export {
+  findBestCoPointGroupTargetOnGrid,
+  applyBestCoPointGroupMoveOnGrid,
+} from './axisAlignGridNetworkHillClimb.js';
+export { tryOrthoTowardCrossNudgeFromReportItem } from './orthoNudgeTowardCrossCenter.js';
+export {
+  shallowCloneOrthoSegmentsSynced,
+  buildInitialOrthoCoPointGroups,
+} from './axisAlignGridNetworkHillClimb.js';

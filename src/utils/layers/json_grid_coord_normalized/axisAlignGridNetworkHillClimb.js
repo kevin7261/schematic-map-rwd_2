@@ -347,7 +347,11 @@ export function findBestCoPointGroupTargetOnGrid(flatSegments, segIdx, ptIdx) {
   const work = JSON.parse(JSON.stringify(flatSegments));
   syncAllEndpoints(work);
   if (hasInvalidGeometry(work)) {
-    return { ok: false, target: null, message: '目前路網已有交叉、重疊或頂點落線，無法評估建議格。' };
+    return {
+      ok: false,
+      target: null,
+      message: '目前路網已有交叉、重疊或頂點落線，無法評估建議格。',
+    };
   }
   const initialGroupIdByVertex = buildInitialCoPointGroupIdByVertex(work);
   if (!occupancyNoDistinctCoPointsMerged(work, initialGroupIdByVertex)) {
@@ -460,4 +464,53 @@ export function applyBestCoPointGroupMoveOnGrid(flatSegments, segIdx, ptIdx) {
     costBefore: pick.costBefore,
     costAfter: pick.costAfter,
   };
+}
+
+/** Deep clone／同步端點屬性，供外向式試算／套用前使用 */
+export function shallowCloneOrthoSegmentsSynced(segments) {
+  const work = JSON.parse(JSON.stringify(segments));
+  syncAllEndpoints(work);
+  return work;
+}
+
+/** 格鍵 「gx,gy」→ 共址頂點 ref 列表（與共點平移／約束同源） */
+export function buildOrthoCellGroups(segments) {
+  return buildGroups(segments);
+}
+
+/** 「執行當初」之分群 id，約束套用後仍可併格者須同源 */
+export function buildInitialOrthoCoPointGroups(segments) {
+  return buildInitialCoPointGroupIdByVertex(segments);
+}
+
+/**
+ * 共點佔格、零長邊、交叉／共線重疊／頂點落於他線開放內部。
+ * @returns {{ ok: true } | { ok: false, reason: string }}
+ */
+export function checkOrthoGridHardConstraints(segments, initialGroupIds) {
+  if (!occupancyNoDistinctCoPointsMerged(segments, initialGroupIds)) {
+    return { ok: false, reason: '點重合（不同共點群組不可併格）' };
+  }
+  if (!buildEdges(segments)) {
+    return { ok: false, reason: '零長邊' };
+  }
+  if (hasInvalidGeometry(segments)) {
+    return { ok: false, reason: '線交叉、路線共線重疊，或頂點落在他線段開放內部' };
+  }
+  return { ok: true };
+}
+
+/**
+ * 將指定頂點 ref 一併平移 (dx,dy)（整數格）；同步各段端點 tags。
+ * @param {Array<{ si: number, pi: number }>} refs
+ */
+export function applyOrthoVertexRefsDelta(segments, refs, dx, dy) {
+  for (const r of refs) {
+    const seg = segments[r.si];
+    if (!seg?.points?.[r.pi]) continue;
+    const [x, y] = getXY(seg.points[r.pi]);
+    setXY(seg, r.pi, x + dx, y + dy);
+  }
+  const touched = new Set(refs.map((r) => r.si));
+  for (const si of touched) syncSegEndpointsProps(segments[si]);
 }

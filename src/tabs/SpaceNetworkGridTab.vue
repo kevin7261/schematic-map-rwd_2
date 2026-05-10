@@ -6014,10 +6014,84 @@
       }
     }
 
-    // point_orthogonal／temp：Control「下一頂點」— 橘圈頂點；temp「下一橫／豎線」— 橘線段
+    // point_orthogonal／temp：Control「下一頂點」— 橘圈；temp「朝紅十字」列＝橘線／點，欄＝藍虛線／點
     if (layerTab === POINT_ORTHOGONAL_LAYER_ID || layerTab === LINE_ORTHOGONAL_LAYER_ID) {
       const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;
+      /** temp「朝紅十字」列／欄：列＝橘實線；欄＝藍虛線（便於區分水平／垂直階段）。 */
+      const towardCrossAxis =
+        layerTab === LINE_ORTHOGONAL_LAYER_ID
+          ? hlLayer?.lineOrthoTowardCrossHighlightTableAxis
+          : null;
+      const isColTowardCrossHl = towardCrossAxis === 'col';
+      const towardCrossLineStroke = isColTowardCrossHl ? '#0d47a1' : '#ff6600';
+      const towardCrossLineDash = isColTowardCrossHl ? '10,5' : null;
+      const towardCrossPtFill = isColTowardCrossHl
+        ? 'rgba(13, 71, 161, 0.28)'
+        : 'rgba(255, 152, 0, 0.28)';
+      const towardCrossPtStroke = isColTowardCrossHl ? '#0d47a1' : '#ff6600';
+
+      if (
+        layerTab === LINE_ORTHOGONAL_LAYER_ID &&
+        hlLayer &&
+        Array.isArray(hl) &&
+        hl[0] === 'orthoBundle' &&
+        Array.isArray(hl[1])
+      ) {
+        const resolved = resolveB3InputSpaceNetwork(hlLayer, { routeLineFromExportRows: 'full' });
+        const flat =
+          resolved?.spaceNetwork?.length > 0
+            ? normalizeSpaceNetworkDataToFlatSegments(
+                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+              )
+            : [];
+        const lines = hl[1];
+        for (let li = 0; li < lines.length; li++) {
+          const spec = lines[li];
+          if (!Array.isArray(spec) || spec[0] !== 'ortho' || spec.length < 4) continue;
+          const si = Number(spec[1]);
+          const e0 = Number(spec[2]);
+          const e1 = Number(spec[3]);
+          const seg = flat[si];
+          const pts = seg?.points;
+          if (
+            Array.isArray(pts) &&
+            Number.isFinite(e0) &&
+            Number.isFinite(e1) &&
+            e0 <= e1 &&
+            e1 < pts.length - 1
+          ) {
+            const pA = pts[e0];
+            const pB = pts[e1 + 1];
+            const gx0 = Array.isArray(pA) ? Number(pA[0]) : Number(pA?.x);
+            const gy0 = Array.isArray(pA) ? Number(pA[1]) : Number(pA?.y);
+            const gx1 = Array.isArray(pB) ? Number(pB[0]) : Number(pB?.x);
+            const gy1 = Array.isArray(pB) ? Number(pB[1]) : Number(pB?.y);
+            if (
+              Number.isFinite(gx0) &&
+              Number.isFinite(gy0) &&
+              Number.isFinite(gx1) &&
+              Number.isFinite(gy1)
+            ) {
+              zoomGroup
+                .append('g')
+                .attr('class', 'json-grid-line-orthogonal-axis-highlight')
+                .style('pointer-events', 'none')
+                .append('line')
+                .attr('x1', xScale(gx0))
+                .attr('y1', yScale(gy0))
+                .attr('x2', xScale(gx1))
+                .attr('y2', yScale(gy1))
+                .attr('stroke', towardCrossLineStroke)
+                .attr('stroke-width', 5)
+                .attr('stroke-dasharray', towardCrossLineDash ?? '')
+                .attr('stroke-linecap', 'round')
+                .attr('stroke-linejoin', 'round')
+                .attr('fill', 'none');
+            }
+          }
+        }
+      }
 
       if (
         layerTab === LINE_ORTHOGONAL_LAYER_ID &&
@@ -6026,7 +6100,7 @@
         hl[0] === 'ortho' &&
         hl.length >= 4
       ) {
-        const resolved = resolveB3InputSpaceNetwork(hlLayer);
+        const resolved = resolveB3InputSpaceNetwork(hlLayer, { routeLineFromExportRows: 'full' });
         const flat =
           resolved?.spaceNetwork?.length > 0
             ? normalizeSpaceNetworkDataToFlatSegments(
@@ -6066,8 +6140,9 @@
               .attr('y1', yScale(gy0))
               .attr('x2', xScale(gx1))
               .attr('y2', yScale(gy1))
-              .attr('stroke', '#ff6600')
+              .attr('stroke', towardCrossLineStroke)
               .attr('stroke-width', 5)
+              .attr('stroke-dasharray', towardCrossLineDash ?? '')
               .attr('stroke-linecap', 'round')
               .attr('stroke-linejoin', 'round')
               .attr('fill', 'none');
@@ -6082,7 +6157,7 @@
         Number.isFinite(Number(hl[0])) &&
         Number.isFinite(Number(hl[1]))
       ) {
-        const resolved = resolveB3InputSpaceNetwork(hlLayer);
+        const resolved = resolveB3InputSpaceNetwork(hlLayer, { routeLineFromExportRows: 'full' });
         const flat =
           resolved?.spaceNetwork?.length > 0
             ? normalizeSpaceNetworkDataToFlatSegments(
@@ -6097,6 +6172,10 @@
           const gx = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
           const gy = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
           if (Number.isFinite(gx) && Number.isFinite(gy)) {
+            const ptFill =
+              layerTab === LINE_ORTHOGONAL_LAYER_ID ? towardCrossPtFill : 'rgba(255, 152, 0, 0.28)';
+            const ptStroke =
+              layerTab === LINE_ORTHOGONAL_LAYER_ID ? towardCrossPtStroke : '#ff6600';
             zoomGroup
               .append('g')
               .attr('class', 'json-grid-from-coord-vertex-highlight')
@@ -6105,8 +6184,8 @@
               .attr('cx', xScale(gx))
               .attr('cy', yScale(gy))
               .attr('r', 14)
-              .attr('fill', 'rgba(255, 152, 0, 0.28)')
-              .attr('stroke', '#ff6600')
+              .attr('fill', ptFill)
+              .attr('stroke', ptStroke)
               .attr('stroke-width', 3.5);
           }
         }
@@ -6128,17 +6207,75 @@
           .attr('stroke-width', 3.5);
       }
 
-      /** temp：目前繪區座標 bbox 幾何中點（四捨五入）— 紅虛線十字（Normalize 或 GeoJSON 路徑皆可） */
+      /** temp：最近一次「朝紅十字縮進」之格位移預覽（灰圈＝舊、青圈＝新；與線網資料一致） */
+      if (layerTab === LINE_ORTHOGONAL_LAYER_ID && hlLayer) {
+        const mp = hlLayer.lineOrthoTowardCrossMovePreview;
+        const fx = mp != null ? Number(mp.fromGx) : NaN;
+        const fy = mp != null ? Number(mp.fromGy) : NaN;
+        const tx = mp != null ? Number(mp.toGx) : NaN;
+        const ty = mp != null ? Number(mp.toGy) : NaN;
+        if (
+          Number.isFinite(fx) &&
+          Number.isFinite(fy) &&
+          Number.isFinite(tx) &&
+          Number.isFinite(ty) &&
+          (fx !== tx || fy !== ty)
+        ) {
+          const preG = zoomGroup
+            .append('g')
+            .attr('class', 'line-orthogonal-toward-cross-move-preview')
+            .style('pointer-events', 'none');
+          preG
+            .append('circle')
+            .attr('cx', xScale(fx))
+            .attr('cy', yScale(fy))
+            .attr('r', 12)
+            .attr('fill', 'rgba(97, 97, 97, 0.18)')
+            .attr('stroke', '#757575')
+            .attr('stroke-width', 2.5)
+            .attr('stroke-dasharray', '5,4');
+          preG
+            .append('circle')
+            .attr('cx', xScale(tx))
+            .attr('cy', yScale(ty))
+            .attr('r', 13)
+            .attr('fill', 'rgba(0, 131, 143, 0.2)')
+            .attr('stroke', '#00838f')
+            .attr('stroke-width', 3);
+          preG
+            .append('line')
+            .attr('x1', xScale(fx))
+            .attr('y1', yScale(fy))
+            .attr('x2', xScale(tx))
+            .attr('y2', yScale(ty))
+            .attr('stroke', '#546e7a')
+            .attr('stroke-width', 2)
+            .attr('stroke-dasharray', '6,5')
+            .attr('opacity', 0.85);
+          preG.raise();
+        }
+      }
+
+      /** temp：紅虛線十字 — 若有鎖定中心格則固定於該格，否則為繪區 bbox 幾何中點（四捨五入） */
       if (layerTab === LINE_ORTHOGONAL_LAYER_ID) {
+        const fc = hlLayer?.lineOrthoTowardCrossFrozenCenter;
+        const useFrozen =
+          fc != null &&
+          Number.isFinite(Number(fc.cx)) &&
+          Number.isFinite(Number(fc.cy));
         const bboxOk =
           Number.isFinite(xMin) &&
           Number.isFinite(xMax) &&
           Number.isFinite(yMin) &&
           Number.isFinite(yMax);
         const spanOk = bboxOk && xMax > xMin && yMax > yMin;
-        if (bboxOk && spanOk) {
-          const cxG = Math.round((xMin + xMax) / 2);
-          const cyG = Math.round((yMin + yMax) / 2);
+        if (useFrozen || (bboxOk && spanOk)) {
+          const cxG = useFrozen
+            ? Math.round(Number(fc.cx))
+            : Math.round((xMin + xMax) / 2);
+          const cyG = useFrozen
+            ? Math.round(Number(fc.cy))
+            : Math.round((yMin + yMax) / 2);
           const crossG = zoomGroup
             .append('g')
             .attr('class', 'line-orthogonal-grid-center-crosshair')
@@ -6420,10 +6557,24 @@
       ) {
         const hl = layer.highlightedSegmentIndex;
         const sg = layer.jsonGridFromCoordSuggestTargetGrid;
-        if (Array.isArray(hl) && hl[0] === 'ortho') {
-          return `ortho:${hl[1]},${hl[2]},${hl[3]}|${sg?.x ?? ''},${sg?.y ?? ''}`;
-        }
-        return `${hl?.[0] ?? ''},${hl?.[1] ?? ''}|${sg?.x ?? ''},${sg?.y ?? ''}`;
+        const mp =
+          layer.layerId === LINE_ORTHOGONAL_LAYER_ID ? layer.lineOrthoTowardCrossMovePreview ?? null : null;
+        const fz =
+          layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+            ? layer.lineOrthoTowardCrossFrozenCenter ?? null
+            : null;
+        const hxAxis =
+          layer.layerId === LINE_ORTHOGONAL_LAYER_ID
+            ? layer.lineOrthoTowardCrossHighlightTableAxis ?? null
+            : null;
+        return JSON.stringify([
+          hl == null ? null : hl,
+          sg?.x ?? null,
+          sg?.y ?? null,
+          mp == null ? null : mp,
+          fz == null ? null : { cx: fz.cx, cy: fz.cy },
+          hxAxis,
+        ]);
       }
       return layer.highlightedSegmentIndex ?? null;
     },

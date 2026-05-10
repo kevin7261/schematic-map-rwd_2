@@ -1,6 +1,6 @@
 /**
  * 衍生圖層：`point_orthogonal` 自「座標正規化」複製 dataJson／jsonData；
- * `temp`（LINE_ORTHOGONAL_LAYER_ID）優先自 `point_orthogonal` 複製；若該層尚無陣列則改讀「座標正規化」同一欄位（便於只開測試層也能顯示）。
+ * `orthogonal_toward_center`（{@link LINE_ORTHOGONAL_LAYER_ID}）優先自 `point_orthogonal` 複製；若該層尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
  */
 
 import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
@@ -89,6 +89,8 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
   lyr.layerInfoData = null;
   lyr.highlightedSegmentIndex = null;
   lyr.jsonGridFromCoordSuggestTargetGrid = null;
+  lyr.lineOrthoTowardCrossHighlightTableAxis = null;
+  lyr.lineOrthoTowardCrossFrozenCenter = null;
   lyr.layoutUniformGridGeoJson = null;
   lyr.layoutUniformGridMeta = null;
   lyr.showStationPlacement = true;
@@ -119,6 +121,8 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
     layerInfoData: layer.layerInfoData,
     highlightedSegmentIndex: layer.highlightedSegmentIndex,
     jsonGridFromCoordSuggestTargetGrid: layer.jsonGridFromCoordSuggestTargetGrid ?? null,
+    lineOrthoTowardCrossHighlightTableAxis: layer.lineOrthoTowardCrossHighlightTableAxis ?? null,
+    lineOrthoTowardCrossFrozenCenter: layer.lineOrthoTowardCrossFrozenCenter ?? null,
     showStationPlacement: layer.showStationPlacement,
   };
   if (!omitLoadingFlags) {
@@ -158,7 +162,7 @@ export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, s
   }
 }
 
-/** 站點層寫入後，若 temp 圖層開啟則自 `point_orthogonal` 重鏡像並 persist */
+/** 站點層寫入後，若 {@link LINE_ORTHOGONAL_LAYER_ID} 開啟則自 `point_orthogonal` 重鏡像並 persist */
 export function refreshLineOrthogonalFromPointOrthogonalIfVisible(findLayerById, saveLayerState) {
   const line = findLayerById(LINE_ORTHOGONAL_LAYER_ID);
   if (!line?.visible) return;

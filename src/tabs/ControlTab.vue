@@ -28,20 +28,23 @@
     getOsm2GeojsonPersistPatchAfterLoaderMerge,
     setOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
-import {
-  executeJsonGridCoordNormalize,
-  executeJsonGridCoordNormalizedPruneEmptyGridLines,
-  executeJsonGridNeighborTopologyFix,
-  resolveB3InputSpaceNetwork,
-  writeLayoutNormalizedLayerDataOsmFromNetwork,
-  applyBestCoPointGroupMoveOnGrid,
-  syncJsonGridFromCoordDataJsonFromPipeline,
-  jsonGridFromCoordNormalizedPersistPayload,
-  executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
-  POINT_ORTHOGONAL_LAYER_ID,
-  LINE_ORTHOGONAL_LAYER_ID,
-  refreshLineOrthogonalFromPointOrthogonalIfVisible,
-} from '@/utils/layers/json_grid_coord_normalized/index.js';
+  import {
+    executeJsonGridCoordNormalize,
+    executeJsonGridCoordNormalizedPruneEmptyGridLines,
+    executeJsonGridNeighborTopologyFix,
+    resolveB3InputSpaceNetwork,
+    writeLayoutNormalizedLayerDataOsmFromNetwork,
+    applyBestCoPointGroupMoveOnGrid,
+    syncJsonGridFromCoordDataJsonFromPipeline,
+    jsonGridFromCoordNormalizedPersistPayload,
+    executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
+    POINT_ORTHOGONAL_LAYER_ID,
+    LINE_ORTHOGONAL_LAYER_ID,
+    refreshLineOrthogonalFromPointOrthogonalIfVisible,
+    tryOrthoTowardCrossNudgeFromReportItem,
+    shallowCloneOrthoSegmentsSynced,
+    buildInitialOrthoCoPointGroups,
+  } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
   import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
   import { getIcon } from '@/utils/utils.js';
@@ -2398,6 +2401,7 @@ import {
     stopTaipeiFSectionCenteringAuto();
     stopTaipeiL3ReductionAuto();
     stopJsonGridFromCoordVertexAuto();
+    stopLineOrthoTowardCrossAuto();
   });
 
   onUnmounted(() => {
@@ -2407,6 +2411,7 @@ import {
     stopTaipeiFSectionCenteringAuto();
     stopTaipeiL3ReductionAuto();
     stopJsonGridFromCoordVertexAuto();
+    stopLineOrthoTowardCrossAuto();
   });
 
   /** 黑點站向示意圖幾何中心（藍虛線）靠攏；僅更新黑點格座標，不修改折線轉折 */
@@ -3665,6 +3670,76 @@ import {
     if (el) el.click();
   };
 
+  /**
+   * 本機檔：依副檔名與內容判斷走 GeoJSON 或 OSM XML（避免僅有 `.json`／無副檔名時誤當 XML 而讀取失敗）。
+   */
+  const inferOsm2LocalIngestFormat = (logicalFileName, text) => {
+    const nameLower = (logicalFileName || '').toLowerCase();
+    const trimmed = String(text ?? '').replace(/^\uFEFF/, '').trim();
+    if (nameLower.endsWith('.geojson') || nameLower.endsWith('.json')) return 'geojson';
+    if (nameLower.endsWith('.osm') || nameLower.endsWith('.xml')) return 'osm';
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'geojson';
+    return 'osm';
+  };
+
+  /** 將 OSM／GeoJSON 原始字串併入 `osm_2_geojson_2_json`（與本機選檔相同管線／持久化／鏡像） */
+  const ingestOsmSpaceGridTextIntoLayer = (layer, text, logicalFileName) => {
+    const normalizedText = String(text ?? '').replace(/^\uFEFF/, '');
+    const fmt = inferOsm2LocalIngestFormat(logicalFileName, normalizedText);
+    const fromGeojson = fmt === 'geojson';
+    let result;
+    const mergeOpts = {
+      groupName: dataStore.findGroupNameByLayerId(OSM_2_GEOJSON_2_JSON_LAYER_ID),
+    };
+    if (fromGeojson) {
+      setOsm2GeojsonSessionOsmXml('');
+      result = parseGeoJsonTextToOsm2GeojsonLoaderResult(normalizedText);
+    } else {
+      setOsm2GeojsonSessionOsmXml(normalizedText);
+      result = osmXmlToOsm2GeojsonLoaderResult(normalizedText);
+      mergeOpts.sourceOsmXmlText = normalizedText;
+    }
+    layer.osmFileName = logicalFileName ?? null;
+    mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, mergeOpts);
+    dataStore.saveLayerState(layer.layerId, getOsm2GeojsonPersistPatchAfterLoaderMerge(layer));
+    dataStore.syncOsm2DataJsonMirrorFromParent();
+  };
+
+  const onTaipeiOsmSpaceGridLoadBundledTaipeiClick = async () => {
+    const layer = dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
+    if (!layer || layer.isLoading) return;
+    try {
+      layer.isLoading = true;
+      const rawRel =
+        typeof layer.publicBundledTaipeiOsmPath === 'string' &&
+        layer.publicBundledTaipeiOsmPath.trim()
+          ? layer.publicBundledTaipeiOsmPath.trim().replace(/^\/+/, '')
+          : 'taipei/taipei.osm';
+      // 對齊 @/utils/dataProcessor.js loadOsmXmlAsGeoJsonForRoutes／loadGeoJsonForRoutes（Vue CLI 用 process.env）
+      const baseUrl = process.env.BASE_URL || '/';
+      const primaryUrl = `${baseUrl.replace(/\/?$/, '/')}${rawRel.replace(/^\/+/, '')}`;
+
+      let res;
+      try {
+        res = await fetch(primaryUrl);
+      } catch {
+        res = await fetch(`/${rawRel.replace(/^\/+/, '')}`);
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      ingestOsmSpaceGridTextIntoLayer(layer, text, 'taipei/taipei.osm');
+    } catch (err) {
+      console.error('自動讀入 taipei/taipei.osm 失敗:', err);
+      layer.isLoading = false;
+      const pathLabel =
+        (typeof layer.publicBundledTaipeiOsmPath === 'string' &&
+          layer.publicBundledTaipeiOsmPath.trim()) ||
+        'taipei/taipei.osm';
+      window.alert(`無法載入「${pathLabel}」。${String(err?.message ?? err ?? '')}`);
+      dataStore.saveLayerState(layer.layerId, { isLoading: false });
+    }
+  };
+
   const onJsonGridNeighborTopologyFixClick = async () => {
     if (isExecuting.value) return;
     isExecuting.value = true;
@@ -3808,7 +3883,7 @@ import {
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return empty;
     const flat = normalizeSpaceNetworkDataToFlatSegments(
-      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
     );
     const horizontal = [];
     const vertical = [];
@@ -3989,6 +4064,135 @@ import {
     return { horizontal, vertical, runsInOrder, diagonalCount };
   };
 
+  /**
+   * 列／欄表目前項對應 schematic 橘色 highlight：`點→[segIdx,ptIdx]`；`線→['ortho',segIdx,e0,e1]` 或 `['orthoBundle',[...]]`
+   */
+  const lineOrthoTowardCrossReportItemHighlight = (lyr, flat, picksMap, tableAxis, item) => {
+    if (!lyr || !item) return null;
+    if (item.kind === '點') {
+      const ov = item.orthoV;
+      if (ov?.segIdx != null && ov?.ptIdx != null && flat[ov.segIdx]?.points?.[ov.ptIdx] != null)
+        return [ov.segIdx, ov.ptIdx];
+      const p = parseParenGridCoordOrtho(item.startCoord);
+      if (!p) return null;
+      const pr = pickOrthoVertexRefPreferRouteOrder(flat, picksMap, p.gx, p.gy);
+      return pr ? [pr.segIdx, pr.ptIdx] : null;
+    }
+    if (item.kind !== '線') return null;
+
+    const pushValidOrthoHlQuad = (out, cand) => {
+      if (
+        !Array.isArray(cand) ||
+        cand[0] !== 'ortho' ||
+        cand.length < 4 ||
+        !Number.isFinite(Number(cand[1])) ||
+        !Number.isFinite(Number(cand[2])) ||
+        !Number.isFinite(Number(cand[3]))
+      )
+        return;
+      const si = Number(cand[1]);
+      const e0 = Number(cand[2]);
+      const e1 = Number(cand[3]);
+      const pts = flat[si]?.points;
+      if (Array.isArray(pts) && e0 <= e1 && e1 < pts.length - 1) out.push(['ortho', si, e0, e1]);
+    };
+
+    const bundleQuads = [];
+    if (Array.isArray(item.orthoHlBundle)) {
+      for (const q of item.orthoHlBundle) pushValidOrthoHlQuad(bundleQuads, q);
+    }
+    if (!bundleQuads.length) pushValidOrthoHlQuad(bundleQuads, item.orthoHl);
+
+    const mergedHorBandEndpointTouch = (h, band) => {
+      const hxLo = Math.min(h.xMin, h.xMax);
+      const hxHi = Math.max(h.xMin, h.xMax);
+      let s = 0;
+      if (band.lo >= hxLo && band.lo <= hxHi) s += 2;
+      if (band.hi >= hxLo && band.hi <= hxHi) s += 2;
+      return s;
+    };
+    const mergedVerBandEndpointTouch = (v0, band) => {
+      const vyLo = Math.min(v0.yMin, v0.yMax);
+      const vyHi = Math.max(v0.yMin, v0.yMax);
+      let s = 0;
+      if (band.lo >= vyLo && band.lo <= vyHi) s += 2;
+      if (band.hi >= vyLo && band.hi <= vyHi) s += 2;
+      return s;
+    };
+
+    if (bundleQuads.length === 1) return bundleQuads[0];
+    if (bundleQuads.length > 1) return ['orthoBundle', bundleQuads];
+
+    const { horizontal, vertical } = jsonGridLineOrthogonalAxisLineLists(lyr);
+    const overlapLen = (aLo, aHi, bLo, bHi) => {
+      const lo = Math.max(aLo, bLo);
+      const hi = Math.min(aHi, bHi);
+      return lo <= hi ? hi - lo : -1;
+    };
+    if (tableAxis === 'row') {
+      const yy =
+        item.axisY != null && Number.isFinite(Number(item.axisY)) ? Number(item.axisY) : null;
+      const a = parseParenGridCoordOrtho(item.startCoord);
+      const b = parseParenGridCoordOrtho(item.endCoord ?? '');
+      if (yy === null || !a || !b) return null;
+      const lo = Math.min(a.gx, b.gx);
+      const hi = Math.max(a.gx, b.gx);
+      const band = { lo, hi };
+      const cand = horizontal.filter((h) => {
+        if (h.y !== yy) return false;
+        const hxLo = Math.min(h.xMin, h.xMax);
+        const hxHi = Math.max(h.xMin, h.xMax);
+        return overlapLen(lo, hi, hxLo, hxHi) >= 0;
+      });
+      if (!cand.length) return null;
+      cand.sort((u, v) => {
+        const su = mergedHorBandEndpointTouch(u, band);
+        const sv = mergedHorBandEndpointTouch(v, band);
+        if (sv !== su) return sv - su;
+        const uxLo = Math.min(u.xMin, u.xMax);
+        const uxHi = Math.max(u.xMin, u.xMax);
+        const vxLo = Math.min(v.xMin, v.xMax);
+        const vxHi = Math.max(v.xMin, v.xMax);
+        const ou = overlapLen(lo, hi, uxLo, uxHi);
+        const ov = overlapLen(lo, hi, vxLo, vxHi);
+        if (ov !== ou) return ov - ou;
+        return (v.span ?? 0) - (u.span ?? 0);
+      });
+      const h0 = cand[0];
+      return ['ortho', h0.segIdx, h0.edgeIdxStart, h0.edgeIdxEnd];
+    }
+    const xx =
+      item.axisX != null && Number.isFinite(Number(item.axisX)) ? Number(item.axisX) : null;
+    const a = parseParenGridCoordOrtho(item.startCoord);
+    const b = parseParenGridCoordOrtho(item.endCoord ?? '');
+    if (xx === null || !a || !b) return null;
+    const lo = Math.min(a.gy, b.gy);
+    const hi = Math.max(a.gy, b.gy);
+    const band = { lo, hi };
+    const cand = vertical.filter((v0) => {
+      if (v0.x !== xx) return false;
+      const vyLo = Math.min(v0.yMin, v0.yMax);
+      const vyHi = Math.max(v0.yMin, v0.yMax);
+      return overlapLen(lo, hi, vyLo, vyHi) >= 0;
+    });
+    if (!cand.length) return null;
+    cand.sort((u, v) => {
+      const su = mergedVerBandEndpointTouch(u, band);
+      const sv = mergedVerBandEndpointTouch(v, band);
+      if (sv !== su) return sv - su;
+      const uyLo = Math.min(u.yMin, u.yMax);
+      const uyHi = Math.max(u.yMin, u.yMax);
+      const vyLo = Math.min(v.yMin, v.yMax);
+      const vyHi = Math.max(v.yMin, v.yMax);
+      const ou = overlapLen(lo, hi, uyLo, uyHi);
+      const ov = overlapLen(lo, hi, vyLo, vyHi);
+      if (ov !== ou) return ov - ou;
+      return (v.span ?? 0) - (u.span ?? 0);
+    });
+    const vPick = cand[0];
+    return ['ortho', vPick.segIdx, vPick.edgeIdxStart, vPick.edgeIdxEnd];
+  };
+
   /** 與示意圖紅十字對齊：由所有路段頂點之四捨五入 bbox 取幾何中心格座標（四捨五入） */
   const gridOrthoCrossCenterRoundedFromFlat = (flat) => {
     let xMin = Infinity;
@@ -4018,6 +4222,31 @@ import {
       cx: Math.round((xMin + xMax) / 2),
       cy: Math.round((yMin + yMax) / 2),
     };
+  };
+
+  /**
+   * `orthogonal_toward_center`：讀取列／欄表／提示用之紅十字格 — 若有鎖定則回傳鎖定值，否則為目前路網 bbox 中點（不寫入 layer）。
+   */
+  const readLineOrthoTowardCrossCenterForDisplay = (lyr, flat) => {
+    const fc = lyr?.lineOrthoTowardCrossFrozenCenter;
+    if (lyr && fc != null && Number.isFinite(Number(fc.cx)) && Number.isFinite(Number(fc.cy))) {
+      return { cx: Math.round(Number(fc.cx)), cy: Math.round(Number(fc.cy)) };
+    }
+    return gridOrthoCrossCenterRoundedFromFlat(flat);
+  };
+
+  /**
+   * 第一次「朝紅十字縮進」時，若尚未鎖定則將紅十字格寫入 `layer.lineOrthoTowardCrossFrozenCenter`（之後不因路網平移而改基準）。
+   */
+  const lockLineOrthoTowardCrossCenterFromFlatIfUnset = (lyr, flat) => {
+    if (!lyr) return gridOrthoCrossCenterRoundedFromFlat(flat);
+    const fc = lyr.lineOrthoTowardCrossFrozenCenter;
+    if (fc != null && Number.isFinite(Number(fc.cx)) && Number.isFinite(Number(fc.cy))) {
+      return { cx: Math.round(Number(fc.cx)), cy: Math.round(Number(fc.cy)) };
+    }
+    const cross = gridOrthoCrossCenterRoundedFromFlat(flat);
+    lyr.lineOrthoTowardCrossFrozenCenter = { cx: cross.cx, cy: cross.cy };
+    return cross;
   };
 
   /** 離十字中心的距離順序：0 → +1 → −1 → +2 → −2 → …（同 Δ 次要鍵為函數返回值） */
@@ -4093,14 +4322,13 @@ import {
     outBare.push({ lo: curLo, hi: curHi, routes: new Set(curRoutes) });
     return outBare.map((m) => {
       const arr = [...m.routes].sort((a, b) =>
-        String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hant'),
+        String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hant')
       );
       const nonEmpty = arr.filter((s) => String(s ?? '').trim() !== '');
       return {
         lo: m.lo,
         hi: m.hi,
-        routeLabel:
-          nonEmpty.length > 0 ? nonEmpty.join('／') : arr.length ? arr.join('／') : '—',
+        routeLabel: nonEmpty.length > 0 ? nonEmpty.join('／') : arr.length ? arr.join('／') : '—',
       };
     });
   };
@@ -4135,23 +4363,37 @@ import {
   const pickOrthoVertexStationPreferRouteOrder = (flat, picksMap, gx, gy) => {
     const pts = picksMap.get(`${gx},${gy}`);
     if (!pts || pts.length === 0) {
-      const coord =
-        Number.isFinite(gx) && Number.isFinite(gy) ? `(${gx},${gy})` : '—';
+      const coord = Number.isFinite(gx) && Number.isFinite(gy) ? `(${gx},${gy})` : '—';
       return { station: '—', coord };
     }
     const sorted = [...pts].sort((a, b) =>
-      String(a.route ?? '').localeCompare(String(b.route ?? ''), 'zh-Hant'),
+      String(a.route ?? '').localeCompare(String(b.route ?? ''), 'zh-Hant')
     );
     const fst = sorted[0];
     const seg = flat[fst.segIdx];
     return hvVertexStationAndCoord(seg, fst.ptIdx);
   };
 
+  const parseParenGridCoordOrtho = (s) => {
+    const m = String(s ?? '').match(/\((-?\d+),(-?\d+)\)/);
+    if (!m) return null;
+    return { gx: Number(m[1]), gy: Number(m[2]) };
+  };
+
+  const pickOrthoVertexRefPreferRouteOrder = (flat, picksMap, gx, gy) => {
+    const pts = picksMap.get(`${gx},${gy}`);
+    if (!pts?.length) return null;
+    const sorted = [...pts].sort((a, b) =>
+      String(a.route ?? '').localeCompare(String(b.route ?? ''), 'zh-Hant')
+    );
+    return { segIdx: sorted[0].segIdx, ptIdx: sorted[0].ptIdx };
+  };
+
   const collectRoutesAtOrthoGridVertex = (picksMap, gx, gy) => {
     const pts = picksMap.get(`${gx},${gy}`);
     if (!pts?.length) return '—';
     const r = [...new Set(pts.map((p) => String(p.route ?? '').trim() || 'Unknown'))].sort((a, b) =>
-      a.localeCompare(b, 'zh-Hant'),
+      a.localeCompare(b, 'zh-Hant')
     );
     return r.length ? r.join('／') : '—';
   };
@@ -4171,9 +4413,9 @@ import {
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return empty;
     const flat = normalizeSpaceNetworkDataToFlatSegments(
-      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
     );
-    const cross = gridOrthoCrossCenterRoundedFromFlat(flat);
+    const cross = readLineOrthoTowardCrossCenterForDisplay(lyr, flat);
     const centerCx = cross.cx;
     const centerCy = cross.cy;
     const picksMap = buildOrthoGridRoundedVertexPickIndex(flat);
@@ -4220,6 +4462,31 @@ import {
       return bands.some((b) => gy >= b.lo && gy <= b.hi);
     };
 
+    const hvOverlapLenSeg = (lo, hi, a, b) => {
+      const u = Math.min(a, b);
+      const v = Math.max(a, b);
+      const L = Math.max(lo, u);
+      const R = Math.min(hi, v);
+      return L <= R ? R - L : -1;
+    };
+
+    const mergedHorBandEndpointTouch = (h, band) => {
+      const hxLo = Math.min(h.xMin, h.xMax);
+      const hxHi = Math.max(h.xMin, h.xMax);
+      let s = 0;
+      if (band.lo >= hxLo && band.lo <= hxHi) s += 2;
+      if (band.hi >= hxLo && band.hi <= hxHi) s += 2;
+      return s;
+    };
+    const mergedVerBandEndpointTouch = (v0, band) => {
+      const vyLo = Math.min(v0.yMin, v0.yMax);
+      const vyHi = Math.max(v0.yMin, v0.yMax);
+      let s = 0;
+      if (band.lo >= vyLo && band.lo <= vyHi) s += 2;
+      if (band.hi >= vyLo && band.hi <= vyHi) s += 2;
+      return s;
+    };
+
     const rowTable = [];
     const colTable = [];
 
@@ -4242,32 +4509,167 @@ import {
 
     for (const [yy, bands] of mergedHRow) {
       for (const b of bands) {
-        const a = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, b.lo, yy);
-        const z = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, b.hi, yy);
+        let startA = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, b.lo, yy);
+        let endZ = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, b.hi, yy);
+        const band = { lo: b.lo, hi: b.hi };
+        const overlaps = horizontals.filter((h) => {
+          if (h.y !== yy) return false;
+          const hxLo = Math.min(h.xMin, h.xMax);
+          const hxHi = Math.max(h.xMin, h.xMax);
+          return hvOverlapLenSeg(b.lo, b.hi, hxLo, hxHi) >= 0;
+        });
+        overlaps.sort((u, v) => {
+          const su = mergedHorBandEndpointTouch(u, band);
+          const sv = mergedHorBandEndpointTouch(v, band);
+          if (sv !== su) return sv - su;
+          const uxLo = Math.min(u.xMin, u.xMax);
+          const uxHi = Math.max(u.xMin, u.xMax);
+          const vxLo = Math.min(v.xMin, v.xMax);
+          const vxHi = Math.max(v.xMin, v.xMax);
+          const ou = hvOverlapLenSeg(b.lo, b.hi, uxLo, uxHi);
+          const ov = hvOverlapLenSeg(b.lo, b.hi, vxLo, vxHi);
+          if (ov !== ou) return ov - ou;
+          return (v.span ?? 0) - (u.span ?? 0);
+        });
+        /** @type {Array<{ segIdx: number, pi0: number, pi1: number }>} */
+        let orthoRuns = [];
+        let orthoLineHl = null;
+        let orthoHlBundle = null;
+        let orthoHlNote = undefined;
+        if (overlaps.length) {
+          orthoRuns = overlaps.map((h) => ({
+            segIdx: h.segIdx,
+            pi0: Math.min(h.startPtIdx, h.endPtIdx),
+            pi1: Math.max(h.startPtIdx, h.endPtIdx),
+          }));
+          orthoHlBundle = overlaps.map((h) => [
+            'ortho',
+            Number(h.segIdx),
+            Number(h.edgeIdxStart),
+            Number(h.edgeIdxEnd),
+          ]);
+          orthoLineHl = orthoHlBundle[0];
+          if (overlaps.length > 1) {
+            orthoHlNote = `表中「線」來自合併橫區間（${overlaps.length} 段重合）；橘色為全部重合區段（與表中列一致）；起迄取優先段（較緊貼合併區間端點者）頂點並依 x 排序。`;
+          }
+          const hPri = overlaps[0];
+          const segPri = flat[hPri.segIdx];
+          if (segPri?.points) {
+            const iLo = Math.min(hPri.startPtIdx, hPri.endPtIdx);
+            const iHi = Math.max(hPri.startPtIdx, hPri.endPtIdx);
+            const Va = hvVertexStationAndCoord(segPri, iLo);
+            const Vz = hvVertexStationAndCoord(segPri, iHi);
+            const ga = parseParenGridCoordOrtho(Va.coord);
+            const gz = parseParenGridCoordOrtho(Vz.coord);
+            if (ga && gz && ga.gy === yy && gz.gy === yy) {
+              if (ga.gx <= gz.gx) {
+                startA = Va;
+                endZ = Vz;
+              } else {
+                startA = Vz;
+                endZ = Va;
+              }
+            } else {
+              startA = Va;
+              endZ = Vz;
+            }
+          }
+        }
         pushRow({
           axisY: yy,
           kind: '線',
           routeName: b.routeLabel,
-          startStation: a.station,
-          startCoord: a.coord,
-          endStation: z.station,
-          endCoord: z.coord,
+          startStation: startA.station,
+          startCoord: startA.coord,
+          endStation: endZ.station,
+          endCoord: endZ.coord,
+          orthoHlNote,
+          orthoRuns: orthoRuns.length ? orthoRuns : undefined,
+          orthoHl: orthoLineHl ?? undefined,
+          orthoHlBundle: orthoHlBundle ?? undefined,
         });
       }
     }
 
     for (const [xx, bands] of mergedVX) {
       for (const b of bands) {
-        const a = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, xx, b.lo);
-        const z = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, xx, b.hi);
+        let startA = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, xx, b.lo);
+        let endZ = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, xx, b.hi);
+        const band = { lo: b.lo, hi: b.hi };
+        const overlaps = verticals.filter((v0) => {
+          if (v0.x !== xx) return false;
+          const vyLo = Math.min(v0.yMin, v0.yMax);
+          const vyHi = Math.max(v0.yMin, v0.yMax);
+          return hvOverlapLenSeg(b.lo, b.hi, vyLo, vyHi) >= 0;
+        });
+        overlaps.sort((u, v) => {
+          const su = mergedVerBandEndpointTouch(u, band);
+          const sv = mergedVerBandEndpointTouch(v, band);
+          if (sv !== su) return sv - su;
+          const uyLo = Math.min(u.yMin, u.yMax);
+          const uyHi = Math.max(u.yMin, u.yMax);
+          const vyLo = Math.min(v.yMin, v.yMax);
+          const vyHi = Math.max(v.yMin, v.yMax);
+          const ou = hvOverlapLenSeg(b.lo, b.hi, uyLo, uyHi);
+          const ov = hvOverlapLenSeg(b.lo, b.hi, vyLo, vyHi);
+          if (ov !== ou) return ov - ou;
+          return (v.span ?? 0) - (u.span ?? 0);
+        });
+        let orthoRuns = [];
+        let orthoLineHl = null;
+        let orthoHlBundle = null;
+        let orthoHlNote = undefined;
+        if (overlaps.length) {
+          orthoRuns = overlaps.map((vv) => ({
+            segIdx: vv.segIdx,
+            pi0: Math.min(vv.startPtIdx, vv.endPtIdx),
+            pi1: Math.max(vv.startPtIdx, vv.endPtIdx),
+          }));
+          orthoHlBundle = overlaps.map((vv) => [
+            'ortho',
+            Number(vv.segIdx),
+            Number(vv.edgeIdxStart),
+            Number(vv.edgeIdxEnd),
+          ]);
+          orthoLineHl = orthoHlBundle[0];
+          if (overlaps.length > 1) {
+            orthoHlNote = `表中「線」來自合併直區間（${overlaps.length} 段重合）；橘色為全部重合區段；起迄取優先段（較緊貼合併區間端點者）頂點並依 y 排序。`;
+          }
+          const vPri = overlaps[0];
+          const segPri = flat[vPri.segIdx];
+          if (segPri?.points) {
+            const iLo = Math.min(vPri.startPtIdx, vPri.endPtIdx);
+            const iHi = Math.max(vPri.startPtIdx, vPri.endPtIdx);
+            const Va = hvVertexStationAndCoord(segPri, iLo);
+            const Vz = hvVertexStationAndCoord(segPri, iHi);
+            const ga = parseParenGridCoordOrtho(Va.coord);
+            const gz = parseParenGridCoordOrtho(Vz.coord);
+            if (ga && gz && ga.gx === xx && gz.gx === xx) {
+              if (ga.gy <= gz.gy) {
+                startA = Va;
+                endZ = Vz;
+              } else {
+                startA = Vz;
+                endZ = Va;
+              }
+            } else {
+              startA = Va;
+              endZ = Vz;
+            }
+          }
+        }
         pushCol({
           axisX: xx,
           kind: '線',
           routeName: b.routeLabel,
-          startStation: a.station,
-          startCoord: a.coord,
-          endStation: z.station,
-          endCoord: z.coord,
+          startStation: startA.station,
+          startCoord: startA.coord,
+          endStation: endZ.station,
+          endCoord: endZ.coord,
+          orthoHlNote,
+          orthoRuns: orthoRuns.length ? orthoRuns : undefined,
+          orthoHl: orthoLineHl ?? undefined,
+          orthoHlBundle: orthoHlBundle ?? undefined,
         });
       }
     }
@@ -4283,6 +4685,7 @@ import {
         if (!seenDotRow.has(dk)) {
           seenDotRow.add(dk);
           const sc = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, sx, sy);
+          const orthoDot = pickOrthoVertexRefPreferRouteOrder(flat, picksMap, sx, sy);
           pushRow({
             axisY: sy,
             kind: '點',
@@ -4291,6 +4694,7 @@ import {
             startCoord: sc.coord,
             endStation: '—',
             endCoord: '—',
+            orthoV: orthoDot ? { segIdx: orthoDot.segIdx, ptIdx: orthoDot.ptIdx } : undefined,
           });
         }
       }
@@ -4300,6 +4704,7 @@ import {
         if (!seenDotCol.has(dk)) {
           seenDotCol.add(dk);
           const sc = pickOrthoVertexStationPreferRouteOrder(flat, picksMap, sx, sy);
+          const orthoDot = pickOrthoVertexRefPreferRouteOrder(flat, picksMap, sx, sy);
           pushCol({
             axisX: sx,
             kind: '點',
@@ -4308,6 +4713,7 @@ import {
             startCoord: sc.coord,
             endStation: '—',
             endCoord: '—',
+            orthoV: orthoDot ? { segIdx: orthoDot.segIdx, ptIdx: orthoDot.ptIdx } : undefined,
           });
         }
       }
@@ -4334,6 +4740,484 @@ import {
     });
 
     return { rowTable, colTable, centerCx, centerCy };
+  };
+
+  /** `temp`：依隊列對當項設 highlight；（單次 Pulse 至多往中心移一格，連按／自動再行下一格。） */
+  const lineOrthoTowardCrossSeqIdx = ref(0);
+  const lineOrthoTowardCrossLastHint = ref('');
+  /** 列／欄表 :key bump：路網座標更新後強制 Vue 重建表格（離紅線 y／xΔ 來自新路網）。 */
+  const lineOrthoTowardCrossTableBump = ref(0);
+  const LINE_ORTHO_TOWARD_CROSS_AUTO_MS = 1000;
+  /** 一鍵完成：與「自動」同條件停滯前，單次最多 pulse 數（防異常迴圈） */
+  const LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES = 20000;
+
+  let lineOrthoTowardCrossAutoTimerId = null;
+  const lineOrthoTowardCrossAutoActive = ref(false);
+  let lineOrthoTowardCrossAutoTickBusy = false;
+  /** 自動模式：連續無縮進的 pulse 次數；達當前隊列長度（一輪列＋欄）則停 */
+  const lineOrthoTowardCrossAutoNoMoveStreak = ref(0);
+  const lineOrthoTowardCrossOneClickRunning = ref(false);
+
+  /** 對照「縮進前／後」路網，取代表頂點四捨五入格座標。供 temp 圖層位移預覽（示意圖灰／青圈）。 */
+  const computeLineOrthoTowardCrossMovePreview = (beforeSegs, afterSegs, it, picksMap) => {
+    if (!Array.isArray(beforeSegs) || !Array.isArray(afterSegs) || !it) return null;
+
+    const roundedPtOn = (segs, si, pi) => {
+      const pt = segs?.[si]?.points?.[pi];
+      if (pt == null) return null;
+      const x = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+      const y = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return { gx: Math.round(x), gy: Math.round(y) };
+    };
+
+    let si = NaN;
+    let pi = NaN;
+    if (it.kind === '點') {
+      const ov = it.orthoV;
+      if (ov?.segIdx != null && ov?.ptIdx != null) {
+        si = Number(ov.segIdx);
+        pi = Number(ov.ptIdx);
+      } else {
+        const parsed = parseParenGridCoordOrtho(it.startCoord);
+        if (!parsed) return null;
+        const pr = pickOrthoVertexRefPreferRouteOrder(beforeSegs, picksMap, parsed.gx, parsed.gy);
+        if (!pr) return null;
+        si = pr.segIdx;
+        pi = pr.ptIdx;
+      }
+    } else if (it.kind === '線' && Array.isArray(it.orthoRuns) && it.orthoRuns.length > 0) {
+      const r0 = it.orthoRuns[0];
+      si = Number(r0.segIdx);
+      pi = Math.min(Number(r0.pi0), Number(r0.pi1));
+    } else {
+      return null;
+    }
+
+    if (!Number.isFinite(si) || !Number.isFinite(pi)) return null;
+    const bef = roundedPtOn(beforeSegs, si, pi);
+    const aft = roundedPtOn(afterSegs, si, pi);
+    if (!bef || !aft) return null;
+    if (bef.gx === aft.gx && bef.gy === aft.gy) return null;
+    return {
+      pivotSegIdx: si,
+      pivotPtIdx: pi,
+      fromGx: bef.gx,
+      fromGy: bef.gy,
+      toGx: aft.gx,
+      toGy: aft.gy,
+    };
+  };
+
+  const buildLineOrthoTowardCrossQueueAndReport = (lyr) => {
+    const empty = { queue: [], report: null };
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return empty;
+    const rep = jsonGridLineOrthogonalRowColPointOrLineReport(lyr);
+    const queue = [
+      ...rep.rowTable.map((it) => ({ tableAxis: 'row', it })),
+      ...rep.colTable.map((it) => ({ tableAxis: 'col', it })),
+    ];
+    return { queue, report: rep };
+  };
+
+  const lineOrthoTowardCrossQueueLength = (lyr) =>
+    buildLineOrthoTowardCrossQueueAndReport(lyr).queue.length;
+
+  const formatLineOrthoTowardCrossHint = (
+    posLabel,
+    stepCount,
+    haltReason,
+    centerCx,
+    centerCy,
+    movePreview
+  ) => {
+    const cx = Number.isFinite(Number(centerCx)) ? Number(centerCx) : NaN;
+    const cy = Number.isFinite(Number(centerCy)) ? Number(centerCy) : NaN;
+    const centerFrag =
+      Number.isFinite(cx) && Number.isFinite(cy)
+        ? `（紅十字中心格約 (${cx},${cy}) — 所列 yΔ／xΔ 係相對於此中心）`
+        : '';
+    const lines = [
+      `項目：${posLabel}${centerFrag}`,
+      stepCount > 0
+        ? `結果：已向紅十字中心縮進 ${stepCount} 格。`
+        : '結果：本次未對路網寫入任何縮進（幾何不變）。',
+      `停止原因／說明：${haltReason && String(haltReason).trim() ? haltReason.trim() : '—（無詳細停止訊息）'}`,
+    ];
+    const mp = movePreview;
+    if (
+      mp &&
+      Number.isFinite(Number(mp.fromGx)) &&
+      Number.isFinite(Number(mp.fromGy)) &&
+      Number.isFinite(Number(mp.toGx)) &&
+      Number.isFinite(Number(mp.toGy))
+    ) {
+      lines.push(
+        `代表頂點格位移（示意圖：灰虛線圈＝舊、青實線圈＝新）：(${Math.round(mp.fromGx)},${Math.round(mp.fromGy)}) → (${Math.round(mp.toGx)},${Math.round(mp.toGy)})`
+      );
+    }
+    return lines.join('\n');
+  };
+
+  const stopLineOrthoTowardCrossAuto = () => {
+    if (lineOrthoTowardCrossAutoTimerId != null) {
+      clearInterval(lineOrthoTowardCrossAutoTimerId);
+      lineOrthoTowardCrossAutoTimerId = null;
+    }
+    lineOrthoTowardCrossAutoActive.value = false;
+    lineOrthoTowardCrossAutoTickBusy = false;
+    lineOrthoTowardCrossAutoNoMoveStreak.value = 0;
+  };
+
+  /**
+   * 共點平移後舊報表項的座標／axis 字串已過期；以路線名＋種類配對新路網重算之列／欄表中最接近的那一筆。
+   */
+  const pickRematchedOrthoTowardCrossReportItem = (lyr, tableAxis, prevIt) => {
+    if (!lyr || !prevIt) return prevIt;
+    const rep = jsonGridLineOrthogonalRowColPointOrLineReport(lyr);
+    const list = tableAxis === 'row' ? rep.rowTable : rep.colTable;
+    if (!Array.isArray(list) || list.length === 0) return prevIt;
+    const rnPrev = String(prevIt.routeName ?? '');
+    let best = null;
+    let bestScore = Infinity;
+    for (const cand of list) {
+      if (cand.kind !== prevIt.kind) continue;
+      if (String(cand.routeName ?? '') !== rnPrev) continue;
+      let d = Infinity;
+      if (cand.kind === '線') {
+        if (tableAxis === 'row') {
+          const pv =
+            prevIt.axisY != null && Number.isFinite(Number(prevIt.axisY)) ? Number(prevIt.axisY) : NaN;
+          const cv =
+            cand.axisY != null && Number.isFinite(Number(cand.axisY)) ? Number(cand.axisY) : NaN;
+          if (Number.isFinite(pv) && Number.isFinite(cv)) d = Math.abs(cv - pv);
+        } else {
+          const pv =
+            prevIt.axisX != null && Number.isFinite(Number(prevIt.axisX)) ? Number(prevIt.axisX) : NaN;
+          const cv =
+            cand.axisX != null && Number.isFinite(Number(cand.axisX)) ? Number(cand.axisX) : NaN;
+          if (Number.isFinite(pv) && Number.isFinite(cv)) d = Math.abs(cv - pv);
+        }
+      } else if (cand.kind === '點') {
+        const pa = parseParenGridCoordOrtho(prevIt.startCoord);
+        const pb = parseParenGridCoordOrtho(cand.startCoord);
+        if (pa && pb) d = Math.abs(pa.gx - pb.gx) + Math.abs(pa.gy - pb.gy);
+        else continue;
+      } else continue;
+      if (d < bestScore) {
+        bestScore = d;
+        best = cand;
+      }
+    }
+    return best != null ? best : prevIt;
+  };
+
+  /**
+   * 單按一次「朝紅十字縮進」：`clearMovePreview`、`queue[idx]`、`seqIdx+=1`；至多往中心挪**一格**。與自動排程同軌。
+   * @returns {Promise<boolean>} 是否發生評估類嚴重失敗（!r.ok，需視情況中斷自動／批次）
+   */
+  async function pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert = false } = {}) {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value)
+      return { evaluationFailed: false, earlyExit: true };
+    lyr.lineOrthoTowardCrossMovePreview = null;
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) {
+      if (!muteEvalErrorAlert)
+        window.alert('沒有可編輯的路網；請確認已有 spaceNetworkGridJsonData 或完整 dataJson。');
+      return { evaluationFailed: true, earlyExit: true };
+    }
+    const flat = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
+    );
+    lockLineOrthoTowardCrossCenterFromFlatIfUnset(lyr, flat);
+    const { queue, report } = buildLineOrthoTowardCrossQueueAndReport(lyr);
+    if (!queue.length) {
+      lineOrthoTowardCrossLastHint.value = '無列／欄表項目可處理。';
+      return { evaluationFailed: false, earlyExit: true };
+    }
+    if (
+      report?.centerCx == null ||
+      report?.centerCy == null ||
+      !Number.isFinite(report.centerCx) ||
+      !Number.isFinite(report.centerCy)
+    ) {
+      if (!muteEvalErrorAlert) window.alert('無法取得紅線中心（全路網頂點 bbox 中點）。');
+      return { evaluationFailed: true, earlyExit: true };
+    }
+    const picksBeforeOrthoMove = buildOrthoGridRoundedVertexPickIndex(flat);
+
+    const idx = lineOrthoTowardCrossSeqIdx.value % queue.length;
+    const { tableAxis, it } = queue[idx];
+    const posLabel = `#${idx + 1}/${queue.length} ${tableAxis === 'row' ? '列(y)' : '欄(x)'} · ${it.kind}`;
+
+    lineOrthoTowardCrossSeqIdx.value = (idx + 1) % queue.length;
+
+    let workingFlat = shallowCloneOrthoSegmentsSynced(flat);
+    const frozenIds = buildInitialOrthoCoPointGroups(workingFlat);
+    let stepCount = 0;
+    let haltReason = '';
+
+    const r = tryOrthoTowardCrossNudgeFromReportItem(
+      workingFlat,
+      tableAxis,
+      it,
+      report.centerCx,
+      report.centerCy,
+      { frozenVertexGroupIds: frozenIds },
+    );
+
+    if (!r.ok) {
+      haltReason = r.message
+        ? String(r.message)
+        : '評估時發生錯誤（tryOrthoTowardCrossNudgeFromReportItem 回報 !ok）。';
+      if (!muteEvalErrorAlert) window.alert(`${posLabel}：${haltReason}`);
+      const pk = buildOrthoGridRoundedVertexPickIndex(flat);
+      const hi = lineOrthoTowardCrossReportItemHighlight(lyr, flat, pk, tableAxis, it);
+      lyr.highlightedSegmentIndex = hi;
+      lyr.lineOrthoTowardCrossHighlightTableAxis = hi ? tableAxis : null;
+      await dataStore.saveLayerState(LINE_ORTHOGONAL_LAYER_ID, {
+        ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
+      });
+      lineOrthoTowardCrossLastHint.value = formatLineOrthoTowardCrossHint(
+        posLabel,
+        stepCount,
+        haltReason,
+        report.centerCx,
+        report.centerCy,
+        null,
+      );
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+      return { evaluationFailed: true, earlyExit: false, posLabel, stepCount };
+    }
+    if (!r.applied) {
+      if (r.skip) {
+        haltReason =
+          r.message ||
+          '已符合「跳過」條件（例如已對齊紅十字對應軸／找不到對應頂點），故未對此項試算偏移。';
+      } else {
+        haltReason =
+          r.message ||
+          '往中心移一格時，約束檢查未通過（交叉、路線共線重疊、頂點落線、非法併格或零長邊）；或會降低水平／垂直邊數而跳過。';
+      }
+    } else {
+      workingFlat = r.segments;
+      stepCount = r.cellsMoved ?? 1;
+    }
+
+    /** 套用後之重算報表／中心（離紅線 y／x 與新路網一致）— 無位移時沿用 pulse 開始時結果 */
+    let repHint = report;
+    let hlSegments = flat;
+    let itemForHl = it;
+
+    if (stepCount > 0) {
+      lineOrthoTowardCrossTableBump.value += 1;
+      lyr.lineOrthoTowardCrossMovePreview = computeLineOrthoTowardCrossMovePreview(
+        flat,
+        workingFlat,
+        it,
+        picksBeforeOrthoMove,
+      );
+      applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, workingFlat);
+      const resolvedAfter = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+      if (!resolvedAfter?.spaceNetwork?.length) {
+        if (!muteEvalErrorAlert)
+          window.alert('縮進後無法載入路網；請確認 spaceNetworkGridJsonData 或 dataJson。');
+        return {
+          evaluationFailed: true,
+          earlyExit: false,
+          posLabel,
+          stepCount,
+        };
+      }
+      hlSegments = normalizeSpaceNetworkDataToFlatSegments(
+        JSON.parse(JSON.stringify(resolvedAfter.spaceNetwork)),
+      );
+      repHint = jsonGridLineOrthogonalRowColPointOrLineReport(lyr);
+      itemForHl = pickRematchedOrthoTowardCrossReportItem(lyr, tableAxis, it);
+    }
+
+    const picksHlMap = buildOrthoGridRoundedVertexPickIndex(hlSegments);
+    const hi = lineOrthoTowardCrossReportItemHighlight(
+      lyr,
+      hlSegments,
+      picksHlMap,
+      tableAxis,
+      itemForHl,
+    );
+    lyr.highlightedSegmentIndex = hi;
+    lyr.lineOrthoTowardCrossHighlightTableAxis = hi ? tableAxis : null;
+
+    await dataStore.saveLayerState(LINE_ORTHOGONAL_LAYER_ID, {
+      ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
+    });
+
+    lineOrthoTowardCrossLastHint.value = formatLineOrthoTowardCrossHint(
+      posLabel,
+      stepCount,
+      haltReason,
+      repHint.centerCx,
+      repHint.centerCy,
+      lyr.lineOrthoTowardCrossMovePreview ?? null,
+    );
+
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+    return {
+      evaluationFailed: false,
+      earlyExit: false,
+      posLabel,
+      stepCount,
+      haltReason,
+    };
+  }
+
+  const onLineOrthoTowardCrossStepClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    await pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert: false });
+  };
+
+  const startLineOrthoTowardCrossAuto = (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    if (lineOrthoTowardCrossQueueLength(lyr) === 0) {
+      window.alert('無列／欄表項目，無法自動執行。');
+      return;
+    }
+    if (lineOrthoTowardCrossOneClickRunning.value) return;
+    stopLineOrthoTowardCrossAuto();
+    lineOrthoTowardCrossAutoNoMoveStreak.value = 0;
+    lineOrthoTowardCrossAutoActive.value = true;
+    lineOrthoTowardCrossAutoTimerId = setInterval(async () => {
+      if (
+        !lineOrthoTowardCrossAutoActive.value ||
+        lineOrthoTowardCrossAutoTickBusy ||
+        isExecuting.value ||
+        lineOrthoTowardCrossOneClickRunning.value
+      )
+        return;
+      lineOrthoTowardCrossAutoTickBusy = true;
+      try {
+        const lyr2 = dataStore.findLayerById(LINE_ORTHOGONAL_LAYER_ID);
+        if (!lyr2 || lyr2.layerId !== LINE_ORTHOGONAL_LAYER_ID) return;
+        if (lineOrthoTowardCrossQueueLength(lyr2) === 0) {
+          stopLineOrthoTowardCrossAuto();
+          lineOrthoTowardCrossLastHint.value =
+            `${lineOrthoTowardCrossLastHint.value || ''}\n（自動執行已停止：隊列為空）`.trim();
+          return;
+        }
+        const r = await pulseOnceLineOrthoTowardCross(lyr2, { muteEvalErrorAlert: true });
+        if (r?.evaluationFailed) {
+          stopLineOrthoTowardCrossAuto();
+          lineOrthoTowardCrossLastHint.value = `${
+            lineOrthoTowardCrossLastHint.value || ''
+          }\n（自動執行已停止：發生評估／路網／儲存錯誤，見上文。）`.trim();
+        } else if (!r?.earlyExit) {
+          const qRound = buildLineOrthoTowardCrossQueueAndReport(lyr2).queue.length;
+          const moved = Number(r?.stepCount) > 0;
+          if (moved) {
+            lineOrthoTowardCrossAutoNoMoveStreak.value = 0;
+          } else if (qRound > 0) {
+            lineOrthoTowardCrossAutoNoMoveStreak.value += 1;
+            if (lineOrthoTowardCrossAutoNoMoveStreak.value >= qRound) {
+              stopLineOrthoTowardCrossAuto();
+              lineOrthoTowardCrossLastHint.value = `${
+                lineOrthoTowardCrossLastHint.value || ''
+              }\n（自動執行已停止：已連續跑完一輪隊列（列→欄共 ${qRound} 項）皆無縮進。）`.trim();
+            }
+          }
+        }
+      } finally {
+        lineOrthoTowardCrossAutoTickBusy = false;
+      }
+    }, LINE_ORTHO_TOWARD_CROSS_AUTO_MS);
+  };
+
+  const toggleLineOrthoTowardCrossAuto = (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID) return;
+    if (lineOrthoTowardCrossAutoActive.value) stopLineOrthoTowardCrossAuto();
+    else startLineOrthoTowardCrossAuto(lyr);
+  };
+
+  const onLineOrthoTowardCrossFinishAllClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_LAYER_ID || isExecuting.value) return;
+    stopLineOrthoTowardCrossAuto();
+    const { queue } = buildLineOrthoTowardCrossQueueAndReport(lyr);
+    if (!queue.length) {
+      lineOrthoTowardCrossLastHint.value = '無列／欄表項目可處理。';
+      return;
+    }
+    lineOrthoTowardCrossOneClickRunning.value = true;
+    const summaries = [];
+    let totalSteps = 0;
+    let aborted = false;
+    let stagnationStop = false;
+    let pulseCount = 0;
+    try {
+      let noMoveStreak = 0;
+      while (pulseCount < LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES) {
+        const r = await pulseOnceLineOrthoTowardCross(lyr, {
+          muteEvalErrorAlert: pulseCount > 0,
+        });
+        pulseCount++;
+        if (r.evaluationFailed) {
+          aborted = true;
+          summaries.push(
+            `${r.posLabel ?? `第 ${pulseCount} 次 pulse`}：發生評估／路網／儲存錯誤（批次中止；首項會彈窗說明）。`
+          );
+          break;
+        }
+        if (r.earlyExit) break;
+        const sc = Number(r.stepCount) || 0;
+        totalSteps += sc;
+        summaries.push(
+          `${r.posLabel}：縮進 ${sc} 格。${r.haltReason ? `（${String(r.haltReason)}）` : ''}`
+        );
+        const qRound = buildLineOrthoTowardCrossQueueAndReport(lyr).queue.length;
+        if (qRound === 0) break;
+        if (sc > 0) {
+          noMoveStreak = 0;
+        } else {
+          noMoveStreak += 1;
+          if (noMoveStreak >= qRound) {
+            stagnationStop = true;
+            break;
+          }
+        }
+      }
+      const hitMaxPulses = !aborted && pulseCount >= LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES;
+      if (hitMaxPulses) {
+        summaries.push(
+          `（已達單次一鍵上限 ${LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES} 次 pulse，請再按一次一鍵完成續跑。）`
+        );
+      }
+      const report = jsonGridLineOrthogonalRowColPointOrLineReport(lyr);
+      let hdrMain = '';
+      if (aborted) {
+        hdrMain = `一鍵完成：因錯誤中止；已紀錄 ${summaries.length} 段（通常最後一行為中止原因）。累計縮進格數約 ${totalSteps}。`;
+      } else if (stagnationStop) {
+        hdrMain = `一鍵完成：已執行至「連續一輪隊列（列→欄）皆無縮進」為止（與自動執行停止條件相同）。共 ${pulseCount} 次 pulse，累計縮進約 ${totalSteps} 格。`;
+      } else if (hitMaxPulses) {
+        hdrMain = `一鍵完成：已跑滿單次上限 ${LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES} 次 pulse，累計縮進約 ${totalSteps} 格。`;
+      } else {
+        hdrMain = `一鍵完成：共 ${pulseCount} 次 pulse，累計縮進約 ${totalSteps} 格（可能因隊列為空等提早結束）。`;
+      }
+      const hdr = [
+        hdrMain,
+        report?.centerCx != null &&
+        report?.centerCy != null &&
+        Number.isFinite(report.centerCx) &&
+        Number.isFinite(report.centerCy)
+          ? `紅十字中心格約 (${report.centerCx},${report.centerCy})。`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+      lineOrthoTowardCrossLastHint.value = `${hdr}\n\n${summaries.join('\n')}`.trim();
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+    } finally {
+      lineOrthoTowardCrossOneClickRunning.value = false;
+    }
   };
 
   /** 手動步進頂點列表索引（每按一次 highlight 下一筆，循環） */
@@ -4369,9 +5253,12 @@ import {
     writeLayoutNormalizedLayerDataOsmFromNetwork(lyr, segments);
     syncJsonGridFromCoordDataJsonFromPipeline(lyr);
     lyr.jsonGridFromCoordSuggestTargetGrid = null;
+    if (lyr.layerId === LINE_ORTHOGONAL_LAYER_ID) return;
+    const lineOrtho = dataStore.findLayerById(LINE_ORTHOGONAL_LAYER_ID);
+    if (lineOrtho) lineOrtho.lineOrthoTowardCrossMovePreview = null;
     refreshLineOrthogonalFromPointOrthogonalIfVisible(
       dataStore.findLayerById.bind(dataStore),
-      dataStore.saveLayerState.bind(dataStore),
+      dataStore.saveLayerState.bind(dataStore)
     );
   };
 
@@ -4580,6 +5467,42 @@ import {
     }
   };
 
+  /** 「座標正規化」圖層：依序對齊本區——正規化 → 鄰線錯邊修正（與「修正」按鈕同條件）→ 刪空欄列 */
+  const jsonGridCoordNormalizedPipelineOneClickRunning = ref(false);
+
+  const onJsonGridCoordNormalizedFullPipelineClick = async () => {
+    if (isExecuting.value || jsonGridCoordNormalizedPipelineOneClickRunning.value) return;
+    jsonGridCoordNormalizedPipelineOneClickRunning.value = true;
+    try {
+      await nextTick();
+      const normOk = await Promise.resolve(executeJsonGridCoordNormalize());
+      if (!normOk) {
+        window.alert(
+          '一鍵流程中止：無法完成「座標正規化」（請確認已開啟本圖層並自「OSM／GeoJSON → JSON」複製 dataJson／路網）。'
+        );
+        return;
+      }
+
+      const layNorm = dataStore.findLayerById('json_grid_coord_normalized');
+      const tc0 = layNorm?.dashboardData?.topologyCheck;
+      if (tc0 && !tc0.skipped && tc0.structMatch && tc0.hasNeighborFlips) {
+        await Promise.resolve(executeJsonGridNeighborTopologyFix());
+      }
+
+      await nextTick();
+      const layPrune = dataStore.findLayerById('json_grid_coord_normalized');
+      const tcp = layPrune?.dashboardData?.topologyCheck;
+      if (tcp && !tcp.skipped) {
+        await Promise.resolve(executeJsonGridCoordNormalizedPruneEmptyGridLines());
+      }
+    } catch (err) {
+      console.error(err);
+      window.alert('一鍵流程發生錯誤（詳見控制台）。');
+    } finally {
+      jsonGridCoordNormalizedPipelineOneClickRunning.value = false;
+    }
+  };
+
   /** JSON·網格·座標正規化（單鍵 b→c→d） */
   const onJsonGridCoordNormalizeClick = async () => {
     if (isExecuting.value) return;
@@ -4680,32 +5603,22 @@ import {
     const file = input.files && input.files[0];
     input.value = '';
     const layer = dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
-    if (!file || !layer) return;
+    if (!file) return;
+    if (!layer) {
+      window.alert(
+        '找不到「OSM／GeoJSON → JSON」圖層（osm_2_geojson_2_json）。請確認左側圖層列表內含此圖層後再試。'
+      );
+      return;
+    }
     try {
       layer.isLoading = true;
       const text = await file.text();
-      const nameLower = (file.name || '').toLowerCase();
-      const fromGeojson = nameLower.endsWith('.geojson');
-      let result;
-      const mergeOpts = {
-        groupName: dataStore.findGroupNameByLayerId(OSM_2_GEOJSON_2_JSON_LAYER_ID),
-      };
-      if (fromGeojson) {
-        setOsm2GeojsonSessionOsmXml('');
-        result = parseGeoJsonTextToOsm2GeojsonLoaderResult(text);
-      } else {
-        setOsm2GeojsonSessionOsmXml(text);
-        result = osmXmlToOsm2GeojsonLoaderResult(text);
-        mergeOpts.sourceOsmXmlText = text;
-      }
-      layer.osmFileName = file.name;
-      mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, mergeOpts);
-      dataStore.saveLayerState(layer.layerId, getOsm2GeojsonPersistPatchAfterLoaderMerge(layer));
-      dataStore.syncOsm2DataJsonMirrorFromParent();
+      ingestOsmSpaceGridTextIntoLayer(layer, text, file.name);
     } catch (err) {
       console.error('本機 OSM／GeoJSON 讀取失敗:', err);
       layer.isLoading = false;
       dataStore.saveLayerState(layer.layerId, { isLoading: false });
+      window.alert(`讀檔失敗：${String(err?.message ?? err ?? '')}`);
     }
   };
 
@@ -7345,17 +8258,28 @@ import {
           >
             選擇本機 .osm 或 .geojson 並讀入
           </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            :disabled="layer.isLoading"
+            @click="onTaipeiOsmSpaceGridLoadBundledTaipeiClick"
+          >
+            自動讀入 taipei/taipei.osm
+          </button>
           <div class="text-muted mb-3" style="font-size: 11px; line-height: 1.45">
-            支援本機選 .osm（XML）或 .geojson（<code class="small">Feature</code>／<code class="small"
+            支援本機選 .osm（XML）或 .geojson／.json（<code class="small">Feature</code>／<code
+              class="small"
               >FeatureCollection</code
-            >）；無選檔時開啟圖層不會請求伺服器資料。
+            >）；無副檔名時若以 <code class="small">{</code>／<code class="small">[</code> 開頭則依
+            GeoJSON 解析。無選檔時開啟圖層不會請求伺服器資料。
           </div>
           <div class="my-title-xs-gray pb-1">流程說明（本機選檔）</div>
           <ol class="my-font-size-xs text-muted mb-2 ps-3" style="line-height: 1.55">
             <li>
-              <strong>讀檔</strong>：.osm 時以 <code class="small">setOsm2GeojsonSessionOsmXml</code>
-              快取 OSM 字串；.geojson 時清空 session，<code class="small">dataOSM</code> 由路網幾何產生簡易
-              XML。檔名寫入 <code class="small">osmFileName</code>。
+              <strong>讀檔</strong>：.osm 時以
+              <code class="small">setOsm2GeojsonSessionOsmXml</code> 快取 OSM 字串；.geojson 時清空
+              session，<code class="small">dataOSM</code> 由路網幾何產生簡易 XML。檔名寫入
+              <code class="small">osmFileName</code>。
             </li>
             <li>
               <strong>→ GeoJSON + 表格 + 路段陣列</strong>：<code class="small"
@@ -7397,6 +8321,17 @@ import {
         <!-- JSON·網格·座標正規化（單鍵 b→c→d）；layerId：json_grid_coord_normalized -->
         <div v-if="layer.layerId === 'json_grid_coord_normalized'" class="pb-3 mb-3 border-bottom">
           <div class="my-title-xs-gray pb-2">座標正規化</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-orange mb-2"
+            :disabled="isExecuting || jsonGridCoordNormalizedPipelineOneClickRunning"
+            @click="onJsonGridCoordNormalizedFullPipelineClick"
+          >
+            一鍵執行完（座標正規化 → 鄰線錯邊修正（若須）→ 刪空欄列）
+          </button>
+          <div class="text-muted mb-3" style="font-size: 10px; line-height: 1.45">
+            等同依序按下本區塊內：「座標正規化」「修正」（僅在本拓撲比對允許時）「刪空欄列」；結束時以摘要對話框回報三步結果。
+          </div>
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue"
@@ -7672,29 +8607,74 @@ import {
           <div class="my-title-xs-gray pb-2">各列（y）／各欄（x）：點或線</div>
           <template
             v-for="loReport in [jsonGridLineOrthogonalRowColPointOrLineReport(layer)]"
-            :key="
-              'lo-temp-axis-' +
-              loReport.rowTable.length +
-              '-' +
-              loReport.colTable.length
-            "
+            :key="'lo-temp-axis-' + lineOrthoTowardCrossTableBump + '-' + loReport.rowTable.length + '-' + loReport.colTable.length"
           >
             <div
               v-if="loReport.rowTable.length === 0 && loReport.colTable.length === 0"
               class="text-muted my-font-size-xs"
               style="line-height: 1.45"
             >
-              尚無可分類之資料。請開啟本圖層並確認已有路網（或已自「座標正規化」鏡像
-              dataJson）。
+              尚無可分類之資料。請開啟本圖層並確認已有路網（或已自「座標正規化」鏡像 dataJson）。
             </div>
             <template v-else>
               <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
-                僅統計<strong>水平、垂直線段</strong>（斜線略過）。<strong>紅線中心</strong>取全路網頂點四捨五入包圍盒之中點（與示意圖十字對齊原則相同）。列出順序：
+                僅統計<strong>水平、垂直線段</strong>（斜線略過）。<strong
+                  >紅十字／yΔ／xΔ 基準格</strong
+                >：未鎖定時為全路網頂點包圍盒中點；第一次「朝紅十字縮進」會<strong>鎖定</strong>該格，之後不因路網位移而漂移（與網格線座標基準一致）。縮進為<strong>整格共點平移</strong>並受硬約束，不會任意斷邊。列出順序：
                 <strong>0 → +1 → −1 → +2 → −2 → …</strong>。<strong>yΔ／xΔ</strong>
-                為相對<strong>該</strong>中心之<strong>網格列／欄距</strong>（非重新編號）。
+                為相對<strong>該</strong>基準格之<strong>網格列／欄距</strong>（非重新編號）。
                 <template v-if="loReport.centerCx != null && loReport.centerCy != null">
-                  目前中心格座標（約）為 ({{ loReport.centerCx }}, {{ loReport.centerCy }})。
+                  目前基準格座標（約）為 ({{ loReport.centerCx }}, {{ loReport.centerCy }})。
                 </template>
+              </div>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
+                :disabled="
+                  isExecuting ||
+                  lineOrthoTowardCrossQueueLength(layer) === 0 ||
+                  lineOrthoTowardCrossAutoActive ||
+                  lineOrthoTowardCrossOneClickRunning
+                "
+                @click="onLineOrthoTowardCrossStepClick(layer)"
+              >
+                朝紅十字縮進至頂（順序：列整表→欄整表，循環）；當項以橘線／橘圈標示。
+              </button>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-orange mb-2"
+                :disabled="
+                  isExecuting ||
+                  lineOrthoTowardCrossQueueLength(layer) === 0 ||
+                  lineOrthoTowardCrossOneClickRunning
+                "
+                @click="toggleLineOrthoTowardCrossAuto(layer)"
+              >
+                {{
+                  lineOrthoTowardCrossAutoActive
+                    ? '停止自動（每秒一次縮進）'
+                    : '自動執行：每秒仿單鍵縮進一次'
+                }}
+              </button>
+              <button
+                type="button"
+                class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+                :disabled="
+                  isExecuting ||
+                  lineOrthoTowardCrossQueueLength(layer) === 0 ||
+                  lineOrthoTowardCrossAutoActive ||
+                  lineOrthoTowardCrossOneClickRunning
+                "
+                @click="onLineOrthoTowardCrossFinishAllClick(layer)"
+              >
+                一鍵完成：反覆縮進至「一整輪隊列皆無可改善」為止（與自動執行停條件相同），並在下面顯示彙總
+              </button>
+              <div
+                v-if="lineOrthoTowardCrossLastHint"
+                class="text-muted mb-2"
+                style="font-size: 10px; line-height: 1.45; white-space: pre-wrap"
+              >
+                {{ lineOrthoTowardCrossLastHint }}
               </div>
               <div class="small text-secondary mb-1">列（row／離紅線 y）</div>
               <div
@@ -7715,19 +8695,30 @@ import {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr
+                    <template
                       v-for="(it, ri) in loReport.rowTable"
-                      :key="'lo-rowt-' + it.deltaYLabel + '-' + it.axisY + '-' + ri + '-' + it.kind"
+                      :key="'lo-row-w-' + ri + '-' + it.kind"
                     >
-                      <td class="text-nowrap fw-semibold">{{ it.deltaYLabel }}</td>
-                      <td class="text-nowrap text-muted">{{ it.axisY }}</td>
-                      <td class="text-nowrap">{{ it.kind }}</td>
-                      <td class="text-break" style="max-width: 100px">{{ it.routeName }}</td>
-                      <td class="text-break" style="max-width: 120px">{{ it.startStation }}</td>
-                      <td class="text-nowrap">{{ it.startCoord }}</td>
-                      <td class="text-break" style="max-width: 120px">{{ it.endStation }}</td>
-                      <td class="text-nowrap">{{ it.endCoord }}</td>
-                    </tr>
+                      <tr>
+                        <td class="text-nowrap fw-semibold">{{ it.deltaYLabel }}</td>
+                        <td class="text-nowrap text-muted">{{ it.axisY }}</td>
+                        <td class="text-nowrap">{{ it.kind }}</td>
+                        <td class="text-break" style="max-width: 100px">{{ it.routeName }}</td>
+                        <td class="text-break" style="max-width: 120px">{{ it.startStation }}</td>
+                        <td class="text-nowrap">{{ it.startCoord }}</td>
+                        <td class="text-break" style="max-width: 120px">{{ it.endStation }}</td>
+                        <td class="text-nowrap">{{ it.endCoord }}</td>
+                      </tr>
+                      <tr v-if="it.kind === '線' && it.orthoHlNote" class="table-light">
+                        <td
+                          colspan="8"
+                          class="small text-muted"
+                          style="border-top: 0; white-space: pre-wrap"
+                        >
+                          {{ it.orthoHlNote }}
+                        </td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -7750,19 +8741,30 @@ import {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr
+                    <template
                       v-for="(it, ci) in loReport.colTable"
-                      :key="'lo-colt-' + it.deltaXLabel + '-' + it.axisX + '-' + ci + '-' + it.kind"
+                      :key="'lo-col-w-' + ci + '-' + it.kind"
                     >
-                      <td class="text-nowrap fw-semibold">{{ it.deltaXLabel }}</td>
-                      <td class="text-nowrap text-muted">{{ it.axisX }}</td>
-                      <td class="text-nowrap">{{ it.kind }}</td>
-                      <td class="text-break" style="max-width: 100px">{{ it.routeName }}</td>
-                      <td class="text-break" style="max-width: 120px">{{ it.startStation }}</td>
-                      <td class="text-nowrap">{{ it.startCoord }}</td>
-                      <td class="text-break" style="max-width: 120px">{{ it.endStation }}</td>
-                      <td class="text-nowrap">{{ it.endCoord }}</td>
-                    </tr>
+                      <tr>
+                        <td class="text-nowrap fw-semibold">{{ it.deltaXLabel }}</td>
+                        <td class="text-nowrap text-muted">{{ it.axisX }}</td>
+                        <td class="text-nowrap">{{ it.kind }}</td>
+                        <td class="text-break" style="max-width: 100px">{{ it.routeName }}</td>
+                        <td class="text-break" style="max-width: 120px">{{ it.startStation }}</td>
+                        <td class="text-nowrap">{{ it.startCoord }}</td>
+                        <td class="text-break" style="max-width: 120px">{{ it.endStation }}</td>
+                        <td class="text-nowrap">{{ it.endCoord }}</td>
+                      </tr>
+                      <tr v-if="it.kind === '線' && it.orthoHlNote" class="table-light">
+                        <td
+                          colspan="8"
+                          class="small text-muted"
+                          style="border-top: 0; white-space: pre-wrap"
+                        >
+                          {{ it.orthoHlNote }}
+                        </td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>

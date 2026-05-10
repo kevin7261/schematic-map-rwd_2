@@ -120,6 +120,10 @@ import {
   loadOsmXmlAsGeoJsonForRoutes,
 } from '../utils/dataProcessor.js';
 
+import {
+  LINE_ORTHOGONAL_LAYER_ID,
+  POINT_ORTHOGONAL_LAYER_ID,
+} from '../utils/layers/json_grid_coord_normalized/layerIds.js';
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
 
@@ -293,6 +297,8 @@ export const useDataStore = defineStore(
             geojsonLoader: loadOsmXmlAsGeoJsonForRoutes,
             processToDrawData: null,
             geojsonFileName: null,
+            /** 對應 `public/taipei/taipei.osm`，供 Control「自動讀入」 */
+            publicBundledTaipeiOsmPath: 'taipei/taipei.osm',
             /** 僅經 Control 本機選 .osm／.geojson 載入後才有資料；無 osmFileName 時開圖層不請求伺服器（geojsonLoader 為空載入）。 */
             osmFileName: null,
             jsonFileName: null,
@@ -401,9 +407,9 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
           {
-            /** 測試：dataJson 優先自 point_orthogonal；若該層尚無則自「座標正規化」同欄位（見 mirrorFromCoordNormalizedLayer） */
-            layerId: 'temp',
-            layerName: '測試',
+            /** 路網正交段往紅十字／示意中心縮進；dataJson 優先自 point_orthogonal，見 mirrorFromCoordNormalizedLayer */
+            layerId: 'orthogonal_toward_center',
+            layerName: '站點與路線往中心聚集',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -2158,10 +2164,7 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
-      if (
-        layer.visible &&
-        (layer.layerId === 'point_orthogonal' || layer.layerId === 'temp')
-      ) {
+      if (layer.visible && (layer.layerId === POINT_ORTHOGONAL_LAYER_ID || layer.layerId === LINE_ORTHOGONAL_LAYER_ID)) {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
@@ -3308,7 +3311,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === 'point_orthogonal' || layerId === 'temp') {
+      if (layerId === POINT_ORTHOGONAL_LAYER_ID || layerId === LINE_ORTHOGONAL_LAYER_ID) {
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }
