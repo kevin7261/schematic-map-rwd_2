@@ -500,6 +500,186 @@ export function checkOrthoGridHardConstraints(segments, initialGroupIds) {
   return { ok: true };
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// connect 紅／藍點最佳化：H/V 線段數最大化，步距 ≤ 2 格
+// ──────────────────────────────────────────────────────────────────────────
+
+/** 計算路網中「水平＋垂直」邊的總數 */
+function countHVEdges(segments) {
+  let c = 0;
+  for (const seg of segments) {
+    const pts = seg?.points;
+    if (!Array.isArray(pts)) continue;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, y1] = getXY(pts[i]);
+      const [x2, y2] = getXY(pts[i + 1]);
+      if (x1 === x2 || y1 === y2) c++;
+    }
+  }
+  return c;
+}
+
+/**
+ * 計算在 (nx,ny) 格上，路網中通過此點的最長連續水平或垂直線段長度（格數）。
+ * 水平：所有 y=ny 的 H-edge；垂直：所有 x=nx 的 V-edge。
+ * 對同方向上相接的邊做 interval union，取包含此點的最長段。
+ */
+function maxHVRunThroughPoint(segments, nx, ny) {
+  const hIntervals = [];
+  const vIntervals = [];
+  for (const seg of segments) {
+    const pts = seg?.points;
+    if (!Array.isArray(pts)) continue;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, y1] = getXY(pts[i]);
+      const [x2, y2] = getXY(pts[i + 1]);
+      if (y1 === ny && y2 === ny) hIntervals.push([Math.min(x1, x2), Math.max(x1, x2)]);
+      if (x1 === nx && x2 === nx) vIntervals.push([Math.min(y1, y2), Math.max(y1, y2)]);
+    }
+  }
+  const spanThrough = (intervals, coord) => {
+    if (!intervals.length) return 0;
+    intervals.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const merged = [];
+    for (const [lo, hi] of intervals) {
+      if (!merged.length || lo > merged[merged.length - 1][1]) {
+        merged.push([lo, hi]);
+      } else {
+        merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], hi);
+      }
+    }
+    for (const [lo, hi] of merged) {
+      if (lo <= coord && coord <= hi) return hi - lo;
+    }
+    return 0;
+  };
+  return Math.max(spanThrough(hIntervals, nx), spanThrough(vIntervals, ny));
+}
+
+function isAcuteTurnAt(segments, si, pi) {
+  const pts = segments?.[si]?.points;
+  if (!Array.isArray(pts) || pi <= 0 || pi >= pts.length - 1) return false;
+  // 任一路網路段（單一 polyline）：內頂點之前後邊夾角若小於 90°（銳角）則視為無效。
+  const [px, py] = getXY(pts[pi]);
+  const [ax, ay] = getXY(pts[pi - 1]);
+  const [bx, by] = getXY(pts[pi + 1]);
+  const v1x = ax - px;
+  const v1y = ay - py;
+  const v2x = bx - px;
+  const v2y = by - py;
+  if ((v1x === 0 && v1y === 0) || (v2x === 0 && v2y === 0)) return false;
+  // dot product > 0 means the smaller angle is less than 90 degrees.
+  return v1x * v2x + v1y * v2y > 0;
+}
+
+/**
+ * 移動某共點群組後，檢查受影響之 polyline 內頂點 pi-1／pi／pi+1；
+ * 任一段折線若在該頂形成小於 90° 銳角，則汰除此候選移動。
+ */
+function hasAcuteSameRouteTurnNearMovedRefs(segments, refs) {
+  const toCheck = new Set();
+  for (const r of refs) {
+    for (let dpi = -1; dpi <= 1; dpi++) {
+      toCheck.add(`${r.si},${r.pi + dpi}`);
+    }
+  }
+  for (const k of toCheck) {
+    const [siRaw, piRaw] = k.split(',');
+    const si = Number(siRaw);
+    const pi = Number(piRaw);
+    if (!Number.isFinite(si) || !Number.isFinite(pi)) continue;
+    if (isAcuteTurnAt(segments, si, pi)) return true;
+  }
+  return false;
+}
+
+/**
+ * connect 紅／藍點最佳化移動：
+ * 在路網格點內試驗 (segIdx, ptIdx) 所在共點群組往曼哈頓距離 ≤ maxDist 的每一整數格位移，
+ * 取能使 H/V 邊總數**嚴格增加**的候選；若多個候選，優先取「通過新格之最長連續 H/V 線」最大者，
+ * 再以距離遠近打破平手。
+ * 硬約束與 applyBestCoPointGroupMoveOnGrid 相同（無交叉、無共線重疊、無頂點落於他線、無零長邊）。
+ *
+ * @param {Array<object>} flatSegments
+ * @param {number} segIdx
+ * @param {number} ptIdx
+ * @param {number} [maxDist=2]
+ * @returns {{ ok: boolean, applied: boolean, segments?: Array|null, target?: {x:number,y:number}, hvBefore?: number, hvAfter?: number, maxRunAfter?: number, message?: string }}
+ */
+export function findBestConnectPointMoveForHV(flatSegments, segIdx, ptIdx, maxDist = 2) {
+  if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
+    return { ok: false, applied: false, segments: null, message: '沒有路段資料' };
+  }
+  const work = JSON.parse(JSON.stringify(flatSegments));
+  syncAllEndpoints(work);
+  if (hasInvalidGeometry(work)) {
+    return {
+      ok: false,
+      applied: false,
+      segments: null,
+      message: '目前路網已有交叉、重疊或頂點落線，無法移動。',
+    };
+  }
+  const initialGroupIdByVertex = buildInitialCoPointGroupIdByVertex(work);
+  if (!occupancyNoDistinctCoPointsMerged(work, initialGroupIdByVertex)) {
+    return { ok: false, applied: false, segments: null, message: '共點群組資料異常。' };
+  }
+
+  const groupMap = buildGroups(work);
+  const anchor = work[segIdx]?.points?.[ptIdx];
+  if (!anchor) return { ok: false, applied: false, segments: null, message: '頂點不存在。' };
+  const [cx, cy] = getXY(anchor);
+  const key = `${cx},${cy}`;
+  const group = groupMap.get(key);
+  if (!group?.length || !group.some((g) => g.si === segIdx && g.pi === ptIdx)) {
+    return { ok: false, applied: false, segments: null, message: '無法對齊共點群組。' };
+  }
+  const groupRefs = [...group];
+  const hvBefore = countHVEdges(work);
+
+  const candidates = [];
+  for (let dx = -maxDist; dx <= maxDist; dx++) {
+    for (let dy = -maxDist; dy <= maxDist; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      if (Math.abs(dx) + Math.abs(dy) > maxDist) continue;
+      const tx = cx + dx;
+      const ty = cy + dy;
+      const trial = JSON.parse(JSON.stringify(work));
+      applyGroupDelta(trial, groupRefs, dx, dy);
+      if (!occupancyNoDistinctCoPointsMerged(trial, initialGroupIdByVertex)) continue;
+      if (!buildEdges(trial)) continue;
+      if (hasInvalidGeometry(trial)) continue;
+      if (hasAcuteSameRouteTurnNearMovedRefs(trial, groupRefs)) continue;
+      const hvAfter = countHVEdges(trial);
+      if (hvAfter <= hvBefore) continue;
+      const maxRun = maxHVRunThroughPoint(trial, tx, ty);
+      const dist = Math.abs(dx) + Math.abs(dy);
+      candidates.push({ dx, dy, tx, ty, hvAfter, maxRun, dist, trial });
+    }
+  }
+
+  if (!candidates.length) {
+    return { ok: true, applied: false, hvBefore, hvAfter: hvBefore };
+  }
+
+  candidates.sort((a, b) => {
+    if (b.hvAfter !== a.hvAfter) return b.hvAfter - a.hvAfter;
+    if (b.maxRun !== a.maxRun) return b.maxRun - a.maxRun;
+    return a.dist - b.dist;
+  });
+
+  const best = candidates[0];
+  return {
+    ok: true,
+    applied: true,
+    segments: best.trial,
+    target: { x: best.tx, y: best.ty },
+    hvBefore,
+    hvAfter: best.hvAfter,
+    maxRunAfter: best.maxRun,
+  };
+}
+
 /**
  * 將指定頂點 ref 一併平移 (dx,dy)（整數格）；同步各段端點 tags。
  * @param {Array<{ si: number, pi: number }>} refs

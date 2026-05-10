@@ -41,11 +41,13 @@
     POINT_ORTHOGONAL_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+    COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     tryOrthoTowardCrossNudgeFromReportItem,
     applyLineOrthoHubBlueDiagonalPrepassSegments,
     shallowCloneOrthoSegmentsSynced,
     buildInitialOrthoCoPointGroups,
+    findBestConnectPointMoveForHV,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
@@ -2415,6 +2417,7 @@
     stopTaipeiL3ReductionAuto();
     stopJsonGridFromCoordVertexAuto();
     stopLineOrthoTowardCrossAuto();
+    stopRbConnectAuto();
   });
 
   /** 黑點站向示意圖幾何中心（藍虛線）靠攏；僅更新黑點格座標，不修改折線轉折 */
@@ -3875,6 +3878,107 @@
   };
 
   /**
+   * `coord_normalized_red_blue_connect`：同「座標正規化」路網，僅列 `node_type === 'connect'`，色相依格上度數（與 K3 JSON connect 表一致）。
+   * @returns {Array<{ row: number, segIdx: number, ptIdx: number, routeName: string, routeLabel: string, x: number, y: number, hue: string, deg: number, label: string }>}
+   */
+  const coordNormalizedRedBlueConnectList = (lyr) => {
+    if (!lyr || lyr.layerId !== COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID) return [];
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) return [];
+    const flat = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
+    );
+
+    const toGridPoint = (p) => {
+      if (Array.isArray(p) && p.length >= 2) {
+        const x = Number(p[0]);
+        const y = Number(p[1]);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      if (p && typeof p === 'object') {
+        const x = Number(p.x);
+        const y = Number(p.y);
+        return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+      }
+      return null;
+    };
+    const gkey = (gx, gy) => `${Math.round(gx)},${Math.round(gy)}`;
+    const gridDeg = new Map();
+    for (let si = 0; si < flat.length; si++) {
+      const seg = flat[si];
+      if (!seg || typeof seg !== 'object') continue;
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const coords = pts.map((p) => toGridPoint(p)).filter((p) => p);
+      for (let i = 1; i < coords.length; i++) {
+        const a = coords[i - 1];
+        const b = coords[i];
+        if (!a || !b || (a[0] === b[0] && a[1] === b[1])) continue;
+        const ka = gkey(a[0], a[1]);
+        const kb = gkey(b[0], b[1]);
+        gridDeg.set(ka, (gridDeg.get(ka) || 0) + 1);
+        gridDeg.set(kb, (gridDeg.get(kb) || 0) + 1);
+      }
+    }
+
+    const out = [];
+    let row = 0;
+    for (let segIdx = 0; segIdx < flat.length; segIdx++) {
+      const seg = flat[segIdx];
+      if (!seg || typeof seg !== 'object') continue;
+      const meta = getRouteMetaForDiag(seg, segIdx);
+      const pts = Array.isArray(seg.points) ? seg.points : [];
+      const nodes = Array.isArray(seg.nodes) ? seg.nodes : [];
+      for (let ptIdx = 0; ptIdx < pts.length; ptIdx++) {
+        const p = pts[ptIdx];
+        let x = null;
+        let y = null;
+        let node = null;
+        if (Array.isArray(p) && p.length >= 2) {
+          x = p[0];
+          y = p[1];
+          if (p.length > 2 && p[2] && typeof p[2] === 'object') node = p[2];
+        } else if (p && typeof p === 'object') {
+          x = p.x;
+          y = p.y;
+        }
+        if (!node && nodes[ptIdx] && typeof nodes[ptIdx] === 'object') node = nodes[ptIdx];
+        const gx = Number(x);
+        const gy = Number(y);
+        if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
+        const n = node && typeof node === 'object' ? node : {};
+        if (String(n.node_type ?? '').trim() !== 'connect') continue;
+
+        const d = gridDeg.get(gkey(gx, gy)) || 0;
+        const hue = d <= 1 ? '藍' : '紅';
+        const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+        let label = '';
+        const sn = String(n.station_name ?? tags.station_name ?? tags.name ?? '').trim();
+        const cn = n.connect_number ?? tags.connect_number;
+        if (sn) label = cn != null && String(cn) !== '' ? `${sn}（轉乘#${cn}）` : sn;
+        else if (cn != null && String(cn) !== '') label = `轉乘#${cn}`;
+        else label = '轉乘點';
+
+        row += 1;
+        out.push({
+          row,
+          segIdx,
+          ptIdx,
+          routeName: meta.routeName,
+          routeLabel: meta.routeLabel,
+          x: Math.round(gx),
+          y: Math.round(gy),
+          hue,
+          deg: d,
+          label,
+        });
+      }
+    }
+
+    out.sort((a, b) => a.y - b.y || a.x - b.x || a.routeLabel.localeCompare(b.routeLabel, 'zh-Hant'));
+    return out;
+  };
+
+  /**
    * 「往中心聚集」線網層：由路網拆出格點折線之水平邊、垂直邊（斜邊不列入表內，僅計數）。
    * 同一路線（同一段 polyline）上連續且共線之橫／豎邊合併為一列（邊序為起迄索引）。
    * `runsInOrder` 與 horizontal／vertical 皆依路線名（zh-Hant）再依幾何排序，供 Control 總表與「下一條」步進。
@@ -4356,7 +4460,7 @@
   };
 
   /**
-   * `orthogonal_toward_center`：讀取列／欄表／提示用之紅十字格 — 若有鎖定則回傳鎖定值，否則為目前路網 bbox 中點（不寫入 layer）。
+   * `orthogonal_toward_center_hv`／`orthogonal_toward_center_vh`：讀取列／欄表／提示用之紅十字格 — 若有鎖定則回傳鎖定值，否則為目前路網 bbox 中點（不寫入 layer）。
    */
   const readLineOrthoTowardCrossCenterForDisplay = (lyr, flat) => {
     const fc = lyr?.lineOrthoTowardCrossFrozenCenter;
@@ -5475,6 +5579,175 @@
       dataStore.saveLayerState.bind(dataStore)
     );
   };
+
+  // ── coord_normalized_red_blue_connect：按鈕式 connect 紅／藍點最佳化移動 ──────
+
+  /** 目前列表索引（-1 表示尚未開始）；每輪 0→n-1 各點只試一次，輪完再從 0 開始新一輪 */
+  const rbConnectHighlightStep = ref(-1);
+  /** 本輪（自索引 0 試到 n-1）實際套用移動的次數；整輪為 0 時自動模式停止 */
+  const rbConnectMovesInRound = ref(0);
+  const RB_CONNECT_AUTO_MS = 1000;
+  let rbConnectAutoTimerId = null;
+  const rbConnectAutoActive = ref(false);
+  let rbConnectAutoTickBusy = false;
+
+  const stopRbConnectAuto = () => {
+    if (rbConnectAutoTimerId != null) {
+      clearInterval(rbConnectAutoTimerId);
+      rbConnectAutoTimerId = null;
+    }
+    rbConnectAutoActive.value = false;
+    rbConnectAutoTickBusy = false;
+  };
+
+  /**
+   * 把路段寫回 coord_normalized_red_blue_connect 層（spaceNetworkGridJsonData + 衍生 + dataJson）。
+   * 同時更新父層 json_grid_coord_normalized 的 dataJson，讓其他鏡像圖層保持一致。
+   */
+  const applyRbConnectSegmentsToLayer = (lyr, segments) => {
+    lyr.spaceNetworkGridJsonData = segments;
+    const comp = computeStationDataFromRoutes(segments);
+    lyr.spaceNetworkGridJsonData_SectionData = comp.sectionData;
+    lyr.spaceNetworkGridJsonData_ConnectData = comp.connectData;
+    lyr.spaceNetworkGridJsonData_StationData = comp.stationData;
+    try {
+      lyr.processedJsonData = flatSegmentsToGeojsonStyleExportRows(segments);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('rbConnect 移動：processedJsonData 失敗', e);
+    }
+    syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+    // 保留 highlightedSegmentIndex／rbConnectMovePreview，由呼叫端設定
+    // 同步父層 dataJson（讓切換回座標正規化仍能看到最新路網）
+    const parent = dataStore.findLayerById('json_grid_coord_normalized');
+    if (parent && Array.isArray(lyr.dataJson)) {
+      parent.dataJson = JSON.parse(JSON.stringify(lyr.dataJson));
+      parent.jsonData = parent.dataJson;
+    }
+  };
+
+  /** 手動步進：依列表序一次一點；一輪內每點只試一次，輪完才從頭；自動模式在「整輪零移動」時停止 */
+  const advanceRbConnectHighlight = async () => {
+    const lyr = dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+    const list = lyr ? coordNormalizedRedBlueConnectList(lyr) : [];
+    if (!lyr || !list.length) {
+      window.alert('尚無 connect 點；請先開啟本圖層並確認父層「座標正規化」已有路網。');
+      stopRbConnectAuto();
+      return;
+    }
+    const n = list.length;
+    const prev = rbConnectHighlightStep.value;
+    let nextIdx;
+    if (prev < 0) {
+      nextIdx = 0;
+      lyr.rbConnectVisitedKeys = [];
+    } else {
+      nextIdx = (prev + 1) % n;
+      if (nextIdx === 0) {
+        if (rbConnectAutoActive.value && rbConnectMovesInRound.value === 0) {
+          stopRbConnectAuto();
+          return;
+        }
+        rbConnectMovesInRound.value = 0;
+        lyr.rbConnectVisitedKeys = [];
+      }
+    }
+
+    lyr.rbConnectMovePreview = null;
+    rbConnectHighlightStep.value = nextIdx;
+    const it = list[nextIdx];
+    lyr.highlightedSegmentIndex = [it.segIdx, it.ptIdx];
+    const visitedKey = `${it.segIdx},${it.ptIdx}`;
+    lyr.rbConnectVisitedKeys = Array.from(
+      new Set([...(Array.isArray(lyr.rbConnectVisitedKeys) ? lyr.rbConnectVisitedKeys : []), visitedKey])
+    );
+
+    await dataStore.saveLayerState(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID, {
+      highlightedSegmentIndex: lyr.highlightedSegmentIndex,
+      rbConnectMovePreview: null,
+      rbConnectVisitedKeys: lyr.rbConnectVisitedKeys,
+    });
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+    await nextTick();
+
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) {
+      return;
+    }
+    const flat = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
+    );
+    const r = findBestConnectPointMoveForHV(flat, it.segIdx, it.ptIdx, 2);
+    if (!r.ok) {
+      window.alert(r.message || '無法評估移動');
+      stopRbConnectAuto();
+      dataStore.saveLayerState(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID, {
+        highlightedSegmentIndex: lyr.highlightedSegmentIndex,
+        rbConnectVisitedKeys: lyr.rbConnectVisitedKeys,
+      });
+      return;
+    }
+    if (r.applied && Array.isArray(r.segments)) {
+      const ptAfter = r.segments[it.segIdx]?.points?.[it.ptIdx];
+      const toGx = Array.isArray(ptAfter)
+        ? Math.round(Number(ptAfter[0]))
+        : Math.round(Number(ptAfter?.x));
+      const toGy = Array.isArray(ptAfter)
+        ? Math.round(Number(ptAfter[1]))
+        : Math.round(Number(ptAfter?.y));
+      if (Number.isFinite(toGx) && Number.isFinite(toGy)) {
+        lyr.rbConnectMovePreview = {
+          fromGx: it.x,
+          fromGy: it.y,
+          toGx,
+          toGy,
+        };
+      }
+      rbConnectMovesInRound.value += 1;
+      lyr.highlightedSegmentIndex = [it.segIdx, it.ptIdx];
+      applyRbConnectSegmentsToLayer(lyr, r.segments);
+      dataStore.saveLayerState(
+        COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
+        jsonGridFromCoordNormalizedPersistPayload(lyr)
+      );
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+      return;
+    }
+    // 本點無可改善：僅更新 highlight
+    dataStore.saveLayerState(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID, {
+      highlightedSegmentIndex: lyr.highlightedSegmentIndex,
+      rbConnectVisitedKeys: lyr.rbConnectVisitedKeys,
+    });
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  const startRbConnectAuto = () => {
+    const lyr = dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+    if (!lyr || coordNormalizedRedBlueConnectList(lyr).length === 0) {
+      window.alert('尚無 connect 點；請先開啟本圖層並確認父層「座標正規化」已有路網。');
+      return;
+    }
+    stopRbConnectAuto();
+    rbConnectHighlightStep.value = -1;
+    rbConnectMovesInRound.value = 0;
+    lyr.rbConnectVisitedKeys = [];
+    lyr.rbConnectMovePreview = null;
+    rbConnectAutoActive.value = true;
+    rbConnectAutoTimerId = setInterval(async () => {
+      if (!rbConnectAutoActive.value || rbConnectAutoTickBusy) return;
+      rbConnectAutoTickBusy = true;
+      try {
+        await advanceRbConnectHighlight();
+      } finally {
+        rbConnectAutoTickBusy = false;
+      }
+    }, RB_CONNECT_AUTO_MS);
+  };
+
+  // ── end coord_normalized_red_blue_connect ────────────────────────────────
 
   const maybeLineOrthoHubBlueDiagonalPrepassOnce = async (lyr) => {
     if (
@@ -8835,6 +9108,112 @@
             style="font-size: 10px; line-height: 1.45"
           >
             本層有路網（spaceNetworkGridJsonData）時即可刪除無 connect 之整欄／列並壓縮座標。
+          </div>
+        </div>
+
+        <!-- 座標正規化·紅藍點列表（鏡像父層 dataJson）：僅 connect -->
+        <div
+          v-if="layer.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">connect 紅／藍點</div>
+          <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
+            與「座標正規化」同一路網來源（本層鏡像）。格點度數為相鄰折線段之端點連線數（與 K3 JSON
+            connect 列表相同算法）：度數 ≤1 為<strong>藍</strong>（末端），否則為<strong>紅</strong>（交叉）。
+            <br />
+            依列表序每次一點，一輪內每個 connect 只試一次，輪完才從列表開頭再開新一輪。「自動」每秒走一步，直到<strong>整整一輪都沒有任何移動</strong>時自動停止。下一個：先橘圈；若有移動則灰圈＝移動前格、青圈＝移動後格、橘圈疊在新格（座標正規化／垂直化分頁亦顯示，紅藍層須開啟）。
+          </div>
+          <!-- 操作按鈕 -->
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
+              style="min-height: 28px"
+              :disabled="
+                coordNormalizedRedBlueConnectList(layer).length === 0 ||
+                rbConnectAutoActive
+              "
+              @click="advanceRbConnectHighlight"
+            >
+              下一個（highlight／移動）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
+              style="min-height: 28px"
+              :disabled="
+                coordNormalizedRedBlueConnectList(layer).length === 0 ||
+                rbConnectAutoActive
+              "
+              @click="startRbConnectAuto"
+            >
+              自動（每秒；整輪無移動則停）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer btn-outline-secondary px-3"
+              style="min-height: 28px"
+              :disabled="!rbConnectAutoActive"
+              @click="stopRbConnectAuto"
+            >
+              停止自動
+            </button>
+          </div>
+          <div
+            v-if="coordNormalizedRedBlueConnectList(layer).length === 0"
+            class="text-muted my-font-size-xs"
+            style="line-height: 1.45"
+          >
+            尚無路網可列點。請開啟本圖層並確認父層「座標正規化」已有 dataJson／路網。
+          </div>
+          <div
+            v-else
+            class="border rounded overflow-auto bg-body"
+            style="max-height: 280px; font-size: 11px"
+          >
+            <table class="table table-sm table-bordered mb-0 align-middle">
+              <thead class="sticky-top bg-secondary bg-opacity-10">
+                <tr class="text-nowrap">
+                  <th>#</th>
+                  <th>路段序</th>
+                  <th>頂點序</th>
+                  <th>路線（色）</th>
+                  <th>色相</th>
+                  <th>度數</th>
+                  <th>(x,y)</th>
+                  <th>標籤</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="it in coordNormalizedRedBlueConnectList(layer)"
+                  :key="'rbconn-' + it.row + '-' + it.segIdx + '-' + it.ptIdx"
+                  :class="{
+                    'table-warning':
+                      Array.isArray(layer.highlightedSegmentIndex) &&
+                      layer.highlightedSegmentIndex[0] === it.segIdx &&
+                      layer.highlightedSegmentIndex[1] === it.ptIdx,
+                    'table-success':
+                      Array.isArray(layer.rbConnectVisitedKeys) &&
+                      layer.rbConnectVisitedKeys.includes(`${it.segIdx},${it.ptIdx}`) &&
+                      !(
+                        Array.isArray(layer.highlightedSegmentIndex) &&
+                        layer.highlightedSegmentIndex[0] === it.segIdx &&
+                        layer.highlightedSegmentIndex[1] === it.ptIdx
+                      ),
+                  }"
+                >
+                  <td>{{ it.row }}</td>
+                  <td>{{ it.segIdx }}</td>
+                  <td>{{ it.ptIdx }}</td>
+                  <td class="text-break" style="max-width: 140px">{{ it.routeLabel }}</td>
+                  <td>{{ it.hue }}</td>
+                  <td>{{ it.deg }}</td>
+                  <td class="text-nowrap">({{ it.x }}, {{ it.y }})</td>
+                  <td class="text-break" style="max-width: 160px">{{ it.label }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 

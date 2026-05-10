@@ -95,6 +95,7 @@
   import {
     JSON_GRID_COORD_NORMALIZED_LAYER_ID,
     POINT_ORTHOGONAL_LAYER_ID,
+    COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     isLineOrthogonalTowardCenterLayerId,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
@@ -3568,6 +3569,7 @@
       layerTab === 'taipei_h3_dp_2' ||
       layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
       layerTab === POINT_ORTHOGONAL_LAYER_ID ||
+      layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
       isLineOrthogonalTowardCenterLayerId(layerTab) ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
@@ -6015,9 +6017,46 @@
     }
 
     // point_orthogonal／temp：Control「下一頂點」— 橘圈；temp「朝紅十字」列＝橘線／點，欄＝藍虛線／點
-    if (layerTab === POINT_ORTHOGONAL_LAYER_ID || isLineOrthogonalTowardCenterLayerId(layerTab)) {
+    if (
+      layerTab === POINT_ORTHOGONAL_LAYER_ID ||
+      layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
+      isLineOrthogonalTowardCenterLayerId(layerTab)
+    ) {
       const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;
+      /** 橘圈：作用中分頁無 [seg,pt] 時，改讀可見之「紅藍點列表」層（Control 在該層操作時仍顯示於座標正規化／垂直化等分頁） */
+      const rbConnectVertexHlLayer = (() => {
+        const tabL = hlLayer;
+        const hTab = tabL?.highlightedSegmentIndex;
+        if (
+          Array.isArray(hTab) &&
+          hTab.length >= 2 &&
+          Number.isFinite(Number(hTab[0])) &&
+          Number.isFinite(Number(hTab[1]))
+        ) {
+          return tabL;
+        }
+        const rb = dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+        if (!rb?.visible) return tabL;
+        const hRb = rb.highlightedSegmentIndex;
+        if (
+          !Array.isArray(hRb) ||
+          hRb.length < 2 ||
+          !Number.isFinite(Number(hRb[0])) ||
+          !Number.isFinite(Number(hRb[1]))
+        ) {
+          return tabL;
+        }
+        if (
+          layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
+          layerTab === POINT_ORTHOGONAL_LAYER_ID ||
+          layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
+          isLineOrthogonalTowardCenterLayerId(layerTab)
+        ) {
+          return rb;
+        }
+        return tabL;
+      })();
       /** temp「朝紅十字」列／欄：列＝橘實線；欄＝藍虛線（便於區分水平／垂直階段）。 */
       const towardCrossAxis =
         isLineOrthogonalTowardCenterLayerId(layerTab)
@@ -6150,22 +6189,109 @@
         }
       }
 
+      /** 紅藍 connect 移動：灰圈＝移動前格、青圈＝移動後格（先畫，橘圈最後疊上＝目前頂點） */
+      const rbPrevLyr = dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+      const rbMp = rbPrevLyr?.rbConnectMovePreview;
       if (
-        hlLayer &&
-        Array.isArray(hl) &&
-        hl.length >= 2 &&
-        Number.isFinite(Number(hl[0])) &&
-        Number.isFinite(Number(hl[1]))
+        rbMp &&
+        Number.isFinite(Number(rbMp.fromGx)) &&
+        Number.isFinite(Number(rbMp.fromGy)) &&
+        Number.isFinite(Number(rbMp.toGx)) &&
+        Number.isFinite(Number(rbMp.toGy)) &&
+        (layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
+          layerTab === POINT_ORTHOGONAL_LAYER_ID ||
+          layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
+          isLineOrthogonalTowardCenterLayerId(layerTab))
       ) {
-        const resolved = resolveB3InputSpaceNetwork(hlLayer, { routeLineFromExportRows: 'full' });
+        const fgx = Math.round(Number(rbMp.fromGx));
+        const fgy = Math.round(Number(rbMp.fromGy));
+        const tgx = Math.round(Number(rbMp.toGx));
+        const tgy = Math.round(Number(rbMp.toGy));
+        zoomGroup
+          .append('g')
+          .attr('class', 'rb-connect-move-preview-from')
+          .style('pointer-events', 'none')
+          .append('circle')
+          .attr('cx', xScale(fgx))
+          .attr('cy', yScale(fgy))
+          .attr('r', 12)
+          .attr('fill', 'rgba(120, 120, 120, 0.2)')
+          .attr('stroke', '#616161')
+          .attr('stroke-width', 3)
+          .attr('stroke-dasharray', '6,4');
+        zoomGroup
+          .append('g')
+          .attr('class', 'rb-connect-move-preview-to')
+          .style('pointer-events', 'none')
+          .append('circle')
+          .attr('cx', xScale(tgx))
+          .attr('cy', yScale(tgy))
+          .attr('r', 12)
+          .attr('fill', 'rgba(0, 137, 123, 0.22)')
+          .attr('stroke', '#00695c')
+          .attr('stroke-width', 3);
+      }
+
+      /** 本輪已 highlight／處理過的紅藍 connect 點：綠圈 */
+      if (
+        rbPrevLyr?.visible &&
+        Array.isArray(rbPrevLyr.rbConnectVisitedKeys) &&
+        rbPrevLyr.rbConnectVisitedKeys.length > 0 &&
+        (layerTab === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
+          layerTab === POINT_ORTHOGONAL_LAYER_ID ||
+          layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
+          isLineOrthogonalTowardCenterLayerId(layerTab))
+      ) {
+        const resolved = resolveB3InputSpaceNetwork(rbPrevLyr, { routeLineFromExportRows: 'full' });
         const flat =
           resolved?.spaceNetwork?.length > 0
             ? normalizeSpaceNetworkDataToFlatSegments(
                 JSON.parse(JSON.stringify(resolved.spaceNetwork)),
               )
             : [];
-        const si = Number(hl[0]);
-        const pi = Number(hl[1]);
+        const seen = new Set(rbPrevLyr.rbConnectVisitedKeys);
+        for (const key of seen) {
+          const [siRaw, piRaw] = String(key).split(',');
+          const si = Number(siRaw);
+          const pi = Number(piRaw);
+          const pt = flat[si]?.points?.[pi];
+          if (!pt) continue;
+          const gx = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+          const gy = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+          if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
+          zoomGroup
+            .append('g')
+            .attr('class', 'rb-connect-visited-highlight')
+            .style('pointer-events', 'none')
+            .append('circle')
+            .attr('cx', xScale(gx))
+            .attr('cy', yScale(gy))
+            .attr('r', 11)
+            .attr('fill', 'rgba(46, 125, 50, 0.2)')
+            .attr('stroke', '#2e7d32')
+            .attr('stroke-width', 3);
+        }
+      }
+
+      const vhl = rbConnectVertexHlLayer?.highlightedSegmentIndex;
+      if (
+        rbConnectVertexHlLayer &&
+        Array.isArray(vhl) &&
+        vhl.length >= 2 &&
+        Number.isFinite(Number(vhl[0])) &&
+        Number.isFinite(Number(vhl[1]))
+      ) {
+        const resolved = resolveB3InputSpaceNetwork(rbConnectVertexHlLayer, {
+          routeLineFromExportRows: 'full',
+        });
+        const flat =
+          resolved?.spaceNetwork?.length > 0
+            ? normalizeSpaceNetworkDataToFlatSegments(
+                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+              )
+            : [];
+        const si = Number(vhl[0]);
+        const pi = Number(vhl[1]);
         const seg = flat[si];
         const pt = seg?.points?.[pi];
         if (pt) {
@@ -6190,6 +6316,7 @@
           }
         }
       }
+
       const sg = hlLayer?.jsonGridFromCoordSuggestTargetGrid;
       const sx = sg != null ? Number(sg.x) : NaN;
       const sy = sg != null ? Number(sg.y) : NaN;
@@ -6553,6 +6680,7 @@
       if (!layer) return null;
       if (
         layer.layerId === POINT_ORTHOGONAL_LAYER_ID ||
+        layer.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
         isLineOrthogonalTowardCenterLayerId(layer.layerId)
       ) {
         const hl = layer.highlightedSegmentIndex;
@@ -6590,6 +6718,38 @@
         await nextTick();
         drawSchematic();
       }
+    }
+  );
+
+  /** 「紅藍點列表」層 highlight／移動預覽變化時，在座標正規化／垂直化等分頁也重繪 */
+  watch(
+    () => {
+      const rb = dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+      return JSON.stringify([
+        rb?.visible,
+        rb?.highlightedSegmentIndex ?? null,
+        rb?.rbConnectMovePreview ?? null,
+        rb?.rbConnectVisitedKeys ?? null,
+      ]);
+    },
+    async (nv, ov) => {
+      if (nv === ov || !activeLayerTab.value) return;
+      const lid = activeLayerTab.value;
+      if (
+        !(
+          lid === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
+          lid === POINT_ORTHOGONAL_LAYER_ID ||
+          lid === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
+          isLineOrthogonalTowardCenterLayerId(lid)
+        )
+      ) {
+        return;
+      }
+      const containerId = getContainerId();
+      d3.select(`#${containerId}`).selectAll('svg').remove();
+      d3.select('body').selectAll('.d3js-map-tooltip').remove();
+      await nextTick();
+      drawSchematic();
     }
   );
 

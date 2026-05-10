@@ -11,6 +11,7 @@ import {
   POINT_ORTHOGONAL_LAYER_ID,
   isLineOrthogonalTowardCenterLayerId,
   LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+  COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
 } from './layerIds.js';
 
 /**
@@ -88,6 +89,10 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
   lyr.dataTableData = null;
   lyr.layerInfoData = null;
   lyr.highlightedSegmentIndex = null;
+  if (lyr.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID) {
+    lyr.rbConnectMovePreview = null;
+    lyr.rbConnectVisitedKeys = [];
+  }
   lyr.jsonGridFromCoordSuggestTargetGrid = null;
   lyr.lineOrthoTowardCrossHighlightTableAxis = null;
   lyr.lineOrthoTowardCrossFrozenCenter = null;
@@ -120,6 +125,10 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
     dataTableData: layer.dataTableData,
     layerInfoData: layer.layerInfoData,
     highlightedSegmentIndex: layer.highlightedSegmentIndex,
+    rbConnectMovePreview: layer.rbConnectMovePreview ?? null,
+    rbConnectVisitedKeys: Array.isArray(layer.rbConnectVisitedKeys)
+      ? layer.rbConnectVisitedKeys
+      : [],
     jsonGridFromCoordSuggestTargetGrid: layer.jsonGridFromCoordSuggestTargetGrid ?? null,
     lineOrthoTowardCrossHighlightTableAxis: layer.lineOrthoTowardCrossHighlightTableAxis ?? null,
     lineOrthoTowardCrossFrozenCenter: layer.lineOrthoTowardCrossFrozenCenter ?? null,
@@ -161,6 +170,10 @@ export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, s
     if (lineOrtho?.visible) {
       mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, lineOrtho);
     }
+  }
+  const rb = findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+  if (rb?.visible) {
+    mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, rb);
   }
 }
 

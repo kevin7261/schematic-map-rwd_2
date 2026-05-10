@@ -8,8 +8,10 @@ export {
   POINT_ORTHOGONAL_LAYER_ID,
   LINE_ORTHOGONAL_LAYER_ID,
   LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
+  COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
   LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
   isLineOrthogonalTowardCenterLayerId,
+  isCoordNormalizedDataJsonMirrorFollowonLayerId,
 } from './layerIds.js';
 export {
   applyOsm2DataJsonSyncedLayerFromParent,
@@ -49,6 +51,7 @@ export {
 export {
   findBestCoPointGroupTargetOnGrid,
   applyBestCoPointGroupMoveOnGrid,
+  findBestConnectPointMoveForHV,
 } from './axisAlignGridNetworkHillClimb.js';
 export { tryOrthoTowardCrossNudgeFromReportItem } from './orthoNudgeTowardCrossCenter.js';
 export { applyLineOrthoHubBlueDiagonalPrepassSegments } from './lineOrthoHubBlueDiagonalPrepass.js';

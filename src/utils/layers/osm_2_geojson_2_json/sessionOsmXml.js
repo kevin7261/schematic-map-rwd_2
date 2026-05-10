@@ -3,6 +3,7 @@
 import {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
+  COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
   isLineOrthogonalTowardCenterLayerId,
 } from '../json_grid_coord_normalized/layerIds.js';
 
@@ -13,6 +14,7 @@ export function isSpaceLayoutUniformGridViewerLayerId(layerId) {
   return (
     layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
     layerId === JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID ||
+    layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
     isLineOrthogonalTowardCenterLayerId(layerId)
   );
 }

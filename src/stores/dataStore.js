@@ -120,10 +120,7 @@ import {
   loadOsmXmlAsGeoJsonForRoutes,
 } from '../utils/dataProcessor.js';
 
-import {
-  POINT_ORTHOGONAL_LAYER_ID,
-  isLineOrthogonalTowardCenterLayerId,
-} from '../utils/layers/json_grid_coord_normalized/layerIds.js';
+import { isCoordNormalizedDataJsonMirrorFollowonLayerId } from '../utils/layers/json_grid_coord_normalized/layerIds.js';
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
 
@@ -407,9 +404,58 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
           {
+            /** 僅檢視：自「座標正規化」鏡像 dataJson；Control 列 connect 紅／藍點（與 K3 JSON 紅藍語意：格上度數≤1 藍、否則紅） */
+            layerId: 'coord_normalized_red_blue_connect',
+            layerName: '座標正規化·紅藍點列表',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            jsonGridFromCoordSuggestTargetGrid: null,
+            /** 最近一次 connect 移動：舊格／新格（供示意圖雙圈預覽） */
+            rbConnectMovePreview: null,
+            /** 本輪已 highlight／處理過的 connect 點（綠圈） */
+            rbConnectVisitedKeys: [],
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
             /** 路網正交段往紅十字／示意中心縮進（佇序：列→欄）；dataJson 優先自 point_orthogonal，見 mirrorFromCoordNormalizedLayer */
-            layerId: 'orthogonal_toward_center',
-            layerName: '站點與路線往中心聚集',
+            layerId: 'orthogonal_toward_center_hv',
+            layerName: '站點與路線往中心聚集（先橫後直）',
             visible: false,
             isLoading: false,
             isLoaded: false,
@@ -453,7 +499,7 @@ export const useDataStore = defineStore(
           },
           {
             /** 與前一層同演算法；控制台「朝十字縮進」隊列順序為欄（x）整表→列（y）整表 */
-            layerId: 'orthogonal_toward_center_vert_first',
+            layerId: 'orthogonal_toward_center_vh',
             layerName: '站點與路線往中心聚集（先直後橫）',
             visible: false,
             isLoading: false,
@@ -2209,11 +2255,7 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
-      if (
-        layer.visible &&
-        (layer.layerId === POINT_ORTHOGONAL_LAYER_ID ||
-          isLineOrthogonalTowardCenterLayerId(layer.layerId))
-      ) {
+      if (layer.visible && isCoordNormalizedDataJsonMirrorFollowonLayerId(layer.layerId)) {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
@@ -3360,7 +3402,7 @@ export const useDataStore = defineStore(
         return;
       }
 
-      if (layerId === POINT_ORTHOGONAL_LAYER_ID || isLineOrthogonalTowardCenterLayerId(layerId)) {
+      if (isCoordNormalizedDataJsonMirrorFollowonLayerId(layerId)) {
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }
