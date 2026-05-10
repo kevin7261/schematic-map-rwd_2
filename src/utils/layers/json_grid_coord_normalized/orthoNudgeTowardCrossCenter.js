@@ -3,6 +3,8 @@
  * 並以 {@link checkOrthoGridHardConstraints} 驗證（無交叉／共線重疊／頂點落他線、無非法併格、無零長邊）。
  * 繼續逼近須再由外層多按數次／自動排程迭代。
  *
+ * **Pulse 前置：** {@link snapRedBlueTerminalEdgesTowardOrthoBeforeRound} 將紅／藍 connect 末端斜邊盡先拉直（藍端平移）。
+ *
  * **決策準則：** 僅評估該一格位移；須硬約束通過，且須維持或增加全路網水平／垂直邊數（若以「正交」分數並列，視為沿用唯一候選）。
  * 頂點收集時**自動展開共點夥伴**（避免共點中只動部分頂點而造成拓撲斷開）。
  */
@@ -151,6 +153,223 @@ function countOrthoEdges(segments) {
     }
   }
   return count;
+}
+
+function orthoRoundedXY(pt) {
+  const x = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
+  const y = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return [Math.round(x), Math.round(y)];
+}
+
+function hasNonEmptyProp(v) {
+  return v != null && String(v).trim() !== '';
+}
+
+/** 與 ControlTab／示意圖：terminal 標記視為末端（藍），不依賴度數。 */
+function connectTaggedTerminalBlueHue(nodes, pi) {
+  const n = Array.isArray(nodes) ? nodes[pi] : null;
+  if (!n || typeof n !== 'object') return false;
+  const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+  const raw =
+    n.type ?? tags.type ?? n.connect_type ?? tags.connect_type ?? n.station_type ?? tags.station_type;
+  const s = raw == null ? '' : String(raw).trim().toLowerCase();
+  if (!s) return false;
+  return (
+    s === 'terminal' || s === 'terminus' || s === 'end' || s === 'endpoint' || s === 'line_end'
+  );
+}
+
+function vertexIsConnectNode(seg, pi) {
+  const nodes = Array.isArray(seg?.nodes) ? seg.nodes : [];
+  const n = nodes[pi];
+  if (!n || typeof n !== 'object') return false;
+  const nt = String(n.node_type ?? '').trim();
+  const tags = n.tags && typeof n.tags === 'object' ? n.tags : {};
+  return nt === 'connect' || hasNonEmptyProp(n.connect_number) || hasNonEmptyProp(tags.connect_number);
+}
+
+/** 全路網：每個格點上所「掛」的折線段端次數之和（繪圖上紅／藍分界與 taipei_h3 一致）。 */
+function buildGridConnectEdgeIncidence(segments) {
+  const deg = new Map();
+  const bump = (gx, gy) => {
+    const k = `${gx},${gy}`;
+    deg.set(k, (deg.get(k) ?? 0) + 1);
+  };
+  for (let si = 0; si < segments.length; si++) {
+    const pts = segments[si]?.points;
+    if (!Array.isArray(pts)) continue;
+    for (let pi = 0; pi < pts.length - 1; pi++) {
+      const a = orthoRoundedXY(pts[pi]);
+      const b = orthoRoundedXY(pts[pi + 1]);
+      if (!a || !b) continue;
+      if (a[0] === b[0] && a[1] === b[1]) continue;
+      bump(a[0], a[1]);
+      bump(b[0], b[1]);
+    }
+  }
+  return deg;
+}
+
+function isBlueHueConnectVertex(seg, pi, incidence) {
+  if (!vertexIsConnectNode(seg, pi)) return false;
+  const nodes = seg?.nodes ?? [];
+  if (connectTaggedTerminalBlueHue(nodes, pi)) return true;
+  const coords = orthoRoundedXY(seg.points?.[pi]);
+  if (!coords) return false;
+  const d = incidence.get(`${coords[0]},${coords[1]}`) ?? 0;
+  return d <= 1;
+}
+
+function isRedHueConnectVertex(seg, pi, incidence) {
+  return vertexIsConnectNode(seg, pi) && !isBlueHueConnectVertex(seg, pi, incidence);
+}
+
+/** 統計<strong>同名路線</strong>各路網段上之正交邊朝向（不含被排除的那一條）。 */
+function countOrthoHVExcludeEdgeOnSameRoute(segments, routeKey, excludeSi, excludePi) {
+  let h = 0;
+  let v = 0;
+  const rk = String(routeKey ?? '').trim();
+  for (let si = 0; si < segments.length; si++) {
+    const seg = segments[si];
+    const rn = String(seg?.route_name ?? seg?.name ?? '').trim();
+    if (rn !== rk) continue;
+    const pts = seg?.points;
+    if (!Array.isArray(pts) || pts.length < 2) continue;
+    for (let pi = 0; pi < pts.length - 1; pi++) {
+      if (si === excludeSi && pi === excludePi) continue;
+      const ax = orthoRoundedXY(pts[pi]);
+      const bx = orthoRoundedXY(pts[pi + 1]);
+      if (!ax || !bx) continue;
+      if (ax[0] === bx[0] && ax[1] === bx[1]) continue;
+      if (ax[0] === bx[0]) v += 1;
+      else if (ax[1] === bx[1]) h += 1;
+    }
+  }
+  return { h, v };
+}
+
+/**
+ * 「站點與路線往中心聚集」：**每次 pulse 開始前**將紅（交叉／非末端）連接點與藍（末端）連接點間之**斜邊**，
+ * 嘗試平移<strong>藍端</strong>使之與紅端對齊成水平段或垂直段；二擇時依<strong>同名路線</strong>其他正交邊之水平／垂直多數決。
+ * 會重複掃描直至本輪無可套用者；每步均經 {@link checkOrthoGridHardConstraints}，且維持或增加 {@link countOrthoEdges}。
+ *
+ * @param {Array<object>} segments — 已 clone 之 flat 路網（**原地修改**）
+ * @param {Map<string,string>} initialGroupIds — 本 pulse 起始共點群組（與朝中心縮進相同）
+ * @param {{ maxPasses?: number }} [opts]
+ * @returns {{ appliedAny: boolean, cellsMovedSum: number }}
+ */
+export function snapRedBlueTerminalEdgesTowardOrthoBeforeRound(segments, initialGroupIds, opts = {}) {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return { appliedAny: false, cellsMovedSum: 0 };
+  }
+  const maxPasses = opts.maxPasses ?? Math.max(256, segments.length * 32);
+  let cellsMovedSum = 0;
+  let appliedAny = false;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const incidence = buildGridConnectEdgeIncidence(segments);
+    const snapped = trySnapOneRedBlueDiagonalEdge(segments, initialGroupIds, incidence);
+    if (!snapped) break;
+    appliedAny = true;
+    cellsMovedSum += snapped.manhattan;
+  }
+  return { appliedAny, cellsMovedSum };
+}
+
+/** @returns {{ manhattan: number }|null} */
+function trySnapOneRedBlueDiagonalEdge(segments, initialGroupIds, incidence) {
+  for (let si = 0; si < segments.length; si++) {
+    const seg = segments[si];
+    const pts = seg?.points;
+    const nPts = Array.isArray(pts) ? pts.length : 0;
+    if (nPts < 2) continue;
+    const routeKey = String(seg?.route_name ?? seg?.name ?? '').trim();
+
+    for (let pi = 0; pi < nPts - 1; pi++) {
+      const a = orthoRoundedXY(pts[pi]);
+      const bc = orthoRoundedXY(pts[pi + 1]);
+      if (!a || !bc) continue;
+      const [ax, ay] = a;
+      const [bxGrid, byGrid] = bc;
+      if (ax === bxGrid || ay === byGrid) continue;
+
+      if (!vertexIsConnectNode(seg, pi) || !vertexIsConnectNode(seg, pi + 1)) continue;
+
+      let bluePi = null;
+      let redPi = null;
+      if (isBlueHueConnectVertex(seg, pi, incidence) && isRedHueConnectVertex(seg, pi + 1, incidence)) {
+        bluePi = pi;
+        redPi = pi + 1;
+      } else if (
+        isBlueHueConnectVertex(seg, pi + 1, incidence) &&
+        isRedHueConnectVertex(seg, pi, incidence)
+      ) {
+        bluePi = pi + 1;
+        redPi = pi;
+      } else continue;
+
+      const rxy = orthoRoundedXY(pts[redPi]);
+      const bxy = orthoRoundedXY(pts[bluePi]);
+      if (!rxy || !bxy) continue;
+      const [rx, ry] = rxy;
+      const [blx, bly] = bxy;
+
+      const deltaH = { dx: 0, dy: ry - bly, kind: 'H' };
+      const deltaV = { dx: rx - blx, dy: 0, kind: 'V' };
+
+      const gm = buildOrthoCellGroups(segments);
+      const rawRefs = dedupeRefs(gm.get(`${blx},${bly}`) ?? []);
+      if (rawRefs.length === 0) continue;
+
+      const baseOrtho = countOrthoEdges(segments);
+      const { h: prefH, v: prefV } = countOrthoHVExcludeEdgeOnSameRoute(
+        segments,
+        routeKey,
+        si,
+        pi,
+      );
+      const routePrefer = prefH === prefV ? 0 : prefH > prefV ? 1 : -1;
+
+      const evaluate = (d) => {
+        if (d.dx === 0 && d.dy === 0) return null;
+        const trial = shallowCloneOrthoSegmentsSynced(segments);
+        const trialGm = buildOrthoCellGroups(trial);
+        const refs = dedupeRefs(trialGm.get(`${blx},${bly}`) ?? []);
+        applyOrthoVertexRefsDelta(trial, refs, d.dx, d.dy);
+        if (!checkOrthoGridHardConstraints(trial, initialGroupIds).ok) return null;
+        const o = countOrthoEdges(trial);
+        if (o < baseOrtho) return null;
+        let orthoScore = o * 10_000;
+        if (routePrefer === 1 && d.kind === 'H') orthoScore += 500;
+        else if (routePrefer === -1 && d.kind === 'V') orthoScore += 500;
+        else if (routePrefer === 0 && d.kind === 'H') orthoScore += 1;
+        return {
+          dx: d.dx,
+          dy: d.dy,
+          kind: d.kind,
+          orthoEdges: o,
+          orthoScore,
+          manhattanAbs: Math.abs(d.dx) + Math.abs(d.dy),
+        };
+      };
+
+      const cH = evaluate(deltaH);
+      const cV = evaluate(deltaV);
+      let winner = null;
+      if (!cH) winner = cV;
+      else if (!cV) winner = cH;
+      else if (cH.orthoEdges !== cV.orthoEdges) winner = cH.orthoEdges >= cV.orthoEdges ? cH : cV;
+      else if (cH.orthoScore !== cV.orthoScore) winner = cH.orthoScore >= cV.orthoScore ? cH : cV;
+      /** 仍平手則優先位移量較小者（常見為單邊為 1 格）。 */
+      else winner = cH.manhattanAbs <= cV.manhattanAbs ? cH : cV;
+
+      if (!winner) continue;
+
+      applyOrthoVertexRefsDelta(segments, rawRefs, winner.dx, winner.dy);
+      return { manhattan: winner.manhattanAbs };
+    }
+  }
+  return null;
 }
 
 /** 單次 Pulse 最多往中心方向位移的網格整數數（規格為 1 格） */

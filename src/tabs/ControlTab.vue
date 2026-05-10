@@ -42,6 +42,7 @@
     LINE_ORTHOGONAL_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     tryOrthoTowardCrossNudgeFromReportItem,
+    snapRedBlueTerminalEdgesTowardOrthoBeforeRound,
     shallowCloneOrthoSegmentsSynced,
     buildInitialOrthoCoPointGroups,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
@@ -4954,7 +4955,8 @@
 
     let workingFlat = shallowCloneOrthoSegmentsSynced(flat);
     const frozenIds = buildInitialOrthoCoPointGroups(workingFlat);
-    let stepCount = 0;
+    const snapRes = snapRedBlueTerminalEdgesTowardOrthoBeforeRound(workingFlat, frozenIds);
+    let stepCount = snapRes.cellsMovedSum;
     let haltReason = '';
 
     const r = tryOrthoTowardCrossNudgeFromReportItem(
@@ -5002,7 +5004,7 @@
       }
     } else {
       workingFlat = r.segments;
-      stepCount = r.cellsMoved ?? 1;
+      stepCount += r.cellsMoved ?? 1;
     }
 
     /** 套用後之重算報表／中心（離紅線 y／x 與新路網一致）— 無位移時沿用 pulse 開始時結果 */
