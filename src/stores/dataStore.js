@@ -2211,7 +2211,8 @@ export const useDataStore = defineStore(
 
       if (
         layer.visible &&
-        (layer.layerId === POINT_ORTHOGONAL_LAYER_ID || isLineOrthogonalTowardCenterLayerId(layer.layerId))
+        (layer.layerId === POINT_ORTHOGONAL_LAYER_ID ||
+          isLineOrthogonalTowardCenterLayerId(layer.layerId))
       ) {
         mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
       }
