@@ -79,7 +79,8 @@
   import {
     JSON_GRID_COORD_NORMALIZED_LAYER_ID,
     isCoordNormalizedDataJsonMirrorFollowonLayerId,
-  } from '@/utils/layers/json_grid_coord_normalized/layerIds.js';
+    jsonViewerPayloadForCoordNormalizedFamilyLayer,
+  } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import {
     minimalLineStringFeatureCollectionFromRouteExportRows,
     mapDrawnExportRowsFromJsonDrawRoot,
@@ -292,24 +293,10 @@
       layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
       isCoordNormalizedDataJsonMirrorFollowonLayerId(layer.layerId)
     ) {
-      const sn = layer.spaceNetworkGridJsonData;
-      if (Array.isArray(sn) && sn.length > 0) {
+      const payload = jsonViewerPayloadForCoordNormalizedFamilyLayer(layer);
+      if (payload != null) {
         try {
-          return JSON.stringify(sn, null, 2);
-        } catch (e) {
-          return String(e);
-        }
-      }
-      if (layer.processedJsonData != null) {
-        try {
-          return JSON.stringify(layer.processedJsonData, null, 2);
-        } catch (e) {
-          return String(e);
-        }
-      }
-      if (layer.dashboardData != null) {
-        try {
-          return JSON.stringify(layer.dashboardData, null, 2);
+          return JSON.stringify(payload, null, 2);
         } catch (e) {
           return String(e);
         }

@@ -52,6 +52,7 @@
     shallowCloneOrthoSegmentsSynced,
     buildInitialOrthoCoPointGroups,
     findBestConnectPointMoveForHV,
+    jsonViewerPayloadForCoordNormalizedFamilyLayer,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
@@ -8637,11 +8638,22 @@
       ? 'orthogonal_toward_center_vh_routes.json'
       : 'orthogonal_toward_center_hv_routes.json';
 
-  /** `orthogonal_toward_center_hv`／`vh`：與 taipei_e／f 相同之地圖路段匯出 */
+  /** `orthogonal_toward_center_hv`／`vh`：與 Upper「json-viewer」相同（spaceNetworkGridJsonData → processedJsonData → dashboardData） */
   const downloadLineOrthoTowardCenterRoutesJson = (layer) => {
     const id = layer?.layerId;
     if (!id || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(id)) return;
-    downloadMapDrawnExportJson(id, lineOrthoTowardCenterRoutesExportFilename(id));
+    const payload = jsonViewerPayloadForCoordNormalizedFamilyLayer(layer);
+    if (payload == null) return;
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = lineOrthoTowardCenterRoutesExportFilename(id);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   /** 測試_4 taipei_sn4_a：下載 WGS84 GeoJSON */
@@ -9511,10 +9523,10 @@
               <button
                 type="button"
                 class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary mb-2"
-                :disabled="isExecuting || !(layer.spaceNetworkGridJsonData?.length)"
+                :disabled="isExecuting || jsonViewerPayloadForCoordNormalizedFamilyLayer(layer) == null"
                 @click="downloadLineOrthoTowardCenterRoutesJson(layer)"
               >
-                下載 JSON（路段匯出格式，與 taipei_e／f 相同）
+                下載 JSON（與 Upper「json-viewer」相同內容）
               </button>
               <div
                 class="border rounded bg-body px-2 py-1 mb-2 text-secondary"

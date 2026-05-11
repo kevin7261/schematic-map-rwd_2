@@ -15,6 +15,7 @@ export {
   isOrthogonalVhDataJsonDrawMirrorLayerId,
   isCoordNormalizedDataJsonMirrorFollowonLayerId,
 } from './layerIds.js';
+export { jsonViewerPayloadForCoordNormalizedFamilyLayer } from './jsonViewerPayloadForCoordNormalizedFamilyLayer.js';
 export {
   applyOsm2DataJsonSyncedLayerFromParent,
   resetJsonGridCoordNormalizedPipelineFields,
