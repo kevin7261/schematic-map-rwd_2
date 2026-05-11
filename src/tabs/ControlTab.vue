@@ -8638,18 +8638,27 @@
       ? 'orthogonal_toward_center_vh_routes.json'
       : 'orthogonal_toward_center_hv_routes.json';
 
-  /** `orthogonal_toward_center_hv`／`vh`：與 Upper「json-viewer」相同（spaceNetworkGridJsonData → processedJsonData → dashboardData） */
-  const downloadLineOrthoTowardCenterRoutesJson = (layer) => {
+  /**
+   * `orthogonal_toward_center_hv`／`vh`：與 Upper「json-viewer」同一來源（SpaceNetworkGridJsonDataTab
+   * `isSpaceLayoutUniformGridViewerLayerId` → `dataJson ?? jsonData`）。勿用
+   * {@link jsonViewerPayloadForCoordNormalizedFamilyLayer}（會取 spaceNetworkGridJsonData 等，與檢視不一致）。
+   */
+  const lineOrthoTowardCenterJsonViewerMirrorPayload = (layer) => {
     const id = layer?.layerId;
-    if (!id || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(id)) return;
-    const payload = jsonViewerPayloadForCoordNormalizedFamilyLayer(layer);
+    if (!id || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(id)) return null;
+    const jdraw = layer.dataJson ?? layer.jsonData;
+    return jdraw != null ? jdraw : null;
+  };
+
+  const downloadLineOrthoTowardCenterRoutesJson = (layer) => {
+    const payload = lineOrthoTowardCenterJsonViewerMirrorPayload(layer);
     if (payload == null) return;
     const json = JSON.stringify(payload, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = lineOrthoTowardCenterRoutesExportFilename(id);
+    a.download = lineOrthoTowardCenterRoutesExportFilename(layer.layerId);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -9523,7 +9532,7 @@
               <button
                 type="button"
                 class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary mb-2"
-                :disabled="isExecuting || jsonViewerPayloadForCoordNormalizedFamilyLayer(layer) == null"
+                :disabled="isExecuting || lineOrthoTowardCenterJsonViewerMirrorPayload(layer) == null"
                 @click="downloadLineOrthoTowardCenterRoutesJson(layer)"
               >
                 下載 JSON（與 Upper「json-viewer」相同內容）

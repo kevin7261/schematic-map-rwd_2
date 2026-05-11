@@ -5,6 +5,7 @@ import {
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
   isLineOrthogonalTowardCenterLayerId,
+  isOrthogonalVhDataJsonDrawMirrorLayerId,
 } from '../json_grid_coord_normalized/layerIds.js';
 
 export const LAYER_ID = 'osm_2_geojson_2_json';
@@ -15,7 +16,8 @@ export function isSpaceLayoutUniformGridViewerLayerId(layerId) {
     layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
     layerId === JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID ||
     layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
-    isLineOrthogonalTowardCenterLayerId(layerId)
+    isLineOrthogonalTowardCenterLayerId(layerId) ||
+    isOrthogonalVhDataJsonDrawMirrorLayerId(layerId)
   );
 }
 
