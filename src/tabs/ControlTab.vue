@@ -6197,6 +6197,8 @@
   const VH_DRAW_DIAGONAL_ROUTE_AUTO_MS = 1000;
   let vhDrawDiagonalRouteAutoTimerId = null;
   const vhDrawDiagonalRouteAutoActive = ref(false);
+  /** 斜向替換自動模式：`'l'` 僅正交 L；`'nz'` 僅 N／Z */
+  const vhDrawDiagonalRouteAutoKind = ref('l');
   let vhDrawDiagonalRouteAutoTickBusy = false;
   /** 下一條要處理的 flat 折線索引（循環 0…n−1，與 normalize 後 segment 序一致） */
   const vhDrawDiagonalRouteCursor = ref(0);
@@ -6209,11 +6211,24 @@
       vhDrawDiagonalRouteAutoTimerId = null;
     }
     vhDrawDiagonalRouteAutoActive.value = false;
+    vhDrawDiagonalRouteAutoKind.value = 'l';
     vhDrawDiagonalRouteAutoTickBusy = false;
     vhDrawDiagonalRouteAutoIdleStreak = 0;
   };
 
-  const vhDrawDiagonalOrthoOpts = () => ({ preferVertFirst: true, tryNzIfNoL: true });
+  function vhDrawDiagonalOrthoOptsFor(kind) {
+    if (kind === 'nz') return { preferVertFirst: true, tryL: false, tryNzIfNoL: true };
+    return { preferVertFirst: true, tryL: true, tryNzIfNoL: false };
+  }
+
+  function vhDrawDiagonalAutoButtonLabel(kind) {
+    if (vhDrawDiagonalRouteAutoActive.value && vhDrawDiagonalRouteAutoKind.value === kind) {
+      return kind === 'nz'
+        ? '停止自動（每秒一條路線·N／Z）'
+        : '停止自動（每秒一條路線·僅 L）';
+    }
+    return kind === 'nz' ? '自動執行：每秒一條路線（僅 N／Z）' : '自動執行：每秒一條路線（僅 L）';
+  }
 
   const applyVhDrawDiagonalAfterReplace = async (lyr, segments) => {
     applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, segments);
@@ -6238,8 +6253,8 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
-  /** 「先直後橫·dataJson 繪製」：斜邊先試改 L，兩種 L 皆不可行再試 N／Z 形（一鍵整個路網跑完）；約束同 hill climb */
-  const onOrthogonalVhDrawDiagonalToLClick = async (lyr) => {
+  /** 「先直後橫·dataJson 繪製」：一鍵整個路網；`kind` 為 `'l'` 僅 L，`'nz'` 僅 N／Z */
+  const onOrthogonalVhDrawDiagonalToLClick = async (lyr, kind) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
@@ -6259,7 +6274,7 @@
       const flat = normalizeSpaceNetworkDataToFlatSegments(
         JSON.parse(JSON.stringify(resolved.spaceNetwork))
       );
-      const r = replaceDiagonalEdgesWithLOrtho(flat, { preferVertFirst: true, tryNzIfNoL: true });
+      const r = replaceDiagonalEdgesWithLOrtho(flat, vhDrawDiagonalOrthoOptsFor(kind));
       if (!r.ok) {
         window.alert(r.message || '無法套用（路網幾何約束）。');
         return;
@@ -6275,7 +6290,9 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       window.alert(
-        `已將 ${r.replacedCount} 條非水平／垂直邊改為正交路徑：優先 L（兩段）；若兩種 L 皆不可行則改為 N／Z 形（三段：先豎─橫─豎或先橫─豎─橫，內點轉角枚舉）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則先直後橫（含 N 優先於 Z）。`
+        kind === 'nz'
+          ? `已將 ${r.replacedCount} 條非水平／垂直邊改為 N／Z 形（三段：先豎─橫─豎或先橫─豎─橫，內點轉角枚舉；不試 L）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時先直後橫偏好（N 優先於 Z）。`
+          : `已將 ${r.replacedCount} 條非水平／垂直邊改為正交 L（兩段；不試 N／Z）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則「先直後橫」偏好。`
       );
     } catch (err) {
       console.error(err);
@@ -6288,7 +6305,7 @@
   };
 
   /** 每次只處理游標對應的一條折線（該線上可換斜邊一次清完），游標再移下一條（循環） */
-  const onOrthogonalVhDrawDiagonalOneRouteClick = async (lyr) => {
+  const onOrthogonalVhDrawDiagonalOneRouteClick = async (lyr, kind) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
@@ -6311,7 +6328,7 @@
       }
       await syncVhDrawDiagonalRouteHighlightToLayer(lyr);
       const si = ((vhDrawDiagonalRouteCursor.value % n) + n) % n;
-      const r = replaceDiagonalsInRouteUntilClear(flat, si, vhDrawDiagonalOrthoOpts());
+      const r = replaceDiagonalsInRouteUntilClear(flat, si, vhDrawDiagonalOrthoOptsFor(kind));
       if (!r.ok) {
         window.alert(r.message || '無法套用（路網幾何約束）。');
         return;
@@ -6333,11 +6350,14 @@
   };
 
   /** 每秒處理下一條折線（同上）；連續一輪 n 條皆無替換則停止（概念同 connect 自動） */
-  const toggleOrthogonalVhDrawDiagonalRouteAuto = (lyr) => {
+  const toggleOrthogonalVhDrawDiagonalRouteAuto = (lyr, kind) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
-    if (vhDrawDiagonalRouteAutoActive.value) {
+    if (vhDrawDiagonalRouteAutoActive.value && vhDrawDiagonalRouteAutoKind.value === kind) {
       stopVhDrawDiagonalRouteAuto();
       return;
+    }
+    if (vhDrawDiagonalRouteAutoActive.value) {
+      stopVhDrawDiagonalRouteAuto();
     }
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) {
@@ -6351,7 +6371,7 @@
       window.alert('無 flat 路段。');
       return;
     }
-    stopVhDrawDiagonalRouteAuto();
+    vhDrawDiagonalRouteAutoKind.value = kind;
     vhDrawDiagonalRouteAutoActive.value = true;
     vhDrawDiagonalRouteAutoIdleStreak = 0;
     stopJsonGridFromCoordVertexAuto();
@@ -6380,7 +6400,7 @@
           return;
         }
         const si = ((vhDrawDiagonalRouteCursor.value % n) + n) % n;
-        const r = replaceDiagonalsInRouteUntilClear(f, si, vhDrawDiagonalOrthoOpts());
+        const r = replaceDiagonalsInRouteUntilClear(f, si, vhDrawDiagonalOrthoOptsFor(vhDrawDiagonalRouteAutoKind.value));
         if (!r.ok) {
           stopVhDrawDiagonalRouteAuto();
           window.alert(r.message || '路網約束錯誤，已停止自動。');
@@ -9881,37 +9901,83 @@
           >
             {{ vhDrawLShapeStepHint }}
           </div>
-          <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L；否則 N／Z 形</div>
-          <div class="d-grid gap-2 mb-2">
+          <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            僅嘗試兩種<strong>正交 L</strong>（一角、兩段 H／V）；不試 N／Z。逐條處理單一斜向邊；約束同下（交叉／共線重疊／壓紅藍／轉角疊他線頂點則略過）。
+          </div>
+          <div class="d-grid gap-2 mb-3">
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
               :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive"
-              @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer)"
+              @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'l')"
             >
-              下一條路線：只處理目前序號之折線（該線斜邊清完後換下一條，循環）
+              下一步：下一條路線（僅 L；該線斜邊清完後換下一條，循環）
             </button>
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
-              :class="vhDrawDiagonalRouteAutoActive ? 'my-btn-orange' : 'my-btn-blue'"
-              :disabled="isExecuting || vhDrawLShapeAutoActive"
-              @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer)"
+              :class="
+                vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind === 'l'
+                  ? 'my-btn-orange'
+                  : 'my-btn-blue'
+              "
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                (vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind !== 'l')
+              "
+              @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer, 'l')"
             >
-              {{
-                vhDrawDiagonalRouteAutoActive
-                  ? '停止自動（每秒一條路線）'
-                  : '自動執行：每秒一條路線'
-              }}
+              {{ vhDrawDiagonalAutoButtonLabel('l') }}
             </button>
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
               :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
-              @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
+              @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'l')"
             >
-              一鍵全路網：非 H／V 邊 → L 或
-              N／Z（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
+              一鍵全路網：非 H／V 邊 → 僅正交 L（兩段）
+            </button>
+          </div>
+
+          <div class="my-title-xs-gray pb-2">斜向邊 → N／Z 形</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            不試 L，僅以 <strong>Z</strong>（橫─豎─橫）或 <strong>N／反 N</strong>（豎─橫─豎）替換斜邊，內點轉角枚舉；約束同上。平手時「先直後橫」偏好（N 優先於 Z）。
+          </div>
+          <div class="d-grid gap-2 mb-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive"
+              @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'nz')"
+            >
+              下一步：下一條路線（僅 N／Z；該線斜邊清完後換下一條，循環）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              :class="
+                vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind === 'nz'
+                  ? 'my-btn-orange'
+                  : 'my-btn-blue'
+              "
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                (vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind !== 'nz')
+              "
+              @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer, 'nz')"
+            >
+              {{ vhDrawDiagonalAutoButtonLabel('nz') }}
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
+              @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'nz')"
+            >
+              一鍵全路網：非 H／V 邊 → 僅 N／Z（三正交段）
             </button>
           </div>
           <div
@@ -9924,11 +9990,7 @@
           <div class="text-muted my-font-size-xs" style="line-height: 1.45">
             <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含
             <code class="small">mapDrawnRoutes</code>
-            之物件。逐條處理<strong>單一斜向邊</strong>：<strong>L</strong>（兩正交段）優先；兩種 L
-            皆不可行時改 <strong>Z</strong>（橫─豎─橫）或
-            <strong>N／反 N</strong
-            >（豎─橫─豎），內點轉角枚舉；仍違反交叉／共線重疊／壓紅藍／轉角疊他線頂點則略過。平手優先與鄰邊拉直，再平手則「先直後橫」偏好（N
-            優先於 Z）。
+            之物件。兩區塊共用同一條路線序號與提示列；自動執行僅能擇一（L 或 N／Z）運行。
           </div>
         </div>
 

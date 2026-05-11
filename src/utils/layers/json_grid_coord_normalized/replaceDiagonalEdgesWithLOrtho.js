@@ -1,7 +1,7 @@
 /**
  * 將各折線上「非水平／非垂直」的單一邊改為正交路徑：
  *
- * 1. **L 形**（兩段正交、一個轉角）：先橫後豎 `(x1,y)` 或先豎後橫 `(x,y1)`。
+ * 1. **L 形**（兩段正交、一個轉角）：先橫後豎 `(x1,y)` 或先豎後橫 `(x,y1)`；`tryL === false` 時略過。
  * 2. 若兩種 L 皆不可行且 `tryNzIfNoL` 為 true，再試 **Z 形**（H-V-H：`(x0,y0)→(kx,y0)→(kx,y1)→(x1,y1)`）
  *    與 **N／反 N 形**（V-H-V：`(x0,y0)→(x0,ky)→(x1,ky)→(x1,y1)`），其中 `kx`、`ky` 為起迄之間的格點內點。
  *
@@ -392,7 +392,7 @@ function buildNzReplacementsForDiagonal(
  * @param {number} routeSegmentIndex flatSegments 折線索引
  */
 function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options) {
-  const { preferVertFirst = false, tryNzIfNoL = true } = options;
+  const { preferVertFirst = false, tryNzIfNoL = true, tryL = true } = options;
   const si = routeSegmentIndex;
   const pts = work[si]?.points;
   if (!Array.isArray(pts) || pts.length < 2) return { work, replacedCount: 0 };
@@ -413,42 +413,45 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
     ];
 
     const allowedCornerKeys = rbConnectAllowedCornerKeysForDiagonalEdge(work, si, pi);
-    const viable = [];
-    for (const { cx, cy, horizFirst } of cand) {
-      if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
-      const trial = JSON.parse(JSON.stringify(work));
-      if (!insertCorner(trial, si, pi, cx, cy)) continue;
-      syncOrthoFlatSegmentEndpoints(trial);
-      if (
-        orthoLcCornerTouchesForeignRbConnectDisplay(
-          cx,
-          cy,
-          trial,
-          si,
-          pi,
-          pi + 2,
-          allowedCornerKeys,
-        ) ||
-        orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
-        orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
-      )
-        continue;
-      const score = straightContinuationScore(x0, y0, x1, y1, cx, cy, px0, py0, nx1, ny1);
-      viable.push({ trial, score, horizFirst });
-    }
 
-    if (viable.length > 0) {
-      viable.sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        if (a.horizFirst !== b.horizFirst) {
-          if (preferVertFirst) return a.horizFirst ? 1 : -1;
-          return a.horizFirst ? -1 : 1;
-        }
-        return 0;
-      });
-      const next = viable[0].trial;
-      syncOrthoFlatSegmentEndpoints(next);
-      return { work: next, replacedCount: 1 };
+    if (tryL) {
+      const viable = [];
+      for (const { cx, cy, horizFirst } of cand) {
+        if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
+        const trial = JSON.parse(JSON.stringify(work));
+        if (!insertCorner(trial, si, pi, cx, cy)) continue;
+        syncOrthoFlatSegmentEndpoints(trial);
+        if (
+          orthoLcCornerTouchesForeignRbConnectDisplay(
+            cx,
+            cy,
+            trial,
+            si,
+            pi,
+            pi + 2,
+            allowedCornerKeys,
+          ) ||
+          orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
+          orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
+        )
+          continue;
+        const score = straightContinuationScore(x0, y0, x1, y1, cx, cy, px0, py0, nx1, ny1);
+        viable.push({ trial, score, horizFirst });
+      }
+
+      if (viable.length > 0) {
+        viable.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (a.horizFirst !== b.horizFirst) {
+            if (preferVertFirst) return a.horizFirst ? 1 : -1;
+            return a.horizFirst ? -1 : 1;
+          }
+          return 0;
+        });
+        const next = viable[0].trial;
+        syncOrthoFlatSegmentEndpoints(next);
+        return { work: next, replacedCount: 1 };
+      }
     }
 
     if (!tryNzIfNoL) continue;
@@ -490,6 +493,7 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
 
 /**
  * 僅針對單一折線（`flatSegments[routeSegmentIndex]`）：替換**一處**斜邊（若存在）。
+ * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean, tryL?: boolean }} [options] `tryL` 預設 true；`tryNzIfNoL` 預設 true。
  */
 export function replaceOneDiagonalInRoute(flatSegments, routeSegmentIndex, options = {}) {
   if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
@@ -571,11 +575,11 @@ export function replaceDiagonalsInRouteUntilClear(flatSegments, routeSegmentInde
 
 /**
  * @param {Array<object>} flatSegments normalizeSpaceNetworkDataToFlatSegments 結果
- * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean }} [options]
+ * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean, tryL?: boolean }} [options]
  * @returns {{ ok: boolean, segments: Array<object>, replacedCount: number, message?: string }}
  */
 export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
-  const opts = options;
+  const opts = { tryL: true, tryNzIfNoL: true, preferVertFirst: false, ...options };
   if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
     return {
       ok: false,
@@ -616,13 +620,25 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
     if (!replacedThisRound) break;
   }
 
+  const tryL = opts.tryL !== false;
+  const tryNz = opts.tryNzIfNoL !== false;
+  let modePhrase = '優先 L，否則 N／Z 形三正交段';
+  let emptyPhrase = '沒有可替換的非正交邊，或 L／N／Z 皆違反約束。';
+  if (tryL && !tryNz) {
+    modePhrase = '僅正交 L（兩段）';
+    emptyPhrase = '沒有可替換的非正交邊，或兩種 L 皆違反約束。';
+  } else if (!tryL && tryNz) {
+    modePhrase = '僅 N／Z 形三正交段';
+    emptyPhrase = '沒有可替換的非正交邊，或 N／Z 皆違反約束。';
+  }
+
   return {
     ok: true,
     segments: work,
     replacedCount,
     message:
       replacedCount === 0
-        ? '沒有可替換的非正交邊，或 L／N／Z 皆違反約束。'
-        : `已替換 ${replacedCount} 條非正交邊（優先 L，否則 N／Z 形三正交段）。`,
+        ? emptyPhrase
+        : `已替換 ${replacedCount} 條非正交邊（${modePhrase}）。`,
   };
 }
