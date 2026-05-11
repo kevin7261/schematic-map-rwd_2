@@ -500,6 +500,16 @@ export function checkOrthoGridHardConstraints(segments, initialGroupIds) {
   return { ok: true };
 }
 
+/** 供外向模組快速檢查：交叉／共線重疊／頂點落於他線開放段／零長邊 */
+export function orthoFlatSegmentsGeometryInvalid(segments) {
+  return hasInvalidGeometry(segments);
+}
+
+/** 同步各段 properties_start／end 與頂點格座標（插入頂點後呼叫） */
+export function syncOrthoFlatSegmentEndpoints(segments) {
+  syncAllEndpoints(segments);
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // connect 紅／藍點最佳化：H/V 線段數最大化，步距 ≤ 2 格
 // ──────────────────────────────────────────────────────────────────────────

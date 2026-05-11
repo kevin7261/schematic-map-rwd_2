@@ -51,6 +51,7 @@ export {
   executeJsonGridFromCoordNormalizedAxisAlign,
   executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
 } from './executeJsonGridFromCoordNormalizedAxisAlign.js';
+export { replaceDiagonalEdgesWithLOrtho } from './replaceDiagonalEdgesWithLOrtho.js';
 export {
   findBestCoPointGroupTargetOnGrid,
   applyBestCoPointGroupMoveOnGrid,

@@ -120,7 +120,10 @@ import {
   loadOsmXmlAsGeoJsonForRoutes,
 } from '../utils/dataProcessor.js';
 
-import { isCoordNormalizedDataJsonMirrorFollowonLayerId } from '../utils/layers/json_grid_coord_normalized/layerIds.js';
+import {
+  isCoordNormalizedDataJsonMirrorFollowonLayerId,
+  LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+} from '../utils/layers/json_grid_coord_normalized/layerIds.js';
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
 
@@ -543,12 +546,14 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
           {
-            /** 僅繪製：鏡像「站點與路線往中心聚集（先直後橫）」之 dataJson／geojson；開啟時自該層複製，VH 層路網更新後會同步（見 mirrorFromCoordNormalizedLayer） */
+            /** 預設鏡像「先直後橫」層；可於 Control 本機選 JSON（路段匯出）覆寫，見 vhDrawUserJsonOverride */
             layerId: 'orthogonal_toward_center_vh_draw',
             layerName: '站點與路線（先直後橫）·dataJson 繪製',
             visible: false,
             isLoading: false,
             isLoaded: false,
+            /** 為 true 時不自動鏡像 VH／不因 VH 更新覆寫（使用者已選檔讀入） */
+            vhDrawUserJsonOverride: false,
             colorName: 'teal',
             jsonData: null,
             spaceNetworkGridJsonData: null,
@@ -2301,7 +2306,15 @@ export const useDataStore = defineStore(
       }
 
       if (layer.visible && isCoordNormalizedDataJsonMirrorFollowonLayerId(layer.layerId)) {
-        mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
+        if (
+          layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID &&
+          layer.vhDrawUserJsonOverride
+        ) {
+          layer.isLoaded = true;
+          saveLayerState(layer.layerId, { isLoaded: true });
+        } else {
+          mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
+        }
       }
 
       // 🩹 修正：taipei_6_1_test2 的 dataTableData 欄位 schema 曾變更（改為 0-based，且由三連改為兩連，再改為單列/單行）
@@ -3448,6 +3461,12 @@ export const useDataStore = defineStore(
       }
 
       if (isCoordNormalizedDataJsonMirrorFollowonLayerId(layerId)) {
+        if (
+          layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID &&
+          layer?.vhDrawUserJsonOverride
+        ) {
+          return;
+        }
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
         return;
       }

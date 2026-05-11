@@ -40,10 +40,13 @@
     executeJsonGridFromCoordNormalizedPruneEmptyGridLines,
     POINT_ORTHOGONAL_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
+    LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
+    mirrorResetAndPersistJsonGridFromCoordNormalized,
+    replaceDiagonalEdgesWithLOrtho,
     tryOrthoTowardCrossNudgeFromReportItem,
     applyLineOrthoHubBlueDiagonalPrepassSegments,
     shallowCloneOrthoSegmentsSynced,
@@ -53,6 +56,7 @@
   import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
   import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
+  import { buildTaipeiB3ExecuteLayerFieldsFromGeojson } from '@/utils/taipeiTest4/buildTaipeiA3StyleLayerFieldsFromGeojson.js';
   import { getIcon } from '@/utils/utils.js';
 
   /**
@@ -74,7 +78,10 @@
     mapFlatSegmentsToExportRowsOrNull,
     exportRowToControlStationNodes,
   } from '@/utils/taipeiTest3/flatSegmentsToGeojsonStyleExportRows.js';
-  import { isMapDrawnRoutesExportArray } from '@/utils/mapDrawnRoutesImport.js';
+  import {
+    isMapDrawnRoutesExportArray,
+    minimalLineStringFeatureCollectionFromRouteExportRows,
+  } from '@/utils/mapDrawnRoutesImport.js';
   import { taipeiK4MapK3TabJsonToPlotPxForDisplay } from '@/utils/taipeiK4SpaceNetworkPlotPx.js';
   import { buildTaipeiB6DiagnosticsSegmentsLikeLayoutGrid } from '@/utils/taipeiK4ControlDiagnosticsSegments.js';
   import {
@@ -5583,6 +5590,7 @@
     syncJsonGridFromCoordDataJsonFromPipeline(lyr);
     lyr.jsonGridFromCoordSuggestTargetGrid = null;
     if (LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return;
+    if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     for (const oid of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
       const lo = dataStore.findLayerById(oid);
       if (lo) lo.lineOrthoTowardCrossMovePreview = null;
@@ -6051,6 +6059,132 @@
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
+  const VH_DRAW_LOCAL_JSON_INPUT_ID = 'orthogonal-vh-draw-local-json-input';
+
+  const pickOrthogonalVhDrawLocalJsonClick = () => {
+    document.getElementById(VH_DRAW_LOCAL_JSON_INPUT_ID)?.click();
+  };
+
+  const extractMapDrawnRoutesRowsFromParsedJson = (parsed) => {
+    if (Array.isArray(parsed) && isMapDrawnRoutesExportArray(parsed)) return parsed;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      Array.isArray(parsed.mapDrawnRoutes) &&
+      isMapDrawnRoutesExportArray(parsed.mapDrawnRoutes)
+    ) {
+      return parsed.mapDrawnRoutes;
+    }
+    return null;
+  };
+
+  const onOrthogonalVhDrawLocalJsonInputChange = async (event) => {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    const lyr = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+    if (!file || !lyr) return;
+    try {
+      lyr.isLoading = true;
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const rows = extractMapDrawnRoutesRowsFromParsedJson(parsed);
+      if (!rows?.length) {
+        window.alert(
+          'JSON 須為地圖路段匯出陣列（routeName／segment／routeCoordinates），或含 mapDrawnRoutes 之物件。',
+        );
+        lyr.isLoading = false;
+        return;
+      }
+      const fc = minimalLineStringFeatureCollectionFromRouteExportRows(rows, {
+        stationPoints: 'all',
+        routeLine: 'full',
+      });
+      const derived = buildTaipeiB3ExecuteLayerFieldsFromGeojson(fc, {});
+      const sn = derived?.spaceNetworkGridJsonData;
+      if (!Array.isArray(sn) || sn.length === 0) {
+        window.alert('無法由該 JSON 建立路網（spaceNetworkGridJsonData 為空）。');
+        lyr.isLoading = false;
+        return;
+      }
+      lyr.vhDrawUserJsonOverride = true;
+      lyr.jsonFileName = file.name;
+      applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, sn);
+      lyr.isLoaded = true;
+      lyr.isLoading = false;
+      await dataStore.saveLayerState(lyr.layerId, {
+        ...jsonGridFromCoordNormalizedPersistPayload(lyr),
+      });
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+      window.alert(
+        `已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）；可按「改為鏡像 VH 層」還原。`,
+      );
+    } catch (err) {
+      console.error(err);
+      window.alert('讀取或解析 JSON 失敗（詳見控制台）。');
+      lyr.isLoading = false;
+      dataStore.saveLayerState(lyr.layerId, { isLoading: false });
+    }
+  };
+
+  const onOrthogonalVhDrawRestoreMirrorFromVhClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    lyr.vhDrawUserJsonOverride = false;
+    lyr.jsonFileName = null;
+    mirrorResetAndPersistJsonGridFromCoordNormalized(
+      dataStore.findLayerById.bind(dataStore),
+      dataStore.saveLayerState.bind(dataStore),
+      lyr,
+    );
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  /** 「先直後橫·dataJson 繪製」：將折線上非正交單邊改為 L（與 hill climb 相同之交叉／共線重疊／頂點落線約束） */
+  const onOrthogonalVhDrawDiagonalToLClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson，且來源「先直後橫」層已更新。');
+      return;
+    }
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const flat = normalizeSpaceNetworkDataToFlatSegments(
+        JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+      );
+      const r = replaceDiagonalEdgesWithLOrtho(flat);
+      if (!r.ok) {
+        window.alert(r.message || '無法套用（路網幾何約束）。');
+        return;
+      }
+      if (r.replacedCount === 0) {
+        window.alert(r.message || '沒有可替換的非正交邊。');
+        return;
+      }
+      applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, r.segments);
+      await dataStore.saveLayerState(lyr.layerId, {
+        ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
+      });
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+      window.alert(
+        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊）；兩種皆可時優先與鄰邊串成直線。`,
+      );
+    } catch (err) {
+      console.error(err);
+      window.alert('套用時發生錯誤（詳見控制台）。');
     } finally {
       setTimeout(() => {
         isExecuting.value = false;
@@ -9248,6 +9382,51 @@
           </div>
         </div>
 
+        <!-- orthogonal_toward_center_vh_draw：本機 JSON／斜向改 L -->
+        <div
+          v-if="layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">本機 JSON（路段匯出）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            :disabled="isExecuting || layer.isLoading"
+            @click="pickOrthogonalVhDrawLocalJsonClick"
+          >
+            選擇 JSON 檔讀入…
+          </button>
+          <div
+            v-if="layer.vhDrawUserJsonOverride && layer.jsonFileName"
+            class="text-muted my-font-size-xs mb-2"
+            style="line-height: 1.45"
+          >
+            目前來源：<strong>{{ layer.jsonFileName }}</strong>（不會隨 VH 層自動更新）
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary mb-3"
+            :disabled="isExecuting"
+            @click="onOrthogonalVhDrawRestoreMirrorFromVhClick(layer)"
+          >
+            改為鏡像「先直後橫」層 dataJson
+          </button>
+          <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
+            :disabled="isExecuting"
+            @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
+          >
+            非水平／垂直邊改 L（不可交叉／不可與他線重疊）
+          </button>
+          <div class="text-muted my-font-size-xs" style="line-height: 1.45">
+            <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含
+            <code class="small">mapDrawnRoutes</code> 之物件。<strong>L</strong
+            >：逐條將單一斜向邊拆成兩段正交；兩種皆可時優先與鄰邊串成直線。
+          </div>
+        </div>
+
         <!-- 往中心聚集（列→欄 或 欄→列）：各列／欄 HV 線段（表格：站名＋座標） -->
         <div
           v-if="LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(layer.layerId)"
@@ -12173,6 +12352,13 @@
       <div class="my-title-xs-gray text-center">沒有開啟的圖層</div>
     </div>
 
+    <input
+      id="orthogonal-vh-draw-local-json-input"
+      type="file"
+      class="d-none"
+      accept=".json,application/json"
+      @change="onOrthogonalVhDrawLocalJsonInputChange"
+    />
     <input
       id="taipei-osm-sn4-local-file-input"
       type="file"

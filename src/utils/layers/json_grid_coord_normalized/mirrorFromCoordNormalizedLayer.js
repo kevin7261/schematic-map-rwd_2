@@ -156,6 +156,10 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
     lineOrthoTowardCrossFrozenCenter: layer.lineOrthoTowardCrossFrozenCenter ?? null,
     showStationPlacement: layer.showStationPlacement,
   };
+  if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
+    payload.vhDrawUserJsonOverride = !!layer.vhDrawUserJsonOverride;
+    payload.jsonFileName = layer.jsonFileName ?? null;
+  }
   if (!omitLoadingFlags) {
     payload.isLoading = layer.isLoading;
   }
@@ -209,7 +213,7 @@ export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, s
 /** `orthogonal_toward_center_vh_draw`：自 VH 往中心層複製 dataJson（VH 層或其他鏡像更新後呼叫） */
 export function refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState) {
   const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
-  if (draw?.visible) {
+  if (draw?.visible && !draw.vhDrawUserJsonOverride) {
     mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, draw);
   }
 }
