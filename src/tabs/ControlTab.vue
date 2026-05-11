@@ -52,7 +52,6 @@
     shallowCloneOrthoSegmentsSynced,
     buildInitialOrthoCoPointGroups,
     findBestConnectPointMoveForHV,
-    jsonViewerPayloadForCoordNormalizedFamilyLayer,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
@@ -81,6 +80,8 @@
   } from '@/utils/taipeiTest3/flatSegmentsToGeojsonStyleExportRows.js';
   import {
     isMapDrawnRoutesExportArray,
+    mapDrawnExportRowsFromJsonDrawRoot,
+    mergeSegmentStationsFromPriorExportRows,
     minimalLineStringFeatureCollectionFromRouteExportRows,
   } from '@/utils/mapDrawnRoutesImport.js';
   import { taipeiK4MapK3TabJsonToPlotPxForDisplay } from '@/utils/taipeiK4SpaceNetworkPlotPx.js';
@@ -5576,13 +5577,16 @@
   };
 
   const applyJsonGridFromCoordBestMoveSegmentsToLayer = (lyr, segments) => {
+    const priorExportRows = mapDrawnExportRowsFromJsonDrawRoot(lyr.jsonData, lyr.dataJson);
     lyr.spaceNetworkGridJsonData = segments;
     const computed = computeStationDataFromRoutes(segments);
     lyr.spaceNetworkGridJsonData_SectionData = computed.sectionData;
     lyr.spaceNetworkGridJsonData_ConnectData = computed.connectData;
     lyr.spaceNetworkGridJsonData_StationData = computed.stationData;
     try {
-      lyr.processedJsonData = flatSegmentsToGeojsonStyleExportRows(segments);
+      let rows = flatSegmentsToGeojsonStyleExportRows(segments);
+      rows = mergeSegmentStationsFromPriorExportRows(rows, priorExportRows);
+      lyr.processedJsonData = rows;
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('共點平移：匯出 processedJsonData 失敗', e);
@@ -5627,13 +5631,16 @@
    * 同時更新父層 json_grid_coord_normalized 的 dataJson，讓其他鏡像圖層保持一致。
    */
   const applyRbConnectSegmentsToLayer = (lyr, segments) => {
+    const priorExportRows = mapDrawnExportRowsFromJsonDrawRoot(lyr.jsonData, lyr.dataJson);
     lyr.spaceNetworkGridJsonData = segments;
     const comp = computeStationDataFromRoutes(segments);
     lyr.spaceNetworkGridJsonData_SectionData = comp.sectionData;
     lyr.spaceNetworkGridJsonData_ConnectData = comp.connectData;
     lyr.spaceNetworkGridJsonData_StationData = comp.stationData;
     try {
-      lyr.processedJsonData = flatSegmentsToGeojsonStyleExportRows(segments);
+      let rows = flatSegmentsToGeojsonStyleExportRows(segments);
+      rows = mergeSegmentStationsFromPriorExportRows(rows, priorExportRows);
+      lyr.processedJsonData = rows;
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('rbConnect 移動：processedJsonData 失敗', e);
@@ -8641,7 +8648,7 @@
   /**
    * `orthogonal_toward_center_hv`／`vh`：與 Upper「json-viewer」同一來源（SpaceNetworkGridJsonDataTab
    * `isSpaceLayoutUniformGridViewerLayerId` → `dataJson ?? jsonData`）。勿用
-   * {@link jsonViewerPayloadForCoordNormalizedFamilyLayer}（會取 spaceNetworkGridJsonData 等，與檢視不一致）。
+   * `jsonViewerPayloadForCoordNormalizedFamilyLayer`（會取 spaceNetworkGridJsonData 等，與檢視不一致）。
    */
   const lineOrthoTowardCenterJsonViewerMirrorPayload = (layer) => {
     const id = layer?.layerId;
