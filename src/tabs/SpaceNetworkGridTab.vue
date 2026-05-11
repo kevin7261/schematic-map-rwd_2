@@ -101,7 +101,7 @@
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     isLineOrthogonalTowardCenterLayerId,
-    isOrthogonalVhDataJsonDrawMirrorLayerId,
+    isSpaceGridVhDrawFamilyLayerId,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -3790,7 +3790,7 @@
       layerTab === POINT_ORTHOGONAL_LAYER_ID ||
       layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
       isLineOrthogonalTowardCenterLayerId(layerTab) ||
-      isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab) ||
+      isSpaceGridVhDrawFamilyLayerId(layerTab) ||
       isTaipeiTest3I3OrJ3LayerTab(layerTab);
 
     /** 經緯度或小範圍連續座標：整數步長會變成 1 導致刻度迴圈為空，改以 d3.ticks 產生網格與軸刻度 */
@@ -4620,7 +4620,7 @@
 
     const tabLyrRouteHl = dataStore.findLayerById(layerTab);
     const vhDrawRouteStrokeHlIdx =
-      isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab) &&
+      isSpaceGridVhDrawFamilyLayerId(layerTab) &&
       tabLyrRouteHl &&
       Array.isArray(tabLyrRouteHl.highlightedSegmentIndex) &&
       tabLyrRouteHl.highlightedSegmentIndex[0] === 'vhDrawRoute' &&
@@ -6385,7 +6385,7 @@
       layerTab === POINT_ORTHOGONAL_LAYER_ID ||
       layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
       isLineOrthogonalTowardCenterLayerId(layerTab) ||
-      isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)
+      isSpaceGridVhDrawFamilyLayerId(layerTab)
     ) {
       const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;
@@ -6434,16 +6434,16 @@
         : 'rgba(255, 152, 0, 0.28)';
       const towardCrossPtStroke = isColTowardCrossHl ? '#0d47a1' : '#ff6600';
 
-      const orthoBundleLineStroke = isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)
+      const orthoBundleLineStroke = isSpaceGridVhDrawFamilyLayerId(layerTab)
         ? '#00acc1'
         : towardCrossLineStroke;
-      const orthoBundleLineDash = isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)
+      const orthoBundleLineDash = isSpaceGridVhDrawFamilyLayerId(layerTab)
         ? null
         : towardCrossLineDash;
 
       if (
         (isLineOrthogonalTowardCenterLayerId(layerTab) ||
-          isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)) &&
+          isSpaceGridVhDrawFamilyLayerId(layerTab)) &&
         hlLayer &&
         Array.isArray(hl) &&
         hl[0] === 'orthoBundle' &&
@@ -7071,7 +7071,7 @@
           hxAxis,
         ]);
       }
-      if (isOrthogonalVhDataJsonDrawMirrorLayerId(layer.layerId)) {
+      if (isSpaceGridVhDrawFamilyLayerId(layer.layerId)) {
         return JSON.stringify(layer.highlightedSegmentIndex ?? null);
       }
       return layer.highlightedSegmentIndex ?? null;

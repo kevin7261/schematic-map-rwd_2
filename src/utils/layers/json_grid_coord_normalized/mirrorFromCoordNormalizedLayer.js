@@ -1,7 +1,8 @@
 /**
  * 衍生圖層：`point_orthogonal` 自「座標正規化」複製 dataJson／jsonData；
  * 「站點與路線往中心聚集」兩種線網層優先自 `point_orthogonal` 複製；若尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
- * `orthogonal_toward_center_vh_draw` 僅鏡像 `orthogonal_toward_center_vh` 之 dataJson／geojson 供繪製。
+ * `orthogonal_toward_center_vh_draw` 僅鏡像 `orthogonal_toward_center_vh` 之 dataJson／geojson 供繪製；
+ * `layout_network_grid_from_vh_draw` 自繪製層複製 **dataOSM**（並解析為 geojson 供網格檢視）。
  */
 
 import {
@@ -10,6 +11,11 @@ import {
   minimalLineStringFeatureCollectionFromRouteExportRows,
 } from '../../mapDrawnRoutesImport.js';
 import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
+import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
+import {
+  resolveB3InputSpaceNetwork,
+  writeLayoutNormalizedLayerDataOsmFromNetwork,
+} from './jsonGridCoordNormalizeHelpers.js';
 import {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
   JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID,
@@ -18,6 +24,7 @@ import {
   LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
   LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
   LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+  LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
 } from './layerIds.js';
 
@@ -50,9 +57,41 @@ export function syncJsonGridFromCoordDataJsonFromPipeline(layer) {
     stationPoints: 'endpoints',
     routeLine: 'endpoints',
   });
+  if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
+    const resolved = resolveB3InputSpaceNetwork(layer, { routeLineFromExportRows: 'full' });
+    if (resolved?.spaceNetwork?.length) {
+      writeLayoutNormalizedLayerDataOsmFromNetwork(layer, resolved.spaceNetwork);
+    } else {
+      layer.dataOSM = null;
+    }
+  }
 }
 
 export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, derivedLayer) {
+  if (derivedLayer?.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) {
+    const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+    const osm =
+      draw?.dataOSM != null && String(draw.dataOSM).trim() !== '' ? String(draw.dataOSM) : null;
+    derivedLayer.dataOSM = osm;
+    derivedLayer.jsonData = null;
+    derivedLayer.dataJson = null;
+    if (osm) {
+      try {
+        const { geojsonData } = osmXmlStringToGeojsonData(osm);
+        derivedLayer.geojsonData =
+          geojsonData?.type === 'FeatureCollection' && Array.isArray(geojsonData.features)
+            ? geojsonData
+            : null;
+      } catch {
+        derivedLayer.geojsonData = null;
+      }
+    } else {
+      derivedLayer.geojsonData = null;
+    }
+    derivedLayer.isLoaded = true;
+    return;
+  }
+
   if (derivedLayer?.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
     const vh = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID);
     const raw =
@@ -68,6 +107,12 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
       Array.isArray(raw) ? raw : [],
       { stationPoints: 'endpoints', routeLine: 'endpoints' }
     );
+    const resolved = resolveB3InputSpaceNetwork(derivedLayer, { routeLineFromExportRows: 'full' });
+    if (resolved?.spaceNetwork?.length) {
+      writeLayoutNormalizedLayerDataOsmFromNetwork(derivedLayer, resolved.spaceNetwork);
+    } else {
+      derivedLayer.dataOSM = null;
+    }
     derivedLayer.isLoaded = true;
     return;
   }
@@ -172,6 +217,13 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
   return payload;
 }
 
+/** 「版面網絡網格」層若可見，自 `orthogonal_toward_center_vh_draw` 重複製 **dataOSM** 並 persist */
+export function refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState) {
+  const layout = findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID);
+  if (!layout?.visible) return;
+  mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layout);
+}
+
 export function mirrorResetAndPersistJsonGridFromCoordNormalized(
   findLayerById,
   saveLayerState,
@@ -186,6 +238,9 @@ export function mirrorResetAndPersistJsonGridFromCoordNormalized(
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
     refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState);
   }
+  if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
+    refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
+  }
 }
 
 export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer) {
@@ -196,6 +251,9 @@ export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerS
   saveLayerState(layer.layerId, jsonGridFromCoordNormalizedPersistPayload(layer));
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
     refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState);
+  }
+  if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
+    refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
   }
 }
 
@@ -225,6 +283,8 @@ export function refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveL
   const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
   if (draw?.visible && !draw.vhDrawUserJsonOverride) {
     mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, draw);
+  } else if (draw?.visible) {
+    refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
   }
 }
 
