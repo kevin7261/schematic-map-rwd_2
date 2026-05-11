@@ -66,6 +66,8 @@
   import {
     isMapDrawnRoutesExportArray,
     mapDrawnExportRowsFromJsonDrawRoot,
+    mergeSegmentStationsFromPriorExportRows,
+    enrichExportRowStationsFromPool,
     expandLonLatChainFromRouteCoordinates,
   } from '@/utils/mapDrawnRoutesImport.js';
   import {
@@ -97,12 +99,43 @@
     JSON_GRID_COORD_NORMALIZED_LAYER_ID,
     POINT_ORTHOGONAL_LAYER_ID,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
+    LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     isLineOrthogonalTowardCenterLayerId,
     isOrthogonalVhDataJsonDrawMirrorLayerId,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
   import { uniformGridCellFromLayoutMeta } from '@/utils/stationUniformGridGeoJson.js';
+
+  /**
+   * 均勻網格族路線 hover：本層 dataJson 若曾由路網重算，segment.stations 可能被清空；
+   * 先合併本層 processedJsonData，再自系譜父層（point_orthogonal／座標正規化／OSM 管線）補回同起迄之中段站。
+   */
+  function buildEnrichedMapDrawnRowsForUniformGridTooltip(dataStore, layerTab, activeLayer) {
+    if (!isSpaceLayoutUniformGridViewerLayerId(layerTab) || !activeLayer) return null;
+    const base = mapDrawnExportRowsFromJsonDrawRoot(activeLayer.jsonData, activeLayer.dataJson);
+    if (!Array.isArray(base) || base.length === 0) return null;
+    let out = JSON.parse(JSON.stringify(base));
+    out = mergeSegmentStationsFromPriorExportRows(out, activeLayer.processedJsonData);
+
+    const chainIds = [
+      ...LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+      POINT_ORTHOGONAL_LAYER_ID,
+      JSON_GRID_COORD_NORMALIZED_LAYER_ID,
+      OSM_2_GEOJSON_2_JSON_LAYER_ID,
+    ];
+    for (const id of chainIds) {
+      if (id === layerTab) continue;
+      const src = dataStore.findLayerById(id);
+      if (!src) continue;
+      out = mergeSegmentStationsFromPriorExportRows(
+        out,
+        mapDrawnExportRowsFromJsonDrawRoot(src.jsonData, src.dataJson),
+      );
+      out = mergeSegmentStationsFromPriorExportRows(out, src.processedJsonData);
+    }
+    return out;
+  }
 
   /** 與 MapTab 路段／站點 popup 同源（OSM／GeoJSON → JSON 檢視） */
   const escapeLayoutTooltipHtml = (s) =>
@@ -133,12 +166,44 @@
     return html;
   };
 
+  const routeIdPrefixFromStationId = (stationId) => {
+    const m = String(stationId ?? '')
+      .trim()
+      .match(/^[A-Za-z]+/);
+    return m ? m[0] : '';
+  };
+
+  const routeIdForTooltipRow = (row) => {
+    const explicit = String(row?.route_id ?? row?.tags?.route_id ?? '').trim();
+    if (explicit) return explicit;
+    const seg = row?.segment;
+    if (!seg || typeof seg !== 'object') return '';
+    const counts = new Map();
+    const bump = (node) => {
+      const prefix = routeIdPrefixFromStationId(node?.station_id ?? node?.tags?.station_id);
+      if (!prefix) return;
+      counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+    };
+    bump(seg.start);
+    for (const st of Array.isArray(seg.stations) ? seg.stations : []) bump(st);
+    bump(seg.end);
+    let best = '';
+    let bestCount = 0;
+    for (const [prefix, count] of counts.entries()) {
+      if (count > bestCount) {
+        best = prefix;
+        bestCount = count;
+      }
+    }
+    return best;
+  };
+
   const routeExportRowPolylineTooltipHtml = (row, chain) => {
     if (!row || typeof row !== 'object') return '';
     if (!chain || chain.length < 1) return '';
     const [flon, flat] = chain[0];
     const head = `<strong>routeName</strong> ${escapeLayoutTooltipHtml(row.routeName)}<br>
-<strong>route_id</strong> ${escapeLayoutTooltipHtml(row.route_id ?? '')}<br>
+<strong>route_id</strong> ${escapeLayoutTooltipHtml(routeIdForTooltipRow(row))}<br>
 <strong>color</strong> ${escapeLayoutTooltipHtml(row.color)}<br>
 <strong>lon</strong> ${escapeLayoutTooltipHtml(flon)}<br>
 <strong>lat</strong> ${escapeLayoutTooltipHtml(flat)}`;
@@ -150,9 +215,7 @@
     const p = propBag && typeof propBag === 'object' ? propBag : {};
     const tags = p.tags && typeof p.tags === 'object' ? p.tags : {};
     const sid = escapeLayoutTooltipHtml(p.station_id ?? tags.station_id ?? '');
-    const snm = escapeLayoutTooltipHtml(
-      p.station_name ?? tags.station_name ?? tags.name ?? ''
-    );
+    const snm = escapeLayoutTooltipHtml(p.station_name ?? tags.station_name ?? tags.name ?? '');
     const rnl = p.route_name_list ?? tags.route_name_list;
     const rnlStr = Array.isArray(rnl)
       ? escapeLayoutTooltipHtml(JSON.stringify(rnl))
@@ -2360,6 +2423,10 @@
   const drawMap = () => {
     const layerTab = spaceGridDataLayerTabId.value;
     const uniformGridRouteFamilyTab = isSpaceLayoutUniformGridViewerLayerId(layerTab);
+    const activeTabLayer = dataStore.findLayerById(layerTab);
+    const layoutUniformGridTooltipJr = uniformGridRouteFamilyTab
+      ? buildEnrichedMapDrawnRowsForUniformGridTooltip(dataStore, layerTab, activeTabLayer)
+      : null;
     const forceThisDraw = drawMapForceNext;
     drawMapForceNext = false;
     if (!mapGeoJsonData.value) return;
@@ -2459,10 +2526,7 @@
       .attr('class', 'd3js-map-tooltip')
       .style('position', 'absolute')
       .style('padding', '8px 12px')
-      .style(
-        'background-color',
-        uniformGridRouteFamilyTab ? '#ffffff' : 'rgba(0, 0, 0, 0.8)'
-      )
+      .style('background-color', uniformGridRouteFamilyTab ? '#ffffff' : 'rgba(0, 0, 0, 0.8)')
       .style('color', uniformGridRouteFamilyTab ? '#1a1a1a' : '#FFFFFF')
       .style('border-radius', uniformGridRouteFamilyTab ? '6px' : '4px')
       .style('font-size', '12px')
@@ -2470,14 +2534,8 @@
       .style('opacity', 0)
       .style('z-index', 1000)
       .style('max-width', uniformGridRouteFamilyTab ? '340px' : '300px')
-      .style(
-        'box-shadow',
-        uniformGridRouteFamilyTab ? '0 3px 14px rgba(0,0,0,0.35)' : 'none'
-      )
-      .style(
-        'border',
-        uniformGridRouteFamilyTab ? '1px solid rgba(0,0,0,0.12)' : 'none'
-      );
+      .style('box-shadow', uniformGridRouteFamilyTab ? '0 3px 14px rgba(0,0,0,0.35)' : 'none')
+      .style('border', uniformGridRouteFamilyTab ? '1px solid rgba(0,0,0,0.12)' : 'none');
 
     // 檢查是否為 Normalize Segments 格式
     const isNormalizeFormat = mapGeoJsonData.value.type === 'NormalizeSegments';
@@ -2497,12 +2555,7 @@
     if (isNormalizeFormat) {
       // Normalize Segments 格式處理（優先使用 layer 當前資料，以反映 flip 後的狀態）
       const activeLayerForSegments = dataStore.findLayerById(layerTab);
-      const jrForTooltipRowMatch = isSpaceLayoutUniformGridViewerLayerId(layerTab)
-        ? mapDrawnExportRowsFromJsonDrawRoot(
-            activeLayerForSegments?.jsonData,
-            activeLayerForSegments?.dataJson
-          )
-        : null;
+      const jrForTooltipRowMatch = layoutUniformGridTooltipJr;
       const matchExportRowIndexForNormalizeSegment = (seg) => {
         if (!Array.isArray(jrForTooltipRowMatch) || jrForTooltipRowMatch.length === 0) return null;
         const pts = seg?.points;
@@ -2585,6 +2638,48 @@
         });
       });
 
+      /** 均勻網格族：路段 hover 需對齊 dataJson 匯出列（與 MapTab）；僅座標比對易因格線／經緯度空間不一致或同路線多段而失敗 */
+      const matchExportRowIndexByEndpointStationIds = (seg) => {
+        if (!Array.isArray(jrForTooltipRowMatch) || jrForTooltipRowMatch.length === 0) return null;
+        const nodes = seg?.nodes;
+        if (!Array.isArray(nodes) || nodes.length < 2) return null;
+        const sidA = String(nodes[0]?.station_id ?? nodes[0]?.tags?.station_id ?? '').trim();
+        const sidB = String(
+          nodes[nodes.length - 1]?.station_id ?? nodes[nodes.length - 1]?.tags?.station_id ?? ''
+        ).trim();
+        if (!sidA || !sidB) return null;
+        for (let i = 0; i < jrForTooltipRowMatch.length; i++) {
+          const r = jrForTooltipRowMatch[i];
+          const sm = r?.segment;
+          if (!sm?.start || !sm?.end) continue;
+          const rs = String(sm.start.station_id ?? sm.start.tags?.station_id ?? '').trim();
+          const re = String(sm.end.station_id ?? sm.end.tags?.station_id ?? '').trim();
+          if (rs === sidA && re === sidB) return i;
+          if (rs === sidB && re === sidA) return i;
+        }
+        return null;
+      };
+
+      const resolveMapStyleExportRowIndexForSegment = (seg, flatSegmentIndex) => {
+        if (!isSpaceLayoutUniformGridViewerLayerId(layerTab)) {
+          return matchExportRowIndexForNormalizeSegment(seg);
+        }
+        let idx = matchExportRowIndexForNormalizeSegment(seg);
+        if (idx != null) return idx;
+        idx = matchExportRowIndexByEndpointStationIds(seg);
+        if (idx != null) return idx;
+        if (
+          Array.isArray(jrForTooltipRowMatch) &&
+          jrForTooltipRowMatch.length === flatSegments.length &&
+          flatSegmentIndex >= 0 &&
+          flatSegmentIndex < jrForTooltipRowMatch.length
+        ) {
+          const r = jrForTooltipRowMatch[flatSegmentIndex];
+          if (r) return flatSegmentIndex;
+        }
+        return null;
+      };
+
       // 將 segments 轉換為 routeFeatures 格式
       // 檢查是否為 2-3/2-4/2-5 格式（有 start_coord/end_coord）
       const isZLayoutFormat = flatSegments.length > 0 && flatSegments[0].start_coord;
@@ -2625,7 +2720,7 @@
               points: seg.points, // 傳遞 points 用於計算距離
               l3_black_dot_reduced_weight_green: Boolean(seg.l3_black_dot_reduced_weight_green),
               _flatSegmentIndex: flatSegmentIndex,
-              map_draw_row_index: matchExportRowIndexForNormalizeSegment(seg),
+              map_draw_row_index: resolveMapStyleExportRowIndexForSegment(seg, flatSegmentIndex),
             },
           };
         } else {
@@ -2647,7 +2742,7 @@
               points: seg.points, // 傳遞 points 用於計算距離
               l3_black_dot_reduced_weight_green: Boolean(seg.l3_black_dot_reduced_weight_green),
               _flatSegmentIndex: flatSegmentIndex,
-              map_draw_row_index: matchExportRowIndexForNormalizeSegment(seg),
+              map_draw_row_index: resolveMapStyleExportRowIndexForSegment(seg, flatSegmentIndex),
             },
           };
         }
@@ -4280,7 +4375,9 @@
             }
             if (uniformGridRouteFamilyTab) {
               const jl = dataStore.findLayerById(layerTab);
-              const jr = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
+              const jr =
+                layoutUniformGridTooltipJr ??
+                mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
               if (Array.isArray(jr)) {
                 const idxHint =
                   exportRowIndexHint != null && Number.isFinite(Number(exportRowIndexHint))
@@ -4307,7 +4404,16 @@
                   segMatch = hitsNm.length === 1 ? (hitsNm[0]?.segment ?? null) : null;
                 }
                 if (segMatch) {
-                  tooltipContent += tooltipHtmlSegmentStationsOrderedVerbose(segMatch);
+                  const jrFile = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson) ?? [];
+                  const stationHoverPool = [
+                    ...jrFile,
+                    ...(Array.isArray(layoutUniformGridTooltipJr) ? layoutUniformGridTooltipJr : []),
+                  ];
+                  const segForTip = enrichExportRowStationsFromPool(
+                    { segment: segMatch, routeName: rnm },
+                    stationHoverPool,
+                  ).segment;
+                  tooltipContent += tooltipHtmlSegmentStationsOrderedVerbose(segForTip);
                 }
               }
             }
@@ -4317,7 +4423,9 @@
           if (uniformGridRouteFamilyTab) {
             routeTooltipAppendNearLine = false;
             const jl = dataStore.findLayerById(layerTab);
-            const jr = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
+            const jr =
+              layoutUniformGridTooltipJr ??
+              mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
             let rowMatch = null;
             if (Array.isArray(jr)) {
               const idxHint =
@@ -4356,8 +4464,14 @@
               }
             }
             if (rowMatch) {
-              const chain = expandLonLatChainFromRouteCoordinates(rowMatch.routeCoordinates);
-              routeTooltipHtml = routeExportRowPolylineTooltipHtml(rowMatch, chain);
+              const jrFile = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson) ?? [];
+              const stationHoverPool = [
+                ...jrFile,
+                ...(Array.isArray(layoutUniformGridTooltipJr) ? layoutUniformGridTooltipJr : []),
+              ];
+              const rowForTip = enrichExportRowStationsFromPool(rowMatch, stationHoverPool);
+              const chain = expandLonLatChainFromRouteCoordinates(rowForTip.routeCoordinates);
+              routeTooltipHtml = routeExportRowPolylineTooltipHtml(rowForTip, chain);
             } else {
               routeTooltipAppendNearLine = true;
               routeTooltipHtml = buildLegacyLineTooltip();
@@ -4860,17 +4974,44 @@
           // 顯示 tooltip（包含座標和標籤）
           /** 版面網格／座標正規化家族：站點 hover 與 MapTab popup 同欄位（含 type／route_name_list） */
           if (uniformGridRouteFamilyTab) {
-            const lonTip = Number.isFinite(segmentNodeLon(props)) ? segmentNodeLon(props) : Number(x);
-            const latTip = Number.isFinite(segmentNodeLat(props)) ? segmentNodeLat(props) : Number(y);
+            const jlStation = dataStore.findLayerById(layerTab);
+            const jrStation =
+              layoutUniformGridTooltipJr ??
+              mapDrawnExportRowsFromJsonDrawRoot(jlStation?.jsonData, jlStation?.dataJson);
+            const sidTip = String(props.station_id ?? tags.station_id ?? '').trim();
+            const hasRnl =
+              (Array.isArray(props.route_name_list) && props.route_name_list.length > 0) ||
+              (Array.isArray(tags.route_name_list) && tags.route_name_list.length > 0);
+            let propBagForStation = props;
+            if (Array.isArray(jrStation) && jrStation.length > 0 && sidTip && !hasRnl) {
+              const nameSet = new Set();
+              const idMatches = (n) =>
+                String(n?.station_id ?? n?.tags?.station_id ?? '').trim() === sidTip;
+              for (const row of jrStation) {
+                const sm = row?.segment;
+                if (!sm) continue;
+                const hitsMid = Array.isArray(sm.stations) && sm.stations.some(idMatches);
+                if (idMatches(sm.start) || idMatches(sm.end) || hitsMid) {
+                  const nm = String(row.routeName ?? '').trim();
+                  if (nm) nameSet.add(nm);
+                }
+              }
+              if (nameSet.size > 0) {
+                propBagForStation = { ...props, route_name_list: [...nameSet] };
+              }
+            }
+            const lonTip = Number.isFinite(segmentNodeLon(props))
+              ? segmentNodeLon(props)
+              : Number(x);
+            const latTip = Number.isFinite(segmentNodeLat(props))
+              ? segmentNodeLat(props)
+              : Number(y);
             const tagForStationType = getGeoJsonFeatureTagProps(feature);
             const typeForTooltip = normalizeRouteSegmentEndpointType(
-              props.type ??
-                tags.type ??
-                tagForStationType.type ??
-                endpointNormForHover
+              props.type ?? tags.type ?? tagForStationType.type ?? endpointNormForHover
             );
             const tooltipContent = stationEndpointTooltipHtmlFromProps(
-              props,
+              propBagForStation,
               typeForTooltip,
               lonTip,
               latTip
@@ -6266,10 +6407,9 @@
         return tabL;
       })();
       /** temp「朝紅十字」列／欄：列＝橘實線；欄＝藍虛線（便於區分水平／垂直階段）。 */
-      const towardCrossAxis =
-        isLineOrthogonalTowardCenterLayerId(layerTab)
-          ? hlLayer?.lineOrthoTowardCrossHighlightTableAxis
-          : null;
+      const towardCrossAxis = isLineOrthogonalTowardCenterLayerId(layerTab)
+        ? hlLayer?.lineOrthoTowardCrossHighlightTableAxis
+        : null;
       const isColTowardCrossHl = towardCrossAxis === 'col';
       const towardCrossLineStroke = isColTowardCrossHl ? '#0d47a1' : '#ff6600';
       const towardCrossLineDash = isColTowardCrossHl ? '10,5' : null;
@@ -6289,7 +6429,7 @@
         const flat =
           resolved?.spaceNetwork?.length > 0
             ? normalizeSpaceNetworkDataToFlatSegments(
-                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+                JSON.parse(JSON.stringify(resolved.spaceNetwork))
               )
             : [];
         const lines = hl[1];
@@ -6351,7 +6491,7 @@
         const flat =
           resolved?.spaceNetwork?.length > 0
             ? normalizeSpaceNetworkDataToFlatSegments(
-                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+                JSON.parse(JSON.stringify(resolved.spaceNetwork))
               )
             : [];
         const si = Number(hl[1]);
@@ -6454,7 +6594,7 @@
         const flat =
           resolved?.spaceNetwork?.length > 0
             ? normalizeSpaceNetworkDataToFlatSegments(
-                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+                JSON.parse(JSON.stringify(resolved.spaceNetwork))
               )
             : [];
         const seen = new Set(rbPrevLyr.rbConnectVisitedKeys);
@@ -6495,7 +6635,7 @@
         const flat =
           resolved?.spaceNetwork?.length > 0
             ? normalizeSpaceNetworkDataToFlatSegments(
-                JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+                JSON.parse(JSON.stringify(resolved.spaceNetwork))
               )
             : [];
         const si = Number(vhl[0]);
@@ -6506,10 +6646,12 @@
           const gx = Array.isArray(pt) ? Number(pt[0]) : Number(pt?.x);
           const gy = Array.isArray(pt) ? Number(pt[1]) : Number(pt?.y);
           if (Number.isFinite(gx) && Number.isFinite(gy)) {
-            const ptFill =
-              isLineOrthogonalTowardCenterLayerId(layerTab) ? towardCrossPtFill : 'rgba(255, 152, 0, 0.28)';
-            const ptStroke =
-              isLineOrthogonalTowardCenterLayerId(layerTab) ? towardCrossPtStroke : '#ff6600';
+            const ptFill = isLineOrthogonalTowardCenterLayerId(layerTab)
+              ? towardCrossPtFill
+              : 'rgba(255, 152, 0, 0.28)';
+            const ptStroke = isLineOrthogonalTowardCenterLayerId(layerTab)
+              ? towardCrossPtStroke
+              : '#ff6600';
             zoomGroup
               .append('g')
               .attr('class', 'json-grid-from-coord-vertex-highlight')
@@ -6595,9 +6737,7 @@
       if (isLineOrthogonalTowardCenterLayerId(layerTab)) {
         const fc = hlLayer?.lineOrthoTowardCrossFrozenCenter;
         const useFrozen =
-          fc != null &&
-          Number.isFinite(Number(fc.cx)) &&
-          Number.isFinite(Number(fc.cy));
+          fc != null && Number.isFinite(Number(fc.cx)) && Number.isFinite(Number(fc.cy));
         const bboxOk =
           Number.isFinite(xMin) &&
           Number.isFinite(xMax) &&
@@ -6605,12 +6745,8 @@
           Number.isFinite(yMax);
         const spanOk = bboxOk && xMax > xMin && yMax > yMin;
         if (useFrozen || (bboxOk && spanOk)) {
-          const cxG = useFrozen
-            ? Math.round(Number(fc.cx))
-            : Math.round((xMin + xMax) / 2);
-          const cyG = useFrozen
-            ? Math.round(Number(fc.cy))
-            : Math.round((yMin + yMax) / 2);
+          const cxG = useFrozen ? Math.round(Number(fc.cx)) : Math.round((xMin + xMax) / 2);
+          const cyG = useFrozen ? Math.round(Number(fc.cy)) : Math.round((yMin + yMax) / 2);
           const crossG = zoomGroup
             .append('g')
             .attr('class', 'line-orthogonal-grid-center-crosshair')
@@ -6893,16 +7029,15 @@
       ) {
         const hl = layer.highlightedSegmentIndex;
         const sg = layer.jsonGridFromCoordSuggestTargetGrid;
-        const mp =
-          isLineOrthogonalTowardCenterLayerId(layer.layerId) ? layer.lineOrthoTowardCrossMovePreview ?? null : null;
-        const fz =
-          isLineOrthogonalTowardCenterLayerId(layer.layerId)
-            ? layer.lineOrthoTowardCrossFrozenCenter ?? null
-            : null;
-        const hxAxis =
-          isLineOrthogonalTowardCenterLayerId(layer.layerId)
-            ? layer.lineOrthoTowardCrossHighlightTableAxis ?? null
-            : null;
+        const mp = isLineOrthogonalTowardCenterLayerId(layer.layerId)
+          ? (layer.lineOrthoTowardCrossMovePreview ?? null)
+          : null;
+        const fz = isLineOrthogonalTowardCenterLayerId(layer.layerId)
+          ? (layer.lineOrthoTowardCrossFrozenCenter ?? null)
+          : null;
+        const hxAxis = isLineOrthogonalTowardCenterLayerId(layer.layerId)
+          ? (layer.lineOrthoTowardCrossHighlightTableAxis ?? null)
+          : null;
         return JSON.stringify([
           hl == null ? null : hl,
           sg?.x ?? null,

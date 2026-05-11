@@ -3691,7 +3691,9 @@
    */
   const inferOsm2LocalIngestFormat = (logicalFileName, text) => {
     const nameLower = (logicalFileName || '').toLowerCase();
-    const trimmed = String(text ?? '').replace(/^\uFEFF/, '').trim();
+    const trimmed = String(text ?? '')
+      .replace(/^\uFEFF/, '')
+      .trim();
     if (nameLower.endsWith('.geojson') || nameLower.endsWith('.json')) return 'geojson';
     if (nameLower.endsWith('.osm') || nameLower.endsWith('.xml')) return 'osm';
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'geojson';
@@ -3984,7 +3986,9 @@
       }
     }
 
-    out.sort((a, b) => a.y - b.y || a.x - b.x || a.routeLabel.localeCompare(b.routeLabel, 'zh-Hant'));
+    out.sort(
+      (a, b) => a.y - b.y || a.x - b.x || a.routeLabel.localeCompare(b.routeLabel, 'zh-Hant')
+    );
     return out;
   };
 
@@ -5032,7 +5036,9 @@
   }
   /** @type Record<string, ReturnType<typeof makeLineOrthoTowardCrossUiState>> */
   const lineOrthoTowardCrossUiByLayerId = reactive(
-    Object.fromEntries(LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.map((id) => [id, makeLineOrthoTowardCrossUiState()])),
+    Object.fromEntries(
+      LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.map((id) => [id, makeLineOrthoTowardCrossUiState()])
+    )
   );
   /** @type Record<string, ReturnType<typeof setInterval> | null> */
   const lineOrthoTowardCrossAutoTimerByLayerId = {};
@@ -5044,7 +5050,7 @@
   }
 
   const lineOrthoTowardCrossUiFor = (lyr) =>
-    lyr?.layerId ? lineOrthoTowardCrossUiByLayerId[lyr.layerId] ?? null : null;
+    lyr?.layerId ? (lineOrthoTowardCrossUiByLayerId[lyr.layerId] ?? null) : null;
 
   /** 一輪隊列之短標（停止自動時提示用） */
   const lineOrthoTowardCrossCycleShortLabel = (lyr) =>
@@ -5190,13 +5196,17 @@
       if (cand.kind === '線') {
         if (tableAxis === 'row') {
           const pv =
-            prevIt.axisY != null && Number.isFinite(Number(prevIt.axisY)) ? Number(prevIt.axisY) : NaN;
+            prevIt.axisY != null && Number.isFinite(Number(prevIt.axisY))
+              ? Number(prevIt.axisY)
+              : NaN;
           const cv =
             cand.axisY != null && Number.isFinite(Number(cand.axisY)) ? Number(cand.axisY) : NaN;
           if (Number.isFinite(pv) && Number.isFinite(cv)) d = Math.abs(cv - pv);
         } else {
           const pv =
-            prevIt.axisX != null && Number.isFinite(Number(prevIt.axisX)) ? Number(prevIt.axisX) : NaN;
+            prevIt.axisX != null && Number.isFinite(Number(prevIt.axisX))
+              ? Number(prevIt.axisX)
+              : NaN;
           const cv =
             cand.axisX != null && Number.isFinite(Number(cand.axisX)) ? Number(cand.axisX) : NaN;
           if (Number.isFinite(pv) && Number.isFinite(cv)) d = Math.abs(cv - pv);
@@ -5222,7 +5232,12 @@
    */
   async function pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert = false } = {}) {
     const uiLine = lineOrthoTowardCrossUiFor(lyr);
-    if (!lyr || !uiLine || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) || isExecuting.value)
+    if (
+      !lyr ||
+      !uiLine ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      isExecuting.value
+    )
       return { evaluationFailed: false, earlyExit: true };
     lyr.lineOrthoTowardCrossMovePreview = null;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
@@ -5268,7 +5283,7 @@
       it,
       report.centerCx,
       report.centerCy,
-      { frozenVertexGroupIds: frozenIds },
+      { frozenVertexGroupIds: frozenIds }
     );
 
     if (!r.ok) {
@@ -5286,7 +5301,7 @@
       if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
         refreshOrthogonalVhMirrorDrawLayerIfVisible(
           dataStore.findLayerById.bind(dataStore),
-          dataStore.saveLayerState.bind(dataStore),
+          dataStore.saveLayerState.bind(dataStore)
         );
       }
       uiLine.lastHint = formatLineOrthoTowardCrossHint(
@@ -5295,7 +5310,7 @@
         haltReason,
         report.centerCx,
         report.centerCy,
-        null,
+        null
       );
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
@@ -5327,7 +5342,7 @@
         flat,
         workingFlat,
         it,
-        picksBeforeOrthoMove,
+        picksBeforeOrthoMove
       );
       applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, workingFlat);
       const resolvedAfter = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
@@ -5342,7 +5357,7 @@
         };
       }
       hlSegments = normalizeSpaceNetworkDataToFlatSegments(
-        JSON.parse(JSON.stringify(resolvedAfter.spaceNetwork)),
+        JSON.parse(JSON.stringify(resolvedAfter.spaceNetwork))
       );
       repHint = jsonGridLineOrthogonalRowColPointOrLineReport(lyr);
       itemForHl = pickRematchedOrthoTowardCrossReportItem(lyr, tableAxis, it);
@@ -5354,7 +5369,7 @@
       hlSegments,
       picksHlMap,
       tableAxis,
-      itemForHl,
+      itemForHl
     );
     lyr.highlightedSegmentIndex = hi;
     lyr.lineOrthoTowardCrossHighlightTableAxis = hi ? tableAxis : null;
@@ -5365,7 +5380,7 @@
     if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
       refreshOrthogonalVhMirrorDrawLayerIfVisible(
         dataStore.findLayerById.bind(dataStore),
-        dataStore.saveLayerState.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
       );
     }
 
@@ -5375,7 +5390,7 @@
       haltReason,
       repHint.centerCx,
       repHint.centerCy,
-      lyr.lineOrthoTowardCrossMovePreview ?? null,
+      lyr.lineOrthoTowardCrossMovePreview ?? null
     );
 
     await nextTick();
@@ -5390,11 +5405,7 @@
   }
 
   const onLineOrthoTowardCrossStepClick = async (lyr) => {
-    if (
-      !lyr ||
-      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
-      isExecuting.value
-    )
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) || isExecuting.value)
       return;
     await pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert: false });
   };
@@ -5439,7 +5450,8 @@
         const r = await pulseOnceLineOrthoTowardCross(lyr2, { muteEvalErrorAlert: true });
         if (r?.evaluationFailed) {
           stopLineOrthoTowardCrossAuto();
-          uiTick.lastHint = `${uiTick.lastHint || ''}\n（自動執行已停止：發生評估／路網／儲存錯誤，見上文。）`.trim();
+          uiTick.lastHint =
+            `${uiTick.lastHint || ''}\n（自動執行已停止：發生評估／路網／儲存錯誤，見上文。）`.trim();
         } else if (!r?.earlyExit) {
           const qRound = buildLineOrthoTowardCrossQueueAndReport(lyr2).queue.length;
           const moved = Number(r?.stepCount) > 0;
@@ -5450,7 +5462,8 @@
             if (uiTick.autoNoMoveStreak >= qRound) {
               stopLineOrthoTowardCrossAuto();
               const ord = lineOrthoTowardCrossCycleShortLabel(lyr2);
-              uiTick.lastHint = `${uiTick.lastHint || ''}\n（自動執行已停止：已連續跑完一輪隊列（${ord} 共 ${qRound} 項）皆無縮進。）`.trim();
+              uiTick.lastHint =
+                `${uiTick.lastHint || ''}\n（自動執行已停止：已連續跑完一輪隊列（${ord} 共 ${qRound} 項）皆無縮進。）`.trim();
             }
           }
         }
@@ -5576,7 +5589,13 @@
     jsonGridFromCoordVertexAutoTickBusy = false;
   };
 
-  const applyJsonGridFromCoordBestMoveSegmentsToLayer = (lyr, segments) => {
+  /**
+   * @param {unknown} lyr
+   * @param {unknown[]} segments
+   * @param {unknown[]|null} [mapDrawnStationsFallback] 例如「先直後橫·繪製」本機 JSON：首次寫入時 lyr 尚無 dataJson，
+   *   需以檔案內匯出列補回 flatSegments 匯出時遺失的 segment.stations。
+   */
+  const applyJsonGridFromCoordBestMoveSegmentsToLayer = (lyr, segments, mapDrawnStationsFallback = null) => {
     const priorExportRows = mapDrawnExportRowsFromJsonDrawRoot(lyr.jsonData, lyr.dataJson);
     lyr.spaceNetworkGridJsonData = segments;
     const computed = computeStationDataFromRoutes(segments);
@@ -5586,6 +5605,9 @@
     try {
       let rows = flatSegmentsToGeojsonStyleExportRows(segments);
       rows = mergeSegmentStationsFromPriorExportRows(rows, priorExportRows);
+      if (Array.isArray(mapDrawnStationsFallback) && mapDrawnStationsFallback.length > 0) {
+        rows = mergeSegmentStationsFromPriorExportRows(rows, mapDrawnStationsFallback);
+      }
       lyr.processedJsonData = rows;
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -5688,7 +5710,10 @@
     lyr.highlightedSegmentIndex = [it.segIdx, it.ptIdx];
     const visitedKey = `${it.segIdx},${it.ptIdx}`;
     lyr.rbConnectVisitedKeys = Array.from(
-      new Set([...(Array.isArray(lyr.rbConnectVisitedKeys) ? lyr.rbConnectVisitedKeys : []), visitedKey])
+      new Set([
+        ...(Array.isArray(lyr.rbConnectVisitedKeys) ? lyr.rbConnectVisitedKeys : []),
+        visitedKey,
+      ])
     );
 
     await dataStore.saveLayerState(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID, {
@@ -5779,16 +5804,12 @@
   // ── end coord_normalized_red_blue_connect ────────────────────────────────
 
   const maybeLineOrthoHubBlueDiagonalPrepassOnce = async (lyr) => {
-    if (
-      !lyr ||
-      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
-      isExecuting.value
-    )
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) || isExecuting.value)
       return;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return;
     const flatIn = normalizeSpaceNetworkDataToFlatSegments(
-      JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
     );
     const { segments: passSegs, moves } = applyLineOrthoHubBlueDiagonalPrepassSegments(flatIn);
     if (!moves) return;
@@ -5799,7 +5820,7 @@
     if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
       refreshOrthogonalVhMirrorDrawLayerIfVisible(
         dataStore.findLayerById.bind(dataStore),
-        dataStore.saveLayerState.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
       );
     }
     await nextTick();
@@ -6106,7 +6127,7 @@
       const rows = extractMapDrawnRoutesRowsFromParsedJson(parsed);
       if (!rows?.length) {
         window.alert(
-          'JSON 須為地圖路段匯出陣列（routeName／segment／routeCoordinates），或含 mapDrawnRoutes 之物件。',
+          'JSON 須為地圖路段匯出陣列（routeName／segment／routeCoordinates），或含 mapDrawnRoutes 之物件。'
         );
         lyr.isLoading = false;
         return;
@@ -6124,7 +6145,7 @@
       }
       lyr.vhDrawUserJsonOverride = true;
       lyr.jsonFileName = file.name;
-      applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, sn);
+      applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, sn, rows);
       lyr.isLoaded = true;
       lyr.isLoading = false;
       await dataStore.saveLayerState(lyr.layerId, {
@@ -6133,7 +6154,7 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       window.alert(
-        `已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）；可按「改為鏡像 VH 層」還原。`,
+        `已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）；可按「改為鏡像 VH 層」還原。`
       );
     } catch (err) {
       console.error(err);
@@ -6151,7 +6172,7 @@
     mirrorResetAndPersistJsonGridFromCoordNormalized(
       dataStore.findLayerById.bind(dataStore),
       dataStore.saveLayerState.bind(dataStore),
-      lyr,
+      lyr
     );
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
@@ -6170,7 +6191,7 @@
     try {
       await nextTick();
       const flat = normalizeSpaceNetworkDataToFlatSegments(
-        JSON.parse(JSON.stringify(resolved.spaceNetwork)),
+        JSON.parse(JSON.stringify(resolved.spaceNetwork))
       );
       const r = replaceDiagonalEdgesWithLOrtho(flat, { preferVertFirst: true });
       if (!r.ok) {
@@ -6188,7 +6209,7 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       window.alert(
-        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、L 轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格）；其餘斜向邊若任一 L 會違反上述約束則略過。兩種皆可時優先與鄰邊串成直線，平手則先直後橫。`,
+        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、L 轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格）；其餘斜向邊若任一 L 會違反上述約束則略過。兩種皆可時優先與鄰邊串成直線，平手則先直後橫。`
       );
     } catch (err) {
       console.error(err);
@@ -9312,9 +9333,11 @@
           <div class="my-title-xs-gray pb-2">connect 紅／藍點</div>
           <div class="text-muted mb-2" style="font-size: 10px; line-height: 1.45">
             與「座標正規化」同一路網來源（本層鏡像）。格點度數為相鄰折線段之端點連線數（與 K3 JSON
-            connect 列表相同算法）：度數 ≤1 為<strong>藍</strong>（末端），否則為<strong>紅</strong>（交叉）。
+            connect 列表相同算法）：度數 ≤1
+            為<strong>藍</strong>（末端），否則為<strong>紅</strong>（交叉）。
             <br />
-            依列表序每次一點，一輪內每個 connect 只試一次，輪完才從列表開頭再開新一輪。「自動」每秒走一步，直到<strong>整整一輪都沒有任何移動</strong>時自動停止。下一個：先橘圈；若有移動則灰圈＝移動前格、青圈＝移動後格、橘圈疊在新格（座標正規化／垂直化分頁亦顯示，紅藍層須開啟）。
+            依列表序每次一點，一輪內每個 connect
+            只試一次，輪完才從列表開頭再開新一輪。「自動」每秒走一步，直到<strong>整整一輪都沒有任何移動</strong>時自動停止。下一個：先橘圈；若有移動則灰圈＝移動前格、青圈＝移動後格、橘圈疊在新格（座標正規化／垂直化分頁亦顯示，紅藍層須開啟）。
           </div>
           <!-- 操作按鈕 -->
           <div class="d-flex flex-wrap gap-2 mb-2">
@@ -9323,8 +9346,7 @@
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
               style="min-height: 28px"
               :disabled="
-                coordNormalizedRedBlueConnectList(layer).length === 0 ||
-                rbConnectAutoActive
+                coordNormalizedRedBlueConnectList(layer).length === 0 || rbConnectAutoActive
               "
               @click="advanceRbConnectHighlight"
             >
@@ -9335,8 +9357,7 @@
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap my-cursor-pointer my-btn-green px-3"
               style="min-height: 28px"
               :disabled="
-                coordNormalizedRedBlueConnectList(layer).length === 0 ||
-                rbConnectAutoActive
+                coordNormalizedRedBlueConnectList(layer).length === 0 || rbConnectAutoActive
               "
               @click="startRbConnectAuto"
             >
@@ -9429,7 +9450,8 @@
             class="text-muted my-font-size-xs mb-2"
             style="line-height: 1.45"
           >
-            目前來源：<strong>{{ layer.jsonFileName }}</strong>（不會隨 VH 層自動更新）
+            目前來源：<strong>{{ layer.jsonFileName }}</strong
+            >（不會隨 VH 層自動更新）
           </div>
           <button
             type="button"
@@ -9450,8 +9472,9 @@
           </button>
           <div class="text-muted my-font-size-xs" style="line-height: 1.45">
             <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含
-            <code class="small">mapDrawnRoutes</code> 之物件。<strong>L</strong
-            >：逐條將單一斜向邊拆成兩段正交；若會與他線重疊、壓到非端點之紅／藍 connect、或轉角與他線頂點共格則略過該邊；兩種皆可時優先與鄰邊串成直線。
+            <code class="small">mapDrawnRoutes</code>
+            之物件。<strong>L</strong>：逐條將單一斜向邊拆成兩段正交；若會與他線重疊、壓到非端點之紅／藍
+            connect、或轉角與他線頂點共格則略過該邊；兩種皆可時優先與鄰邊串成直線。
           </div>
         </div>
 
@@ -9488,7 +9511,8 @@
                 >：未鎖定時為全路網頂點包圍盒中點；第一次「朝紅十字縮進」會<strong>鎖定</strong>該格，之後不因路網位移而漂移（與網格線座標基準一致）。縮進為<strong>整格共點平移</strong>並受硬約束，不會任意斷邊；若沿路徑能提升水平／垂直邊數，單次可<strong>一次平移多格</strong>至該向「邊數最佳」處，否則只移一格。列出順序：
                 <strong>0 → +1 → −1 → +2 → −2 → …</strong>。<strong>yΔ／xΔ</strong>
                 為相對<strong>該</strong>基準格之<strong>網格列／欄距</strong>（非重新編號）。
-                <strong>單鍵／自動循環處理順序：{{ lineOrthoTowardCrossCycleLongLabel(layer) }}</strong
+                <strong
+                  >單鍵／自動循環處理順序：{{ lineOrthoTowardCrossCycleLongLabel(layer) }}</strong
                 >（下方兩表仍「先列後欄」僅為閱讀排版）。
                 <template v-if="loReport.centerCx != null && loReport.centerCy != null">
                   目前基準格座標（約）為 ({{ loReport.centerCx }}, {{ loReport.centerCy }})。
@@ -9505,7 +9529,9 @@
                 "
                 @click="onLineOrthoTowardCrossStepClick(layer)"
               >
-                朝紅十字縮進至頂（順序：{{ lineOrthoTowardCrossCycleLongLabel(layer) }}，循環）；當項以橘線／橘圈標示。
+                朝紅十字縮進至頂（順序：{{
+                  lineOrthoTowardCrossCycleLongLabel(layer)
+                }}，循環）；當項以橘線／橘圈標示。
               </button>
               <button
                 type="button"
@@ -9534,12 +9560,15 @@
                 "
                 @click="onLineOrthoTowardCrossFinishAllClick(layer)"
               >
-                一鍵完成：開頭先嘗試將 hub 紅 connect－末端藍 connect 斜鄰段改橫／直（僅批次首輪一次），再反覆縮進至「一整輪隊列皆無可改善」為止並於下方顯示彙總
+                一鍵完成：開頭先嘗試將 hub 紅 connect－末端藍 connect
+                斜鄰段改橫／直（僅批次首輪一次），再反覆縮進至「一整輪隊列皆無可改善」為止並於下方顯示彙總
               </button>
               <button
                 type="button"
                 class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary mb-2"
-                :disabled="isExecuting || lineOrthoTowardCenterJsonViewerMirrorPayload(layer) == null"
+                :disabled="
+                  isExecuting || lineOrthoTowardCenterJsonViewerMirrorPayload(layer) == null
+                "
                 @click="downloadLineOrthoTowardCenterRoutesJson(layer)"
               >
                 下載 JSON（與 Upper「json-viewer」相同內容）

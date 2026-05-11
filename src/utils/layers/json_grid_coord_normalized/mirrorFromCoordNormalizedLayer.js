@@ -4,7 +4,11 @@
  * `orthogonal_toward_center_vh_draw` 僅鏡像 `orthogonal_toward_center_vh` 之 dataJson／geojson 供繪製。
  */
 
-import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
+import {
+  mapDrawnExportRowsFromJsonDrawRoot,
+  mergeSegmentStationsFromPriorExportRows,
+  minimalLineStringFeatureCollectionFromRouteExportRows,
+} from '../../mapDrawnRoutesImport.js';
 import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
 import {
   JSON_GRID_COORD_NORMALIZED_LAYER_ID,
@@ -37,7 +41,9 @@ export function syncJsonGridFromCoordDataJsonFromPipeline(layer) {
     }
   }
   if (!Array.isArray(rows) || rows.length === 0) return;
-  const arr = JSON.parse(JSON.stringify(rows));
+  const priorExportRows = mapDrawnExportRowsFromJsonDrawRoot(layer.jsonData, layer.dataJson);
+  let arr = JSON.parse(JSON.stringify(rows));
+  arr = mergeSegmentStationsFromPriorExportRows(arr, priorExportRows);
   layer.jsonData = arr;
   layer.dataJson = arr;
   layer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(arr, {

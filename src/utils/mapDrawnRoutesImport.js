@@ -247,10 +247,12 @@ function lonLatStationDedupKey(lo, la) {
  * @returns {{ type: 'FeatureCollection', features: object[] }}
  */
 export function minimalLineStringFeatureCollectionFromRouteExportRows(rows, options = {}) {
-  const stationPointsMode =
-    /** @type {'all'|'endpoints'} */ (options.stationPoints === 'endpoints' ? 'endpoints' : 'all');
-  const routeLineMode =
-    /** @type {'full'|'endpoints'} */ (options.routeLine === 'endpoints' ? 'endpoints' : 'full');
+  const stationPointsMode = /** @type {'all'|'endpoints'} */ (
+    options.stationPoints === 'endpoints' ? 'endpoints' : 'all'
+  );
+  const routeLineMode = /** @type {'full'|'endpoints'} */ (
+    options.routeLine === 'endpoints' ? 'endpoints' : 'full'
+  );
 
   if (!Array.isArray(rows)) return { type: 'FeatureCollection', features: [] };
   const features = [];
@@ -612,6 +614,71 @@ export function exportRowStationEndpointsKey(row) {
   return `${rn}\0${sid}\0${eid}`;
 }
 
+/** 僅起迄站號（同一路段在不同圖層可能 routeName 略有差異，仍能對回中段站） */
+export function exportRowEndpointsKeyWithoutRoute(row) {
+  if (!row || typeof row !== 'object') return '';
+  const s = row.segment?.start;
+  const e = row.segment?.end;
+  if (!s || !e) return '';
+  const sid = String(s.station_id ?? '').trim();
+  const eid = String(e.station_id ?? '').trim();
+  if (!sid || !eid) return '';
+  return `${sid}\0${eid}`;
+}
+
+function exportRowEndpointsKeyReversed(epKey) {
+  if (!epKey) return '';
+  const parts = epKey.split('\0');
+  if (parts.length !== 2) return '';
+  return `${parts[1]}\0${parts[0]}`;
+}
+
+function exportRowMidStationCount(row) {
+  const st = row?.segment?.stations;
+  return Array.isArray(st) ? st.length : 0;
+}
+
+function pickRicherExportRowForStationMerge(prev, cur) {
+  const np = exportRowMidStationCount(prev);
+  const nc = exportRowMidStationCount(cur);
+  if (nc > np) return cur;
+  if (np > nc) return prev;
+  return prev ?? cur;
+}
+
+/**
+ * hover／顯示用：自候選匯出列中找同起迄（路線名+起迄相符，或僅起迄站號相同／反向）且 `segment.stations` 最長者；
+ * 若候選比本列更豐富則深拷貝 stations（含本列為空、或管線只留較短列表之情況）。
+ */
+export function enrichExportRowStationsFromPool(row, pool) {
+  if (!row || typeof row !== 'object' || !Array.isArray(pool) || pool.length === 0) return row;
+  const curLen = exportRowMidStationCount(row);
+  const fullKey = exportRowStationEndpointsKey(row);
+  const ep = exportRowEndpointsKeyWithoutRoute(row);
+  const rev = exportRowEndpointsKeyReversed(ep);
+  let best = null;
+  let bestN = 0;
+  for (const r of pool) {
+    if (!r || typeof r !== 'object') continue;
+    const kf = exportRowStationEndpointsKey(r);
+    const ke = exportRowEndpointsKeyWithoutRoute(r);
+    const match =
+      (fullKey && kf === fullKey) ||
+      (!!ep && (ke === ep || (!!rev && ke === rev)));
+    if (!match) continue;
+    const n = exportRowMidStationCount(r);
+    if (n > bestN) {
+      bestN = n;
+      best = r;
+    }
+  }
+  if (!best || bestN <= curLen) return row;
+  const out = JSON.parse(JSON.stringify(row));
+  if (!out.segment || typeof out.segment !== 'object') out.segment = {};
+  out.segment.stations = JSON.parse(JSON.stringify(best.segment.stations));
+  return out;
+}
+
 /**
  * 正規化管線寫回 jsonData 時，flatSegments 轉匯出列常會得到 `stations: []`；
  * 若上一版記憶體中同起迄之路段仍有中段站，則深拷貝合併回來（不刪使用者／OSM 中段資料）。
@@ -622,18 +689,33 @@ export function exportRowStationEndpointsKey(row) {
 export function mergeSegmentStationsFromPriorExportRows(newRows, priorRows) {
   if (!Array.isArray(newRows) || newRows.length === 0) return newRows;
   if (!Array.isArray(priorRows) || priorRows.length === 0) return newRows;
-  const mapOld = new Map();
+  const mapOldFull = new Map();
+  const mapOldEp = new Map();
   for (const r of priorRows) {
-    const k = exportRowStationEndpointsKey(r);
-    if (k) mapOld.set(k, r);
+    const kf = exportRowStationEndpointsKey(r);
+    if (kf) {
+      mapOldFull.set(kf, pickRicherExportRowForStationMerge(mapOldFull.get(kf), r));
+    }
+    const ke = exportRowEndpointsKeyWithoutRoute(r);
+    if (ke) {
+      mapOldEp.set(ke, pickRicherExportRowForStationMerge(mapOldEp.get(ke), r));
+    }
   }
   for (const row of newRows) {
-    if (!row || typeof row !== 'object' || !row.segment || typeof row.segment !== 'object') continue;
-    const st = row.segment.stations;
-    if (Array.isArray(st) && st.length > 0) continue;
-    const old = mapOld.get(exportRowStationEndpointsKey(row));
+    if (!row || typeof row !== 'object' || !row.segment || typeof row.segment !== 'object')
+      continue;
+    const curLen = Array.isArray(row.segment.stations) ? row.segment.stations.length : 0;
+    const oldFromFull = mapOldFull.get(exportRowStationEndpointsKey(row));
+    const ep = exportRowEndpointsKeyWithoutRoute(row);
+    const rev = exportRowEndpointsKeyReversed(ep);
+    const oldFromEp = pickRicherExportRowForStationMerge(
+      ep ? mapOldEp.get(ep) : null,
+      rev ? mapOldEp.get(rev) : null,
+    );
+    const old = pickRicherExportRowForStationMerge(oldFromFull, oldFromEp);
     const oldSt = old?.segment?.stations;
-    if (Array.isArray(oldSt) && oldSt.length > 0) {
+    const oldLen = Array.isArray(oldSt) ? oldSt.length : 0;
+    if (oldLen > curLen) {
       row.segment.stations = JSON.parse(JSON.stringify(oldSt));
     }
   }
