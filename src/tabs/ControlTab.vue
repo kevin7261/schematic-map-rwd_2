@@ -9882,15 +9882,6 @@
             {{ vhDrawLShapeStepHint }}
           </div>
           <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L；否則 N／Z 形</div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
-            :disabled="isExecuting || vhDrawLShapeAutoActive"
-            @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
-          >
-            一鍵全路網：非 H／V 邊 → L 或
-            N／Z（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
-          </button>
           <div class="d-grid gap-2 mb-2">
             <button
               type="button"
@@ -9912,6 +9903,15 @@
                   ? '停止自動（每秒一條路線）'
                   : '自動執行：每秒一條路線'
               }}
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
+              @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
+            >
+              一鍵全路網：非 H／V 邊 → L 或
+              N／Z（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
             </button>
           </div>
           <div
