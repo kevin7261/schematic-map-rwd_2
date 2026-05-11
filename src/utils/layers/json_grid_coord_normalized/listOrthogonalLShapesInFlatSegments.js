@@ -233,7 +233,7 @@ function listGraphCornerLShapes(hvAdj, fullAdj, edgeOcc) {
       ...edgeKeysToOrthoSpecs(armV, edgeOcc),
     ];
     if (orthoSpecs.length === 0) continue;
-    out.push({ kind: 'graph', cornerKey: cKey, orthoSpecs });
+    out.push({ kind: 'graph', cornerKey: cKey, armHEdgeKeys: armH, armVEdgeKeys: armV, orthoSpecs });
   }
   return out;
 }

@@ -107,7 +107,11 @@ function segmentsCollinearOverlap(x1, y1, x2, y2, x3, y3, x4, y4) {
   return tMax > eps && tMin < 1 - eps;
 }
 
-function hasInvalidGeometry(segments) {
+/**
+ * 僅檢查「邊對邊」：內部交叉、共線重疊（端點相接或同折線相鄰 pi 除外）；零長邊視為無效。
+ * 不含「頂點落在他線開放內部」——共走廊時一線端點可能落在他線長邊格上，全網優化仍禁止，L-flip 可允許。
+ */
+export function orthoFlatSegmentsEdgePairGeometryInvalid(segments) {
   const edges = buildEdges(segments);
   if (!edges) return true;
   for (let i = 0; i < edges.length; i++) {
@@ -115,16 +119,19 @@ function hasInvalidGeometry(segments) {
       if (shareEndpoint(edges[i], edges[j])) continue;
       const e1 = edges[i];
       const e2 = edges[j];
-      // 內部交叉
       if (segmentIntersectionInterior2D(e1.x1, e1.y1, e1.x2, e1.y2, e2.x1, e2.y1, e2.x2, e2.y2)) {
         return true;
       }
-      // 共線重疊（路線疊在同一格線上）
       if (segmentsCollinearOverlap(e1.x1, e1.y1, e1.x2, e1.y2, e2.x1, e2.y1, e2.x2, e2.y2)) {
         return true;
       }
     }
   }
+  return false;
+}
+
+function hasInvalidGeometry(segments) {
+  if (orthoFlatSegmentsEdgePairGeometryInvalid(segments)) return true;
   if (hasVertexStrictlyOnForeignOpenEdge(segments)) return true;
   return false;
 }

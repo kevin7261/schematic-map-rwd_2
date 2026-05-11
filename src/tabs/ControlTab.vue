@@ -51,6 +51,8 @@
     listOrthogonalLShapesInFlatSegments,
     orthoBundleHighlightForLShape,
     orthoBundleHighlightForAllLShapes,
+    tryFlipOrthogonalLShapeInFlatSegments,
+    flipFirstPossibleOrthogonalLShapeInFlatSegments,
     tryOrthoTowardCrossNudgeFromReportItem,
     applyLineOrthoHubBlueDiagonalPrepassSegments,
     shallowCloneOrthoSegmentsSynced,
@@ -6394,8 +6396,7 @@
           vhDrawDiagonalRouteStepHint.value = `${r.message} （本輪連續 ${vhDrawDiagonalRouteAutoIdleStreak}／${n} 條無替換）`;
           if (vhDrawDiagonalRouteAutoIdleStreak >= n) {
             stopVhDrawDiagonalRouteAuto();
-            vhDrawDiagonalRouteStepHint.value =
-              '已輪完一週各路線皆無可替換斜邊，自動執行已停止。';
+            vhDrawDiagonalRouteStepHint.value = '已輪完一週各路線皆無可替換斜邊，自動執行已停止。';
           }
         }
         await syncVhDrawDiagonalRouteHighlightToLayer(lyrFresh);
@@ -6411,6 +6412,7 @@
   let vhDrawLShapeAutoTimerId = null;
   const vhDrawLShapeAutoActive = ref(false);
   let vhDrawLShapeAutoTickBusy = false;
+  let vhDrawLShapeAutoNoFlipStreak = 0;
   /** 列出之 L 形清單的下一筆索引（逐步／自動循環） */
   const vhDrawLShapeCursor = ref(0);
   const vhDrawLShapeStepHint = ref('');
@@ -6422,6 +6424,7 @@
     }
     vhDrawLShapeAutoActive.value = false;
     vhDrawLShapeAutoTickBusy = false;
+    vhDrawLShapeAutoNoFlipStreak = 0;
   };
 
   const getVhDrawFlatSegments = (lyr) => {
@@ -6442,7 +6445,12 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
-  /** 逐步：每次標示一個正交 L（轉折格在全路網中度數 2、兩邊垂直；兩臂沿折線延伸至分歧点或端點） */
+  const lShapeStepLabel = (L) =>
+    L?.cornerKey
+      ? `跨路段 L · 轉角格 (${L.cornerKey.replace(',', ', ')})`
+      : `單一折線 seg ${L.segIndex} · 轉角索引 ${L.cornerIdx}`;
+
+  /** 逐步：每次標示一個正交 L，並嘗試 flip；不可 flip 時在提示列寫原因 */
   const onOrthogonalVhDrawLShapeOneClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
@@ -6468,14 +6476,16 @@
     const bundle = orthoBundleHighlightForLShape(L);
     await applyVhDrawLOrthoBundleHighlight(lyr, bundle);
     vhDrawLShapeCursor.value = (idx + 1) % n;
-    const lShapeStepLabel = (L) =>
-      L?.cornerKey
-        ? `跨路段 L · 轉角格 (${L.cornerKey.replace(',', ', ')})`
-        : `單一折線 seg ${L.segIndex} · 轉角索引 ${L.cornerIdx}`;
-    vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)}`;
+    const r = tryFlipOrthogonalLShapeInFlatSegments(flat, L);
+    if (r.flipped) {
+      await applyVhDrawDiagonalAfterReplace(lyr, r.segments);
+      vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)} · ${r.reason}`;
+      return;
+    }
+    vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)} · 無法 flip：${r.reason}`;
   };
 
-  /** 一鍵：所有 L 形同時以 orthoBundle 標示 */
+  /** 一鍵：持續尋找可 flip 的 L，直到沒有可行 flip */
   const onOrthogonalVhDrawLShapeHighlightAllClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
@@ -6487,8 +6497,8 @@
       window.alert('無路網；請確認本層已有 dataJson／geojson。');
       return;
     }
-    const list = listOrthogonalLShapesInFlatSegments(flat);
-    if (!list.length) {
+    const firstList = listOrthogonalLShapesInFlatSegments(flat);
+    if (!firstList.length) {
       window.alert(
         '目前路網中找不到符合條件的正交 L 形（轉折格在含斜線之完整圖上須僅兩條正交邊；兩臂沿 H／V 延伸至「有不同向連線」之格即停）。'
       );
@@ -6496,9 +6506,27 @@
       await applyVhDrawLOrthoBundleHighlight(lyr, null);
       return;
     }
-    const bundle = orthoBundleHighlightForAllLShapes(list);
+    let work = flat;
+    let flippedCount = 0;
+    let lastNoFlip = null;
+    const maxSteps = Math.max(20, firstList.length * 4);
+    for (let step = 0; step < maxSteps; step++) {
+      const r = flipFirstPossibleOrthogonalLShapeInFlatSegments(work);
+      if (!r.flipped) {
+        lastNoFlip = r;
+        break;
+      }
+      work = r.segments;
+      flippedCount += 1;
+    }
+    if (flippedCount > 0) {
+      await applyVhDrawDiagonalAfterReplace(lyr, work);
+      vhDrawLShapeStepHint.value = `一鍵 flip 完成：已 flip ${flippedCount} 個 L；停止原因：${lastNoFlip?.reason || '達到安全上限'}`;
+      return;
+    }
+    const bundle = orthoBundleHighlightForAllLShapes(firstList);
     await applyVhDrawLOrthoBundleHighlight(lyr, bundle);
-    vhDrawLShapeStepHint.value = `已同時標示 ${list.length} 個 L 形（青線為兩臂）。`;
+    vhDrawLShapeStepHint.value = `找到 ${firstList.length} 個 L，但沒有可 flip：${lastNoFlip?.reason || '無可行 flip'}`;
   };
 
   const toggleOrthogonalVhDrawLShapeAuto = (lyr) => {
@@ -6524,6 +6552,7 @@
     stopJsonGridFromCoordVertexAuto();
     stopRbConnectAuto();
     vhDrawLShapeAutoActive.value = true;
+    vhDrawLShapeAutoNoFlipStreak = 0;
     vhDrawLShapeAutoTimerId = setInterval(async () => {
       if (!vhDrawLShapeAutoActive.value || vhDrawLShapeAutoTickBusy) return;
       const lyrFresh = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
@@ -6551,11 +6580,19 @@
         const bundle = orthoBundleHighlightForLShape(L);
         await applyVhDrawLOrthoBundleHighlight(lyrFresh, bundle);
         vhDrawLShapeCursor.value = (idx + 1) % n;
-        const lShapeStepLabel = (L) =>
-          L?.cornerKey
-            ? `跨路段 L · 轉角格 (${L.cornerKey.replace(',', ', ')})`
-            : `單一折線 seg ${L.segIndex} · 轉角索引 ${L.cornerIdx}`;
-        vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)}（自動每秒）`;
+        const r = tryFlipOrthogonalLShapeInFlatSegments(flat, L);
+        if (r.flipped) {
+          vhDrawLShapeAutoNoFlipStreak = 0;
+          await applyVhDrawDiagonalAfterReplace(lyrFresh, r.segments);
+          vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)} · ${r.reason}（自動每秒）`;
+        } else {
+          vhDrawLShapeAutoNoFlipStreak += 1;
+          vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)} · 無法 flip：${r.reason}（連續 ${vhDrawLShapeAutoNoFlipStreak}／${n}）`;
+          if (vhDrawLShapeAutoNoFlipStreak >= n) {
+            stopVhDrawLShapeAuto();
+            vhDrawLShapeStepHint.value += '；已輪完一週皆不可 flip，自動停止。';
+          }
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -9807,7 +9844,8 @@
           <div class="my-title-xs-gray pb-2">正交 L 形標示</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
             轉折格在<strong>完整路網</strong>（含斜線）上須<strong>僅兩條邊</strong>，且皆為水平／垂直並垂直（不可有第三線或斜線接在轉角）。兩臂沿
-            H／V 延伸，每到一格若在完整路網上有與<strong>臂走向不共線</strong>之連線（含斜線、橫／豎分歧）即為該臂端點並停止。含單一折線內轉角與多路段端點相接之轉角。
+            H／V
+            延伸，每到一格若在完整路網上有與<strong>臂走向不共線</strong>之連線（含斜線、橫／豎分歧）即為該臂端點並停止。含單一折線內轉角與多路段端點相接之轉角。
           </div>
           <div class="d-grid gap-2 mb-2">
             <button
@@ -9816,7 +9854,7 @@
               :disabled="isExecuting || vhDrawDiagonalRouteAutoActive"
               @click="onOrthogonalVhDrawLShapeOneClick(layer)"
             >
-              下一步：標示下一個 L 形（循環）
+              下一步：標示下一個 L，若可行則 flip（不可行寫原因）
             </button>
             <button
               type="button"
@@ -9825,11 +9863,7 @@
               :disabled="isExecuting"
               @click="toggleOrthogonalVhDrawLShapeAuto(layer)"
             >
-              {{
-                vhDrawLShapeAutoActive
-                  ? '停止自動（每秒一個 L）'
-                  : '自動執行：每秒一個 L'
-              }}
+              {{ vhDrawLShapeAutoActive ? '停止自動（每秒一個 L）' : '自動執行：每秒一個 L 並嘗試 flip' }}
             </button>
             <button
               type="button"
@@ -9837,7 +9871,7 @@
               :disabled="isExecuting || vhDrawLShapeAutoActive"
               @click="onOrthogonalVhDrawLShapeHighlightAllClick(layer)"
             >
-              一鍵：同時標示所有 L 形（青線）
+              一鍵：連續 flip 所有可行 L（不可行寫停止原因）
             </button>
           </div>
           <div
@@ -9854,7 +9888,8 @@
             :disabled="isExecuting || vhDrawLShapeAutoActive"
             @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
           >
-            一鍵全路網：非 H／V 邊 → L 或 N／Z（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
+            一鍵全路網：非 H／V 邊 → L 或
+            N／Z（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
           </button>
           <div class="d-grid gap-2 mb-2">
             <button
@@ -9890,7 +9925,10 @@
             <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含
             <code class="small">mapDrawnRoutes</code>
             之物件。逐條處理<strong>單一斜向邊</strong>：<strong>L</strong>（兩正交段）優先；兩種 L
-            皆不可行時改 <strong>Z</strong>（橫─豎─橫）或 <strong>N／反 N</strong>（豎─橫─豎），內點轉角枚舉；仍違反交叉／共線重疊／壓紅藍／轉角疊他線頂點則略過。平手優先與鄰邊拉直，再平手則「先直後橫」偏好（N 優先於 Z）。
+            皆不可行時改 <strong>Z</strong>（橫─豎─橫）或
+            <strong>N／反 N</strong
+            >（豎─橫─豎），內點轉角枚舉；仍違反交叉／共線重疊／壓紅藍／轉角疊他線頂點則略過。平手優先與鄰邊拉直，再平手則「先直後橫」偏好（N
+            優先於 Z）。
           </div>
         </div>
 

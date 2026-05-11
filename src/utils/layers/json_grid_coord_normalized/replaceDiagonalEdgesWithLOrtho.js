@@ -135,8 +135,11 @@ function pointStrictlyInteriorOnOrthoSegment(px, py, ax, ay, bx, by) {
 
 /**
  * 任一段水平／垂直邊之**開放內部**若落在任一紅／藍 connect 的顯示格上（與線上頂點座標可分離），視為無效。
+ * @param {unknown[]} segments
+ * @param {{ flipSegmentIndices?: Set<number> }} [options] L-flip 驗證時可傳：若邊與 connect 所屬路段**皆**在此集合內，略過（只擋非本次 flip 之路線壓到紅／藍點）。
  */
-export function orthoFlatSegmentsOverlapsForeignConnectDisplay(segments) {
+export function orthoFlatSegmentsOverlapsForeignConnectDisplay(segments, options = undefined) {
+  const flipSi = options?.flipSegmentIndices;
   if (!Array.isArray(segments) || segments.length === 0) return false;
   const grids = [];
   for (let si = 0; si < segments.length; si++) {
@@ -144,7 +147,7 @@ export function orthoFlatSegmentsOverlapsForeignConnectDisplay(segments) {
     if (!Array.isArray(pts)) continue;
     for (let pi = 0; pi < pts.length; pi++) {
       const g = connectEffectiveGridAtVertex(segments[si], pi);
-      if (g) grids.push({ gx: g[0], gy: g[1] });
+      if (g) grids.push({ gx: g[0], gy: g[1], si });
     }
   }
   for (let si = 0; si < segments.length; si++) {
@@ -154,7 +157,8 @@ export function orthoFlatSegmentsOverlapsForeignConnectDisplay(segments) {
       const [ax, ay] = getXY(pts[pi]);
       const [bx, by] = getXY(pts[pi + 1]);
       if (ax !== bx && ay !== by) continue;
-      for (const { gx, gy } of grids) {
+      for (const { gx, gy, si: siConn } of grids) {
+        if (flipSi != null && flipSi.has(si) && flipSi.has(siConn)) continue;
         if (pointStrictlyInteriorOnOrthoSegment(gx, gy, ax, ay, bx, by)) return true;
       }
     }

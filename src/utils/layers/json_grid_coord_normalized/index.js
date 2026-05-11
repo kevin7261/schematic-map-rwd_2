@@ -63,6 +63,10 @@ export {
   orthoBundleHighlightForAllLShapes,
 } from './listOrthogonalLShapesInFlatSegments.js';
 export {
+  tryFlipOrthogonalLShapeInFlatSegments,
+  flipFirstPossibleOrthogonalLShapeInFlatSegments,
+} from './flipOrthogonalLShapeInFlatSegments.js';
+export {
   findBestCoPointGroupTargetOnGrid,
   applyBestCoPointGroupMoveOnGrid,
   findBestConnectPointMoveForHV,
