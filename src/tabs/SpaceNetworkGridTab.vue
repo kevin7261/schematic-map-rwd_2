@@ -4618,6 +4618,16 @@
       drawLayoutUniformGridLines(uf.geometry.coordinates);
     }
 
+    const tabLyrRouteHl = dataStore.findLayerById(layerTab);
+    const vhDrawRouteStrokeHlIdx =
+      isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab) &&
+      tabLyrRouteHl &&
+      Array.isArray(tabLyrRouteHl.highlightedSegmentIndex) &&
+      tabLyrRouteHl.highlightedSegmentIndex[0] === 'vhDrawRoute' &&
+      Number.isFinite(Number(tabLyrRouteHl.highlightedSegmentIndex[1]))
+        ? Number(tabLyrRouteHl.highlightedSegmentIndex[1])
+        : null;
+
     // 繪製路線（支援 LineString / MultiLineString）；有疊加網格時線一起移動
     routeFeatures.forEach((feature) => {
       if (!feature || !feature.geometry) return;
@@ -4636,6 +4646,11 @@
             ? Number(props.export_row_index)
             : null;
 
+      const isVhDrawRouteHl =
+        vhDrawRouteStrokeHlIdx != null &&
+        exportRowIdx != null &&
+        exportRowIdx === vhDrawRouteStrokeHlIdx;
+
       if (geom.type === 'LineString') {
         drawRoutePath(
           offsetPathToSchematicCellCenters(hvTransformPath(transformPathCoords(geom.coordinates))),
@@ -4645,7 +4660,7 @@
           props.station_weights,
           props.original_points,
           props.points,
-          isHvZHl,
+          isHvZHl || isVhDrawRouteHl,
           Boolean(props.l3_black_dot_reduced_weight_green),
           routeFeatId,
           exportRowIdx
@@ -4660,7 +4675,7 @@
             props.station_weights,
             props.original_points,
             props.points,
-            isHvZHl,
+            isHvZHl || isVhDrawRouteHl,
             Boolean(props.l3_black_dot_reduced_weight_green),
             routeFeatId,
             exportRowIdx
@@ -7046,6 +7061,9 @@
           fz == null ? null : { cx: fz.cx, cy: fz.cy },
           hxAxis,
         ]);
+      }
+      if (isOrthogonalVhDataJsonDrawMirrorLayerId(layer.layerId)) {
+        return JSON.stringify(layer.highlightedSegmentIndex ?? null);
       }
       return layer.highlightedSegmentIndex ?? null;
     },

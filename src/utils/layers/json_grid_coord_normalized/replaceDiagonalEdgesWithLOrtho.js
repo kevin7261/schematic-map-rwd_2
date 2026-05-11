@@ -1,10 +1,16 @@
 /**
- * 將各折線上「非水平／非垂直」的單一邊改為 L（兩段正交），
- * 並以 ortho 硬約束過濾交叉／共線重疊／頂點落線，以及「正交線段開放內部壓過紅／藍 connect 顯示格」（含 display_x/y）；
- * 另：L 轉角格不得落在**其他折線**之任一頂點格（與他線共格視為重疊），亦不得落在**他線**紅／藍 connect 的顯示格上（除非與該斜邊兩端點之 connect 允許重合）；
- * 若任一種 L 違反以上任一事項則略過不改該斜邊。
- * 若兩種 L 皆可，`preferVertFirst` 為 true 時平手優先「先直後橫」（先豎再橫），否則仍優先先橫後豎；
- * 其餘以與前後鄰邊「串成直線」評分為主。
+ * 將各折線上「非水平／非垂直」的單一邊改為正交路徑：
+ *
+ * 1. **L 形**（兩段正交、一個轉角）：先橫後豎 `(x1,y)` 或先豎後橫 `(x,y1)`。
+ * 2. 若兩種 L 皆不可行且 `tryNzIfNoL` 為 true，再試 **Z 形**（H-V-H：`(x0,y0)→(kx,y0)→(kx,y1)→(x1,y1)`）
+ *    與 **N／反 N 形**（V-H-V：`(x0,y0)→(x0,ky)→(x1,ky)→(x1,y1)`），其中 `kx`、`ky` 為起迄之間的格點內點。
+ *
+ * 約束（L 與 N／Z 共用）：ortho 硬約束過濾交叉／共線重疊／頂點落線，以及「正交線段開放內部壓過紅／藍 connect 顯示格」（含 display_x/y）；
+ * 轉角格不得落在**其他折線**之任一頂點格（與他線共格視為重疊），亦不得落在**他線**紅／藍 connect 的顯示格上（除非與該斜邊兩端點之 connect 允許重合）。
+ * 若無任一可行替換則略過該斜邊。
+ *
+ * 兩種 L 皆可時，`preferVertFirst` 為 true 平手優先「先直後橫」（先豎後橫的 L），否則先橫後豎；並以與前後鄰邊「串成直線」評分為主。
+ * N／Z 平手時：`preferVertFirst` 為 true 優先 **V-H-V（N）**，否則優先 **H-V-H（Z）**。
  */
 
 import {
@@ -211,7 +217,7 @@ export function orthoLcCornerCoincidesOtherRoutePolylineVertex(
   return false;
 }
 
-function rbConnectAllowedCornerKeysForDiagonalEdge(segments, diagonalSi, diagonalPi) {
+export function rbConnectAllowedCornerKeysForDiagonalEdge(segments, diagonalSi, diagonalPi) {
   const allowed = new Set();
   const seg = segments?.[diagonalSi];
   const pts = seg?.points;
@@ -248,13 +254,324 @@ function insertCorner(segments, si, pi, cornerX, cornerY) {
   return true;
 }
 
+/** 在 `pi`→`pi+1` 之中間依序插入兩個轉角（形成三條正交邊） */
+function insertTwoCorners(segments, si, pi, c1x, c1y, c2x, c2y) {
+  if (!insertCorner(segments, si, pi, c1x, c1y)) return false;
+  if (!insertCorner(segments, si, pi + 1, c2x, c2y)) return false;
+  return true;
+}
+
+/**
+ * 替換後 path 為 pi…pi+3 共四點；兩轉角均需通過 rb connect／他線頂點共格檢查。
+ */
+function nzTwoCornersConstraintsOk(
+  trial,
+  si,
+  pi,
+  c1x,
+  c1y,
+  c2x,
+  c2y,
+  allowedCornerCellKeys,
+) {
+  const lo = pi;
+  const hi = pi + 3;
+  if (
+    orthoLcCornerTouchesForeignRbConnectDisplay(
+      c1x,
+      c1y,
+      trial,
+      si,
+      lo,
+      hi,
+      allowedCornerCellKeys,
+    ) ||
+    orthoLcCornerCoincidesOtherRoutePolylineVertex(c1x, c1y, trial, si)
+  ) {
+    return false;
+  }
+  if (
+    orthoLcCornerTouchesForeignRbConnectDisplay(
+      c2x,
+      c2y,
+      trial,
+      si,
+      lo,
+      hi,
+      allowedCornerCellKeys,
+    ) ||
+    orthoLcCornerCoincidesOtherRoutePolylineVertex(c2x, c2y, trial, si)
+  ) {
+    return false;
+  }
+  return !orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial);
+}
+
+/** Z：H-V-H；與鄰邊共線程度（僅端點轉向處計分） */
+function nzScoreZ(x0, y0, kx, y1, x1, px0, py0, nx1, ny1) {
+  let s = 0;
+  if (px0 != null && py0 != null && straightAligned(px0, py0, x0, y0, kx, y0)) s++;
+  if (nx1 != null && ny1 != null && straightAligned(kx, y1, x1, y1, nx1, ny1)) s++;
+  return s;
+}
+
+/** N／反 N：V-H-V */
+function nzScoreN(x0, y0, ky, x1, y1, px0, py0, nx1, ny1) {
+  let s = 0;
+  if (px0 != null && py0 != null && straightAligned(px0, py0, x0, y0, x0, ky)) s++;
+  if (nx1 != null && ny1 != null && straightAligned(x1, ky, x1, y1, nx1, ny1)) s++;
+  return s;
+}
+
+/**
+ * 若兩種 L 皆不可行，枚舉 Z／N 內點轉角。
+ * @returns {Array<{ trial: object[], score: number, kind: 'z'|'n' }>}
+ */
+function buildNzReplacementsForDiagonal(
+  work,
+  si,
+  pi,
+  x0,
+  y0,
+  x1,
+  y1,
+  px0,
+  py0,
+  nx1,
+  ny1,
+  allowedCornerKeys,
+) {
+  const xmin = Math.min(x0, x1);
+  const xmax = Math.max(x0, x1);
+  const ymin = Math.min(y0, y1);
+  const ymax = Math.max(y0, y1);
+  const viable = [];
+
+  for (let kx = xmin + 1; kx <= xmax - 1; kx++) {
+    const trial = JSON.parse(JSON.stringify(work));
+    if (!insertTwoCorners(trial, si, pi, kx, y0, kx, y1)) continue;
+    syncOrthoFlatSegmentEndpoints(trial);
+    if (
+      !nzTwoCornersConstraintsOk(trial, si, pi, kx, y0, kx, y1, allowedCornerKeys)
+    ) {
+      continue;
+    }
+    viable.push({
+      trial,
+      score: nzScoreZ(x0, y0, kx, y1, x1, px0, py0, nx1, ny1),
+      kind: 'z',
+    });
+  }
+
+  for (let ky = ymin + 1; ky <= ymax - 1; ky++) {
+    const trial = JSON.parse(JSON.stringify(work));
+    if (!insertTwoCorners(trial, si, pi, x0, ky, x1, ky)) continue;
+    syncOrthoFlatSegmentEndpoints(trial);
+    if (
+      !nzTwoCornersConstraintsOk(trial, si, pi, x0, ky, x1, ky, allowedCornerKeys)
+    ) {
+      continue;
+    }
+    viable.push({
+      trial,
+      score: nzScoreN(x0, y0, ky, x1, y1, px0, py0, nx1, ny1),
+      kind: 'n',
+    });
+  }
+
+  return viable;
+}
+
+/**
+ * 僅掃描 `work[routeSegmentIndex]`：若該折線上有一條可替換斜邊，替換**第一個**（pi 由小到大）並回傳新路網。
+ * @param {Array<object>} work 目前 flat 路網（會被結果取代；呼叫端應傳入可更新之物件）
+ * @param {number} routeSegmentIndex flatSegments 折線索引
+ */
+function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options) {
+  const { preferVertFirst = false, tryNzIfNoL = true } = options;
+  const si = routeSegmentIndex;
+  const pts = work[si]?.points;
+  if (!Array.isArray(pts) || pts.length < 2) return { work, replacedCount: 0 };
+
+  for (let pi = 0; pi < pts.length - 1; pi++) {
+    const [x0, y0] = getXY(pts[pi]);
+    const [x1, y1] = getXY(pts[pi + 1]);
+    if (x0 === x1 || y0 === y1) continue;
+
+    const px0 = pi > 0 ? getXY(pts[pi - 1])[0] : null;
+    const py0 = pi > 0 ? getXY(pts[pi - 1])[1] : null;
+    const nx1 = pi + 2 < pts.length ? getXY(pts[pi + 2])[0] : null;
+    const ny1 = pi + 2 < pts.length ? getXY(pts[pi + 2])[1] : null;
+
+    const cand = [
+      { cx: x1, cy: y0, horizFirst: true },
+      { cx: x0, cy: y1, horizFirst: false },
+    ];
+
+    const allowedCornerKeys = rbConnectAllowedCornerKeysForDiagonalEdge(work, si, pi);
+    const viable = [];
+    for (const { cx, cy, horizFirst } of cand) {
+      if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
+      const trial = JSON.parse(JSON.stringify(work));
+      if (!insertCorner(trial, si, pi, cx, cy)) continue;
+      syncOrthoFlatSegmentEndpoints(trial);
+      if (
+        orthoLcCornerTouchesForeignRbConnectDisplay(
+          cx,
+          cy,
+          trial,
+          si,
+          pi,
+          pi + 2,
+          allowedCornerKeys,
+        ) ||
+        orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
+        orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
+      )
+        continue;
+      const score = straightContinuationScore(x0, y0, x1, y1, cx, cy, px0, py0, nx1, ny1);
+      viable.push({ trial, score, horizFirst });
+    }
+
+    if (viable.length > 0) {
+      viable.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (a.horizFirst !== b.horizFirst) {
+          if (preferVertFirst) return a.horizFirst ? 1 : -1;
+          return a.horizFirst ? -1 : 1;
+        }
+        return 0;
+      });
+      const next = viable[0].trial;
+      syncOrthoFlatSegmentEndpoints(next);
+      return { work: next, replacedCount: 1 };
+    }
+
+    if (!tryNzIfNoL) continue;
+
+    const nzViable = buildNzReplacementsForDiagonal(
+      work,
+      si,
+      pi,
+      x0,
+      y0,
+      x1,
+      y1,
+      px0,
+      py0,
+      nx1,
+      ny1,
+      allowedCornerKeys,
+    );
+    if (nzViable.length === 0) continue;
+
+    nzViable.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (preferVertFirst) {
+        if (a.kind === 'n' && b.kind === 'z') return -1;
+        if (a.kind === 'z' && b.kind === 'n') return 1;
+      } else {
+        if (a.kind === 'z' && b.kind === 'n') return -1;
+        if (a.kind === 'n' && b.kind === 'z') return 1;
+      }
+      return 0;
+    });
+    const next = nzViable[0].trial;
+    syncOrthoFlatSegmentEndpoints(next);
+    return { work: next, replacedCount: 1 };
+  }
+
+  return { work, replacedCount: 0 };
+}
+
+/**
+ * 僅針對單一折線（`flatSegments[routeSegmentIndex]`）：替換**一處**斜邊（若存在）。
+ */
+export function replaceOneDiagonalInRoute(flatSegments, routeSegmentIndex, options = {}) {
+  if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
+    return {
+      ok: false,
+      segments: flatSegments ?? [],
+      replacedCount: 0,
+      message: '沒有路段資料。',
+    };
+  }
+  let work = shallowCloneOrthoSegmentsSynced(flatSegments);
+  if (orthoDiagonalToLOrthoGeometryOrConnectInvalid(work)) {
+    return {
+      ok: false,
+      segments: work,
+      replacedCount: 0,
+      message:
+        '目前路網已有交叉、重疊、頂點落線，或有線段穿過（壓過）非端點上之紅／藍 connect 顯示格；請先修正。',
+    };
+  }
+  const si = Number(routeSegmentIndex);
+  if (!Number.isFinite(si) || si < 0 || si >= work.length) {
+    return { ok: true, segments: work, replacedCount: 0, message: '路線索引超出範圍。' };
+  }
+  const { work: next, replacedCount } = attemptFirstDiagonalReplacementOnRoute(work, si, options);
+  return {
+    ok: true,
+    segments: next,
+    replacedCount,
+    message:
+      replacedCount === 0 ? '該路線上無可替換斜邊（或皆違反約束）。' : `已於路線 #${si + 1} 替換 1 處斜邊。`,
+  };
+}
+
+/**
+ * 僅針對單一折線：重複替換直到該線無斜邊或達安全上限（等同「一鍵」只套在同一條 polyline）。
+ */
+export function replaceDiagonalsInRouteUntilClear(flatSegments, routeSegmentIndex, options = {}) {
+  const MAX_STEPS = 8192;
+  if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
+    return {
+      ok: false,
+      segments: flatSegments ?? [],
+      replacedCount: 0,
+      message: '沒有路段資料。',
+    };
+  }
+  let work = shallowCloneOrthoSegmentsSynced(flatSegments);
+  if (orthoDiagonalToLOrthoGeometryOrConnectInvalid(work)) {
+    return {
+      ok: false,
+      segments: work,
+      replacedCount: 0,
+      message:
+        '目前路網已有交叉、重疊、頂點落線，或有線段穿過（壓過）非端點上之紅／藍 connect 顯示格；請先修正。',
+    };
+  }
+  const si = Number(routeSegmentIndex);
+  if (!Number.isFinite(si) || si < 0 || si >= work.length) {
+    return { ok: true, segments: work, replacedCount: 0, message: '路線索引超出範圍。' };
+  }
+  let total = 0;
+  for (let k = 0; k < MAX_STEPS; k++) {
+    const step = attemptFirstDiagonalReplacementOnRoute(work, si, options);
+    if (step.replacedCount === 0) break;
+    work = step.work;
+    total += step.replacedCount;
+  }
+  return {
+    ok: true,
+    segments: work,
+    replacedCount: total,
+    message:
+      total === 0
+        ? `路線 #${si + 1} 上無可替換斜邊（或皆違反約束）。`
+        : `路線 #${si + 1} 已替換 ${total} 處斜邊。`,
+  };
+}
+
 /**
  * @param {Array<object>} flatSegments normalizeSpaceNetworkDataToFlatSegments 結果
- * @param {{ preferVertFirst?: boolean }} [options]
+ * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean }} [options]
  * @returns {{ ok: boolean, segments: Array<object>, replacedCount: number, message?: string }}
  */
 export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
-  const { preferVertFirst = false } = options;
+  const opts = options;
   if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
     return {
       ok: false,
@@ -282,67 +599,13 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
   while (passes++ < maxPasses) {
     let replacedThisRound = false;
 
-    outer: for (let si = 0; si < work.length; si++) {
-      const pts = work[si]?.points;
-      if (!Array.isArray(pts) || pts.length < 2) continue;
-
-      for (let pi = 0; pi < pts.length - 1; pi++) {
-        const [x0, y0] = getXY(pts[pi]);
-        const [x1, y1] = getXY(pts[pi + 1]);
-        if (x0 === x1 || y0 === y1) continue;
-
-        const px0 = pi > 0 ? getXY(pts[pi - 1])[0] : null;
-        const py0 = pi > 0 ? getXY(pts[pi - 1])[1] : null;
-        const nx1 = pi + 2 < pts.length ? getXY(pts[pi + 2])[0] : null;
-        const ny1 = pi + 2 < pts.length ? getXY(pts[pi + 2])[1] : null;
-
-        /** 先橫後豎：(x1,y0)；先豎後橫：(x0,y1) */
-        const cand = [
-          { cx: x1, cy: y0, horizFirst: true },
-          { cx: x0, cy: y1, horizFirst: false },
-        ];
-
-        const allowedCornerKeys = rbConnectAllowedCornerKeysForDiagonalEdge(work, si, pi);
-        const viable = [];
-        for (const { cx, cy, horizFirst } of cand) {
-          if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
-          const trial = JSON.parse(JSON.stringify(work));
-          if (!insertCorner(trial, si, pi, cx, cy)) continue;
-          syncOrthoFlatSegmentEndpoints(trial);
-          if (
-            orthoLcCornerTouchesForeignRbConnectDisplay(
-              cx,
-              cy,
-              trial,
-              si,
-              pi,
-              pi + 2,
-              allowedCornerKeys,
-            ) ||
-            orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
-            orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
-          )
-            continue;
-          const score = straightContinuationScore(x0, y0, x1, y1, cx, cy, px0, py0, nx1, ny1);
-          viable.push({ trial, score, horizFirst });
-        }
-
-        if (viable.length === 0) continue;
-
-        viable.sort((a, b) => {
-          if (b.score !== a.score) return b.score - a.score;
-          if (a.horizFirst !== b.horizFirst) {
-            if (preferVertFirst) return a.horizFirst ? 1 : -1;
-            return a.horizFirst ? -1 : 1;
-          }
-          return 0;
-        });
-
-        work = viable[0].trial;
-        replacedCount += 1;
+    for (let si = 0; si < work.length; si++) {
+      const { work: next, replacedCount: rc } = attemptFirstDiagonalReplacementOnRoute(work, si, opts);
+      if (rc > 0) {
+        work = next;
+        replacedCount += rc;
         replacedThisRound = true;
-        syncOrthoFlatSegmentEndpoints(work);
-        break outer;
+        break;
       }
     }
 
@@ -355,7 +618,7 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
     replacedCount,
     message:
       replacedCount === 0
-        ? '沒有可替換的非正交邊，或兩種 L 皆違反約束。'
-        : `已替換 ${replacedCount} 條非正交邊。`,
+        ? '沒有可替換的非正交邊，或 L／N／Z 皆違反約束。'
+        : `已替換 ${replacedCount} 條非正交邊（優先 L，否則 N／Z 形三正交段）。`,
   };
 }

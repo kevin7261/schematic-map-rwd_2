@@ -47,6 +47,7 @@
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
     mirrorResetAndPersistJsonGridFromCoordNormalized,
     replaceDiagonalEdgesWithLOrtho,
+    replaceDiagonalsInRouteUntilClear,
     tryOrthoTowardCrossNudgeFromReportItem,
     applyLineOrthoHubBlueDiagonalPrepassSegments,
     shallowCloneOrthoSegmentsSynced,
@@ -2417,6 +2418,7 @@
     stopTaipeiL3ReductionAuto();
     stopJsonGridFromCoordVertexAuto();
     stopLineOrthoTowardCrossAuto();
+    stopVhDrawDiagonalRouteAuto();
   });
 
   onUnmounted(() => {
@@ -2428,6 +2430,7 @@
     stopJsonGridFromCoordVertexAuto();
     stopLineOrthoTowardCrossAuto();
     stopRbConnectAuto();
+    stopVhDrawDiagonalRouteAuto();
   });
 
   /** 黑點站向示意圖幾何中心（藍虛線）靠攏；僅更新黑點格座標，不修改折線轉折 */
@@ -5595,7 +5598,11 @@
    * @param {unknown[]|null} [mapDrawnStationsFallback] 例如「先直後橫·繪製」本機 JSON：首次寫入時 lyr 尚無 dataJson，
    *   需以檔案內匯出列補回 flatSegments 匯出時遺失的 segment.stations。
    */
-  const applyJsonGridFromCoordBestMoveSegmentsToLayer = (lyr, segments, mapDrawnStationsFallback = null) => {
+  const applyJsonGridFromCoordBestMoveSegmentsToLayer = (
+    lyr,
+    segments,
+    mapDrawnStationsFallback = null
+  ) => {
     const priorExportRows = mapDrawnExportRowsFromJsonDrawRoot(lyr.jsonData, lyr.dataJson);
     lyr.spaceNetworkGridJsonData = segments;
     const computed = computeStationDataFromRoutes(segments);
@@ -5785,6 +5792,7 @@
       return;
     }
     stopRbConnectAuto();
+    stopVhDrawDiagonalRouteAuto();
     rbConnectHighlightStep.value = -1;
     rbConnectMovesInRound.value = 0;
     lyr.rbConnectVisitedKeys = [];
@@ -5907,6 +5915,7 @@
     }
     if (jsonGridFromCoordVertexOneClickRunning.value) return;
     stopJsonGridFromCoordVertexAuto();
+    stopVhDrawDiagonalRouteAuto();
     jsonGridFromCoordVertexAutoActive.value = true;
     jsonGridFromCoordVertexAutoTimerId = setInterval(async () => {
       if (!jsonGridFromCoordVertexAutoActive.value || jsonGridFromCoordVertexAutoTickBusy) return;
@@ -6178,10 +6187,56 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
-  /** 「先直後橫·dataJson 繪製」：斜邊改 L；與 hill climb 同交叉／共線重疊／頂點落線約束，且不可壓過非端點之紅／藍 connect 顯示格、轉角不得與他線頂點共格；違反則略過該斜邊；平手優先先直後橫 */
+  const VH_DRAW_DIAGONAL_ROUTE_AUTO_MS = 1000;
+  let vhDrawDiagonalRouteAutoTimerId = null;
+  const vhDrawDiagonalRouteAutoActive = ref(false);
+  let vhDrawDiagonalRouteAutoTickBusy = false;
+  /** 下一條要處理的 flat 折線索引（循環 0…n−1，與 normalize 後 segment 序一致） */
+  const vhDrawDiagonalRouteCursor = ref(0);
+  let vhDrawDiagonalRouteAutoIdleStreak = 0;
+  const vhDrawDiagonalRouteStepHint = ref('');
+
+  const stopVhDrawDiagonalRouteAuto = () => {
+    if (vhDrawDiagonalRouteAutoTimerId != null) {
+      clearInterval(vhDrawDiagonalRouteAutoTimerId);
+      vhDrawDiagonalRouteAutoTimerId = null;
+    }
+    vhDrawDiagonalRouteAutoActive.value = false;
+    vhDrawDiagonalRouteAutoTickBusy = false;
+    vhDrawDiagonalRouteAutoIdleStreak = 0;
+  };
+
+  const vhDrawDiagonalOrthoOpts = () => ({ preferVertFirst: true, tryNzIfNoL: true });
+
+  const applyVhDrawDiagonalAfterReplace = async (lyr, segments) => {
+    applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, segments);
+    await dataStore.saveLayerState(lyr.layerId, {
+      ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
+    });
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  /** 將步進游標寫入圖層 highlight，供網格分頁與 export_row_index 對齊之路線加粗／粉色標示 */
+  const syncVhDrawDiagonalRouteHighlightToLayer = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    const c = Number(vhDrawDiagonalRouteCursor.value);
+    const idx = Number.isFinite(c) ? Math.max(0, Math.floor(c)) : 0;
+    lyr.highlightedSegmentIndex = ['vhDrawRoute', idx];
+    await dataStore.saveLayerState(lyr.layerId, {
+      highlightedSegmentIndex: lyr.highlightedSegmentIndex,
+    });
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  /** 「先直後橫·dataJson 繪製」：斜邊先試改 L，兩種 L 皆不可行再試 N／Z 形（一鍵整個路網跑完）；約束同 hill climb */
   const onOrthogonalVhDrawDiagonalToLClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
+    stopVhDrawDiagonalRouteAuto();
+    vhDrawDiagonalRouteCursor.value = 0;
+    vhDrawDiagonalRouteStepHint.value = '';
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) {
       window.alert('無路網；請確認本層已有 dataJson／geojson，且來源「先直後橫」層已更新。');
@@ -6190,10 +6245,12 @@
     isExecuting.value = true;
     try {
       await nextTick();
+      lyr.highlightedSegmentIndex = null;
+      await dataStore.saveLayerState(lyr.layerId, { highlightedSegmentIndex: null });
       const flat = normalizeSpaceNetworkDataToFlatSegments(
         JSON.parse(JSON.stringify(resolved.spaceNetwork))
       );
-      const r = replaceDiagonalEdgesWithLOrtho(flat, { preferVertFirst: true });
+      const r = replaceDiagonalEdgesWithLOrtho(flat, { preferVertFirst: true, tryNzIfNoL: true });
       if (!r.ok) {
         window.alert(r.message || '無法套用（路網幾何約束）。');
         return;
@@ -6209,7 +6266,7 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       window.alert(
-        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、L 轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格）；其餘斜向邊若任一 L 會違反上述約束則略過。兩種皆可時優先與鄰邊串成直線，平手則先直後橫。`
+        `已將 ${r.replacedCount} 條非水平／垂直邊改為正交路徑：優先 L（兩段）；若兩種 L 皆不可行則改為 N／Z 形（三段：先豎─橫─豎或先橫─豎─橫，內點轉角枚舉）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則先直後橫（含 N 優先於 Z）。`
       );
     } catch (err) {
       console.error(err);
@@ -6219,6 +6276,127 @@
         isExecuting.value = false;
       }, 300);
     }
+  };
+
+  /** 每次只處理游標對應的一條折線（該線上可換斜邊一次清完），游標再移下一條（循環） */
+  const onOrthogonalVhDrawDiagonalOneRouteClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    stopVhDrawDiagonalRouteAuto();
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      return;
+    }
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      const flat = normalizeSpaceNetworkDataToFlatSegments(
+        JSON.parse(JSON.stringify(resolved.spaceNetwork))
+      );
+      const n = flat.length;
+      if (n === 0) {
+        window.alert('無 flat 路段。');
+        return;
+      }
+      await syncVhDrawDiagonalRouteHighlightToLayer(lyr);
+      const si = ((vhDrawDiagonalRouteCursor.value % n) + n) % n;
+      const r = replaceDiagonalsInRouteUntilClear(flat, si, vhDrawDiagonalOrthoOpts());
+      if (!r.ok) {
+        window.alert(r.message || '無法套用（路網幾何約束）。');
+        return;
+      }
+      vhDrawDiagonalRouteCursor.value = (si + 1) % n;
+      if (r.replacedCount > 0) {
+        await applyVhDrawDiagonalAfterReplace(lyr, r.segments);
+      }
+      vhDrawDiagonalRouteStepHint.value = `${r.message || ''} 下次：路線 #${vhDrawDiagonalRouteCursor.value + 1}／共 ${n} 條折線。`;
+      await syncVhDrawDiagonalRouteHighlightToLayer(lyr);
+    } catch (err) {
+      console.error(err);
+      window.alert('套用時發生錯誤（詳見控制台）。');
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
+
+  /** 每秒處理下一條折線（同上）；連續一輪 n 條皆無替換則停止（概念同 connect 自動） */
+  const toggleOrthogonalVhDrawDiagonalRouteAuto = (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (vhDrawDiagonalRouteAutoActive.value) {
+      stopVhDrawDiagonalRouteAuto();
+      return;
+    }
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      return;
+    }
+    const flatProbe = normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
+    );
+    if (!flatProbe.length) {
+      window.alert('無 flat 路段。');
+      return;
+    }
+    stopVhDrawDiagonalRouteAuto();
+    vhDrawDiagonalRouteAutoActive.value = true;
+    vhDrawDiagonalRouteAutoIdleStreak = 0;
+    stopJsonGridFromCoordVertexAuto();
+    stopRbConnectAuto();
+    void syncVhDrawDiagonalRouteHighlightToLayer(lyr).catch((e) => console.error(e));
+    vhDrawDiagonalRouteAutoTimerId = setInterval(async () => {
+      if (!vhDrawDiagonalRouteAutoActive.value || vhDrawDiagonalRouteAutoTickBusy) return;
+      const lyrFresh = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+      if (!lyrFresh) {
+        stopVhDrawDiagonalRouteAuto();
+        return;
+      }
+      vhDrawDiagonalRouteAutoTickBusy = true;
+      try {
+        const res = resolveB3InputSpaceNetwork(lyrFresh, { routeLineFromExportRows: 'full' });
+        if (!res?.spaceNetwork?.length) {
+          stopVhDrawDiagonalRouteAuto();
+          return;
+        }
+        const f = normalizeSpaceNetworkDataToFlatSegments(
+          JSON.parse(JSON.stringify(res.spaceNetwork))
+        );
+        const n = f.length;
+        if (n === 0) {
+          stopVhDrawDiagonalRouteAuto();
+          return;
+        }
+        const si = ((vhDrawDiagonalRouteCursor.value % n) + n) % n;
+        const r = replaceDiagonalsInRouteUntilClear(f, si, vhDrawDiagonalOrthoOpts());
+        if (!r.ok) {
+          stopVhDrawDiagonalRouteAuto();
+          window.alert(r.message || '路網約束錯誤，已停止自動。');
+          return;
+        }
+        vhDrawDiagonalRouteCursor.value = (si + 1) % n;
+        if (r.replacedCount > 0) {
+          vhDrawDiagonalRouteAutoIdleStreak = 0;
+          await applyVhDrawDiagonalAfterReplace(lyrFresh, r.segments);
+          vhDrawDiagonalRouteStepHint.value = `${r.message} 下次：#${vhDrawDiagonalRouteCursor.value + 1}／${n}`;
+        } else {
+          vhDrawDiagonalRouteAutoIdleStreak += 1;
+          vhDrawDiagonalRouteStepHint.value = `${r.message} （本輪連續 ${vhDrawDiagonalRouteAutoIdleStreak}／${n} 條無替換）`;
+          if (vhDrawDiagonalRouteAutoIdleStreak >= n) {
+            stopVhDrawDiagonalRouteAuto();
+            vhDrawDiagonalRouteStepHint.value =
+              '已輪完一週各路線皆無可替換斜邊，自動執行已停止。';
+          }
+        }
+        await syncVhDrawDiagonalRouteHighlightToLayer(lyrFresh);
+      } catch (tickErr) {
+        console.error(tickErr);
+      } finally {
+        vhDrawDiagonalRouteAutoTickBusy = false;
+      }
+    }, VH_DRAW_DIAGONAL_ROUTE_AUTO_MS);
   };
 
   /** 刪除無 connect 之整欄／列並壓縮座標（對齊 taipei d3→e3 Proc2） */
@@ -9461,20 +9639,50 @@
           >
             改為鏡像「先直後橫」層 dataJson
           </button>
-          <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L</div>
+          <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L；否則 N／Z 形</div>
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
             :disabled="isExecuting"
             @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
           >
-            非水平／垂直邊改 L（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
+            一鍵全路網：非 H／V 邊 → L 或 N／Z（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
           </button>
+          <div class="d-grid gap-2 mb-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive"
+              @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer)"
+            >
+              下一條路線：只處理目前序號之折線（該線斜邊清完後換下一條，循環）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              :class="vhDrawDiagonalRouteAutoActive ? 'my-btn-orange' : 'my-btn-blue'"
+              :disabled="isExecuting"
+              @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer)"
+            >
+              {{
+                vhDrawDiagonalRouteAutoActive
+                  ? '停止自動（每秒一條路線）'
+                  : '自動執行：每秒一條路線'
+              }}
+            </button>
+          </div>
+          <div
+            v-if="vhDrawDiagonalRouteStepHint"
+            class="text-muted my-font-size-xs mb-2"
+            style="line-height: 1.45"
+          >
+            {{ vhDrawDiagonalRouteStepHint }}
+          </div>
           <div class="text-muted my-font-size-xs" style="line-height: 1.45">
             <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含
             <code class="small">mapDrawnRoutes</code>
-            之物件。<strong>L</strong>：逐條將單一斜向邊拆成兩段正交；若會與他線重疊、壓到非端點之紅／藍
-            connect、或轉角與他線頂點共格則略過該邊；兩種皆可時優先與鄰邊串成直線。
+            之物件。逐條處理<strong>單一斜向邊</strong>：<strong>L</strong>（兩正交段）優先；兩種 L
+            皆不可行時改 <strong>Z</strong>（橫─豎─橫）或 <strong>N／反 N</strong>（豎─橫─豎），內點轉角枚舉；仍違反交叉／共線重疊／壓紅藍／轉角疊他線頂點則略過。平手優先與鄰邊拉直，再平手則「先直後橫」偏好（N 優先於 Z）。
           </div>
         </div>
 
