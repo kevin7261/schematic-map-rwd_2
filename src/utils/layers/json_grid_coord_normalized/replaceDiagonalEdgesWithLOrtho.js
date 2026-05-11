@@ -3,7 +3,7 @@
  *
  * 1. **L 形**（兩段正交、一個轉角）：先橫後豎 `(x1,y)` 或先豎後橫 `(x,y1)`；`tryL === false` 時略過。
  * 2. 若兩種 L 皆不可行且 `tryNzIfNoL` 為 true，再試 **Z 形**（H-V-H：`(x0,y0)→(kx,y0)→(kx,y1)→(x1,y1)`）
- *    與 **N／反 N 形**（V-H-V：`(x0,y0)→(x0,ky)→(x1,ky)→(x1,y1)`），其中 `kx`、`ky` 為起迄之間的格點內點。
+ *    與 **N／反 N 形**（V-H-V：`(x0,y0)→(x0,ky)→(x1,ky)→(x1,y1)`）；**Z** 之 `kx` 在水平區間內以 **0.5 格** 枚舉（含半整數轉折），**N** 之 `ky` 仍為整數內點。
  *
  * 約束（L 與 N／Z 共用）：ortho 硬約束過濾交叉／共線重疊／頂點落線，以及「正交線段開放內部壓過紅／藍 connect 顯示格」（含 display_x/y）；
  * 轉角格不得落在**其他折線**之任一頂點格（與他線共格視為重疊），亦不得落在**他線**紅／藍 connect 的顯示格上（除非與該斜邊兩端點之 connect 允許重合）。
@@ -19,18 +19,19 @@ import {
   syncOrthoFlatSegmentEndpoints,
 } from './axisAlignGridNetworkHillClimb.js';
 
-function num(v) {
-  return Math.round(Number(v ?? 0));
+/** 與 axisAlign 路網驗證一致：格座標量化為 0.5 步 */
+function gridSnapHalf(v) {
+  return Math.round(Number(v ?? 0) * 2) / 2;
 }
 
 function getXY(pt) {
-  if (Array.isArray(pt)) return [num(pt[0]), num(pt[1])];
-  return [num(pt?.x), num(pt?.y)];
+  if (Array.isArray(pt)) return [gridSnapHalf(pt[0]), gridSnapHalf(pt[1])];
+  return [gridSnapHalf(pt?.x), gridSnapHalf(pt?.y)];
 }
 
 function cloneVertexFromTemplate(template, x, y) {
-  const rx = num(x);
-  const ry = num(y);
+  const rx = gridSnapHalf(x);
+  const ry = gridSnapHalf(y);
   const t = template ?? [0, 0];
   const j = JSON.parse(JSON.stringify(t));
   if (Array.isArray(j)) {
@@ -116,7 +117,7 @@ function connectEffectiveGridAtVertex(seg, pi) {
   if (!isConnectLikeNode(node)) return null;
   const dx = Number(node?.display_x);
   const dy = Number(node?.display_y);
-  if (Number.isFinite(dx) && Number.isFinite(dy)) return [num(dx), num(dy)];
+  if (Number.isFinite(dx) && Number.isFinite(dy)) return [gridSnapHalf(dx), gridSnapHalf(dy)];
   return getXY(pts[pi]);
 }
 
@@ -176,8 +177,8 @@ export function orthoLcCornerTouchesForeignRbConnectDisplay(
   diagonalPiHigh,
   allowedCornerCellKeys,
 ) {
-  const cx = num(cornerGx);
-  const cy = num(cornerGy);
+  const cx = gridSnapHalf(cornerGx);
+  const cy = gridSnapHalf(cornerGy);
   if (!segments?.length || allowedCornerCellKeys == null) return false;
   if (allowedCornerCellKeys.has(`${cx},${cy}`)) return false;
   let lo = diagonalPiLow;
@@ -206,8 +207,8 @@ export function orthoLcCornerCoincidesOtherRoutePolylineVertex(
   segments,
   excludeSegIndex,
 ) {
-  const cx = num(cornerGx);
-  const cy = num(cornerGy);
+  const cx = gridSnapHalf(cornerGx);
+  const cy = gridSnapHalf(cornerGy);
   if (!segments?.length || excludeSegIndex < 0 || excludeSegIndex >= segments.length) return false;
   for (let sj = 0; sj < segments.length; sj++) {
     if (sj === excludeSegIndex) continue;
@@ -251,7 +252,7 @@ function insertCorner(segments, si, pi, cornerX, cornerY) {
   if (Array.isArray(nodes) && nodes.length === lenBefore) {
     const bend = {
       node_type: 'line',
-      tags: { x_grid: num(cornerX), y_grid: num(cornerY) },
+      tags: { x_grid: gridSnapHalf(cornerX), y_grid: gridSnapHalf(cornerY) },
     };
     nodes.splice(pi + 1, 0, bend);
   }
@@ -327,6 +328,15 @@ function nzScoreN(x0, y0, ky, x1, y1, px0, py0, nx1, ny1) {
   return s;
 }
 
+/** Z 形鉛直段之水平位置 `kx`：嚴格介於 min、max 之間，步長 0.5（如 1.5） */
+function interiorHalfGridExclusive(min, max) {
+  const lo = Math.round(min * 2) + 1;
+  const hi = Math.round(max * 2) - 1;
+  const out = [];
+  for (let h = lo; h <= hi; h++) out.push(h / 2);
+  return out;
+}
+
 /**
  * 若兩種 L 皆不可行，枚舉 Z／N 內點轉角。
  * @returns {Array<{ trial: object[], score: number, kind: 'z'|'n' }>}
@@ -351,7 +361,7 @@ function buildNzReplacementsForDiagonal(
   const ymax = Math.max(y0, y1);
   const viable = [];
 
-  for (let kx = xmin + 1; kx <= xmax - 1; kx++) {
+  for (const kx of interiorHalfGridExclusive(xmin, xmax)) {
     const trial = JSON.parse(JSON.stringify(work));
     if (!insertTwoCorners(trial, si, pi, kx, y0, kx, y1)) continue;
     syncOrthoFlatSegmentEndpoints(trial);

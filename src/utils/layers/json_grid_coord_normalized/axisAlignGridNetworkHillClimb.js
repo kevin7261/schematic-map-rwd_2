@@ -1,5 +1,5 @@
 /**
- * integer 格點路網：在「不新增／刪除頂點、不插入轉折」前提下，
+ * 格點路網（座標取最近 **0.5 格**，整數不變）：在「不新增／刪除頂點、不插入轉折」前提下，
  * 以「同一座標」聯動移動（頭尾共點、多段重複頂點一併平移），使折線盡量橫平豎直。
  * 硬約束：無線段內部交叉、零長邊禁止；
  * 同一格可有多個頂點若且唯若其為同一共點群組（以執行當下初值之格座標分群）；禁止兩個不同共點群組移入同一格。
@@ -7,18 +7,19 @@
 
 import { segmentIntersectionInterior2D } from '@/utils/routeSegmentIntersections.js';
 
-function num(v) {
-  return Math.round(Number(v ?? 0));
+/** 與斜向改 L／N／Z 一致：格座標可為整數或半整數 */
+function gridCoord(v) {
+  return Math.round(Number(v ?? 0) * 2) / 2;
 }
 
 function getXY(pt) {
-  if (Array.isArray(pt)) return [num(pt[0]), num(pt[1])];
-  return [num(pt?.x), num(pt?.y)];
+  if (Array.isArray(pt)) return [gridCoord(pt[0]), gridCoord(pt[1])];
+  return [gridCoord(pt?.x), gridCoord(pt?.y)];
 }
 
 function setXY(seg, idx, x, y) {
-  const rx = num(x);
-  const ry = num(y);
+  const rx = gridCoord(x);
+  const ry = gridCoord(y);
   const pt = seg.points[idx];
   if (Array.isArray(pt)) {
     pt[0] = rx;
@@ -80,7 +81,7 @@ function shareEndpoint(e1, e2) {
 
 /**
  * 判斷兩線段是否共線且**實質重疊**（超過端點接觸）。
- * 使用整數格座標（已四捨五入），所以以整數精度比較。
+ * 使用已量化之格座標（0.5 步），以精確算術比較。
  */
 function segmentsCollinearOverlap(x1, y1, x2, y2, x3, y3, x4, y4) {
   const dx1 = x2 - x1;

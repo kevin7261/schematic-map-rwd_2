@@ -9943,7 +9943,11 @@
 
           <div class="my-title-xs-gray pb-2">斜向邊 → N／Z 形</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            不試 L，僅以 <strong>Z</strong>（橫─豎─橫）或 <strong>N／反 N</strong>（豎─橫─豎）替換斜邊，內點轉角枚舉；約束同上。平手時「先直後橫」偏好（N 優先於 Z）。
+            不試 L，僅以 <strong>Z</strong>（橫─豎─橫）或 <strong>N／反 N</strong>（豎─橫─豎）替換斜邊；<strong>Z</strong> 之鉛直段水平位置
+            <code class="small">kx</code>
+            以<strong> 0.5 格</strong>枚舉（轉折可為半格），<strong>N</strong> 之
+            <code class="small">ky</code>
+            仍為整數內點。約束同上；平手時「先直後橫」偏好（N 優先於 Z）。
           </div>
           <div class="d-grid gap-2 mb-2">
             <button
