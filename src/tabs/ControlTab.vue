@@ -6150,7 +6150,7 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
-  /** 「先直後橫·dataJson 繪製」：將折線上非正交單邊改為 L（與 hill climb 相同之交叉／共線重疊／頂點落線約束） */
+  /** 「先直後橫·dataJson 繪製」：斜邊改 L；與 hill climb 同交叉／共線重疊／頂點落線約束，且不可壓過非端點之紅／藍 connect 顯示格；平手優先先直後橫 */
   const onOrthogonalVhDrawDiagonalToLClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
@@ -6165,7 +6165,7 @@
       const flat = normalizeSpaceNetworkDataToFlatSegments(
         JSON.parse(JSON.stringify(resolved.spaceNetwork)),
       );
-      const r = replaceDiagonalEdgesWithLOrtho(flat);
+      const r = replaceDiagonalEdgesWithLOrtho(flat, { preferVertFirst: true });
       if (!r.ok) {
         window.alert(r.message || '無法套用（路網幾何約束）。');
         return;
@@ -6181,7 +6181,7 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       window.alert(
-        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊）；兩種皆可時優先與鄰邊串成直線。`,
+        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、L 轉角不重疊他線紅／藍 connect 顯示格）；兩種皆可時優先與鄰邊串成直線，平手則先直後橫。`,
       );
     } catch (err) {
       console.error(err);
