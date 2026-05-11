@@ -66,7 +66,7 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
     derivedLayer.dataJson = arr;
     derivedLayer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(
       Array.isArray(raw) ? raw : [],
-      { stationPoints: 'endpoints', routeLine: 'endpoints' },
+      { stationPoints: 'endpoints', routeLine: 'endpoints' }
     );
     derivedLayer.isLoaded = true;
     return;
@@ -99,7 +99,7 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
   derivedLayer.dataJson = arr;
   derivedLayer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(
     Array.isArray(raw) ? raw : [],
-    { stationPoints: 'endpoints', routeLine: 'endpoints' },
+    { stationPoints: 'endpoints', routeLine: 'endpoints' }
   );
   derivedLayer.isLoaded = true;
 }
@@ -172,12 +172,16 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
   return payload;
 }
 
-export function mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer) {
+export function mirrorResetAndPersistJsonGridFromCoordNormalized(
+  findLayerById,
+  saveLayerState,
+  layer
+) {
   applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, layer);
   resetJsonGridFromCoordNormalizedPipelineFields(layer);
   saveLayerState(
     layer.layerId,
-    jsonGridFromCoordNormalizedPersistPayload(layer, { omitLoadingFlags: true }),
+    jsonGridFromCoordNormalizedPersistPayload(layer, { omitLoadingFlags: true })
   );
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
     refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveLayerState);

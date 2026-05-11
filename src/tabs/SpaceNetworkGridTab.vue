@@ -6380,11 +6380,12 @@
       }
     }
 
-    // point_orthogonal／temp：Control「下一頂點」— 橘圈；temp「朝紅十字」列＝橘線／點，欄＝藍虛線／點
+    // point_orthogonal／temp／先直後橫 VH 繪製：Control「下一頂點」— 橘圈；temp「朝紅十字」列＝橘線／點，欄＝藍虛線／點；VH 另支援 orthoBundle（L 形青線）
     if (
       layerTab === POINT_ORTHOGONAL_LAYER_ID ||
       layerTab === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
-      isLineOrthogonalTowardCenterLayerId(layerTab)
+      isLineOrthogonalTowardCenterLayerId(layerTab) ||
+      isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)
     ) {
       const hlLayer = dataStore.findLayerById(layerTab);
       const hl = hlLayer?.highlightedSegmentIndex;
@@ -6433,8 +6434,16 @@
         : 'rgba(255, 152, 0, 0.28)';
       const towardCrossPtStroke = isColTowardCrossHl ? '#0d47a1' : '#ff6600';
 
+      const orthoBundleLineStroke = isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)
+        ? '#00acc1'
+        : towardCrossLineStroke;
+      const orthoBundleLineDash = isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)
+        ? null
+        : towardCrossLineDash;
+
       if (
-        isLineOrthogonalTowardCenterLayerId(layerTab) &&
+        (isLineOrthogonalTowardCenterLayerId(layerTab) ||
+          isOrthogonalVhDataJsonDrawMirrorLayerId(layerTab)) &&
         hlLayer &&
         Array.isArray(hl) &&
         hl[0] === 'orthoBundle' &&
@@ -6484,9 +6493,9 @@
                 .attr('y1', yScale(gy0))
                 .attr('x2', xScale(gx1))
                 .attr('y2', yScale(gy1))
-                .attr('stroke', towardCrossLineStroke)
+                .attr('stroke', orthoBundleLineStroke)
                 .attr('stroke-width', 5)
-                .attr('stroke-dasharray', towardCrossLineDash ?? '')
+                .attr('stroke-dasharray', orthoBundleLineDash ?? '')
                 .attr('stroke-linecap', 'round')
                 .attr('stroke-linejoin', 'round')
                 .attr('fill', 'none');

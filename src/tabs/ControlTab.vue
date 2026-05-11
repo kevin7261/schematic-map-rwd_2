@@ -48,6 +48,9 @@
     mirrorResetAndPersistJsonGridFromCoordNormalized,
     replaceDiagonalEdgesWithLOrtho,
     replaceDiagonalsInRouteUntilClear,
+    listOrthogonalLShapesInFlatSegments,
+    orthoBundleHighlightForLShape,
+    orthoBundleHighlightForAllLShapes,
     tryOrthoTowardCrossNudgeFromReportItem,
     applyLineOrthoHubBlueDiagonalPrepassSegments,
     shallowCloneOrthoSegmentsSynced,
@@ -2419,6 +2422,7 @@
     stopJsonGridFromCoordVertexAuto();
     stopLineOrthoTowardCrossAuto();
     stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
   });
 
   onUnmounted(() => {
@@ -2431,6 +2435,7 @@
     stopLineOrthoTowardCrossAuto();
     stopRbConnectAuto();
     stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
   });
 
   /** 黑點站向示意圖幾何中心（藍虛線）靠攏；僅更新黑點格座標，不修改折線轉折 */
@@ -6220,6 +6225,7 @@
   /** 將步進游標寫入圖層 highlight，供網格分頁與 export_row_index 對齊之路線加粗／粉色標示 */
   const syncVhDrawDiagonalRouteHighlightToLayer = async (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    stopVhDrawLShapeAuto();
     const c = Number(vhDrawDiagonalRouteCursor.value);
     const idx = Number.isFinite(c) ? Math.max(0, Math.floor(c)) : 0;
     lyr.highlightedSegmentIndex = ['vhDrawRoute', idx];
@@ -6235,6 +6241,7 @@
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
     vhDrawDiagonalRouteCursor.value = 0;
     vhDrawDiagonalRouteStepHint.value = '';
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
@@ -6283,6 +6290,7 @@
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) {
       window.alert('無路網；請確認本層已有 dataJson／geojson。');
@@ -6397,6 +6405,163 @@
         vhDrawDiagonalRouteAutoTickBusy = false;
       }
     }, VH_DRAW_DIAGONAL_ROUTE_AUTO_MS);
+  };
+
+  const VH_DRAW_LSHAPE_AUTO_MS = 1000;
+  let vhDrawLShapeAutoTimerId = null;
+  const vhDrawLShapeAutoActive = ref(false);
+  let vhDrawLShapeAutoTickBusy = false;
+  /** 列出之 L 形清單的下一筆索引（逐步／自動循環） */
+  const vhDrawLShapeCursor = ref(0);
+  const vhDrawLShapeStepHint = ref('');
+
+  const stopVhDrawLShapeAuto = () => {
+    if (vhDrawLShapeAutoTimerId != null) {
+      clearInterval(vhDrawLShapeAutoTimerId);
+      vhDrawLShapeAutoTimerId = null;
+    }
+    vhDrawLShapeAutoActive.value = false;
+    vhDrawLShapeAutoTickBusy = false;
+  };
+
+  const getVhDrawFlatSegments = (lyr) => {
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) return null;
+    return normalizeSpaceNetworkDataToFlatSegments(
+      JSON.parse(JSON.stringify(resolved.spaceNetwork))
+    );
+  };
+
+  const applyVhDrawLOrthoBundleHighlight = async (lyr, bundle) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    lyr.highlightedSegmentIndex = bundle;
+    await dataStore.saveLayerState(lyr.layerId, {
+      highlightedSegmentIndex: bundle,
+    });
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  /** 逐步：每次標示一個正交 L（轉折格在全路網中度數 2、兩邊垂直；兩臂沿折線延伸至分歧点或端點） */
+  const onOrthogonalVhDrawLShapeOneClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
+    const flat = getVhDrawFlatSegments(lyr);
+    if (!flat?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      return;
+    }
+    const list = listOrthogonalLShapesInFlatSegments(flat);
+    if (!list.length) {
+      window.alert(
+        '目前路網中找不到符合條件的正交 L 形（轉折格在含斜線之完整圖上須僅兩條正交邊；兩臂沿 H／V 延伸至「有不同向連線」之格即停）。'
+      );
+      vhDrawLShapeStepHint.value = 'L 形：0 個';
+      await applyVhDrawLOrthoBundleHighlight(lyr, null);
+      return;
+    }
+    const n = list.length;
+    const idx = ((vhDrawLShapeCursor.value % n) + n) % n;
+    const L = list[idx];
+    const bundle = orthoBundleHighlightForLShape(L);
+    await applyVhDrawLOrthoBundleHighlight(lyr, bundle);
+    vhDrawLShapeCursor.value = (idx + 1) % n;
+    const lShapeStepLabel = (L) =>
+      L?.cornerKey
+        ? `跨路段 L · 轉角格 (${L.cornerKey.replace(',', ', ')})`
+        : `單一折線 seg ${L.segIndex} · 轉角索引 ${L.cornerIdx}`;
+    vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)}`;
+  };
+
+  /** 一鍵：所有 L 形同時以 orthoBundle 標示 */
+  const onOrthogonalVhDrawLShapeHighlightAllClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
+    vhDrawLShapeCursor.value = 0;
+    const flat = getVhDrawFlatSegments(lyr);
+    if (!flat?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      return;
+    }
+    const list = listOrthogonalLShapesInFlatSegments(flat);
+    if (!list.length) {
+      window.alert(
+        '目前路網中找不到符合條件的正交 L 形（轉折格在含斜線之完整圖上須僅兩條正交邊；兩臂沿 H／V 延伸至「有不同向連線」之格即停）。'
+      );
+      vhDrawLShapeStepHint.value = 'L 形：0 個';
+      await applyVhDrawLOrthoBundleHighlight(lyr, null);
+      return;
+    }
+    const bundle = orthoBundleHighlightForAllLShapes(list);
+    await applyVhDrawLOrthoBundleHighlight(lyr, bundle);
+    vhDrawLShapeStepHint.value = `已同時標示 ${list.length} 個 L 形（青線為兩臂）。`;
+  };
+
+  const toggleOrthogonalVhDrawLShapeAuto = (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (vhDrawLShapeAutoActive.value) {
+      stopVhDrawLShapeAuto();
+      return;
+    }
+    const flatProbe = getVhDrawFlatSegments(lyr);
+    if (!flatProbe?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      return;
+    }
+    const listProbe = listOrthogonalLShapesInFlatSegments(flatProbe);
+    if (!listProbe.length) {
+      window.alert(
+        '目前路網中找不到符合條件的正交 L 形（轉折格在含斜線之完整圖上須僅兩條正交邊；兩臂沿 H／V 延伸至「有不同向連線」之格即停）。'
+      );
+      return;
+    }
+    stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
+    stopJsonGridFromCoordVertexAuto();
+    stopRbConnectAuto();
+    vhDrawLShapeAutoActive.value = true;
+    vhDrawLShapeAutoTimerId = setInterval(async () => {
+      if (!vhDrawLShapeAutoActive.value || vhDrawLShapeAutoTickBusy) return;
+      const lyrFresh = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+      if (!lyrFresh) {
+        stopVhDrawLShapeAuto();
+        return;
+      }
+      vhDrawLShapeAutoTickBusy = true;
+      try {
+        const flat = getVhDrawFlatSegments(lyrFresh);
+        if (!flat?.length) {
+          stopVhDrawLShapeAuto();
+          return;
+        }
+        const list = listOrthogonalLShapesInFlatSegments(flat);
+        if (!list.length) {
+          stopVhDrawLShapeAuto();
+          vhDrawLShapeStepHint.value = 'L 形已消失，自動已停止。';
+          await applyVhDrawLOrthoBundleHighlight(lyrFresh, null);
+          return;
+        }
+        const n = list.length;
+        const idx = ((vhDrawLShapeCursor.value % n) + n) % n;
+        const L = list[idx];
+        const bundle = orthoBundleHighlightForLShape(L);
+        await applyVhDrawLOrthoBundleHighlight(lyrFresh, bundle);
+        vhDrawLShapeCursor.value = (idx + 1) % n;
+        const lShapeStepLabel = (L) =>
+          L?.cornerKey
+            ? `跨路段 L · 轉角格 (${L.cornerKey.replace(',', ', ')})`
+            : `單一折線 seg ${L.segIndex} · 轉角索引 ${L.cornerIdx}`;
+        vhDrawLShapeStepHint.value = `L 形 ${idx + 1}／${n} · ${lShapeStepLabel(L)}（自動每秒）`;
+      } catch (e) {
+        console.error(e);
+      } finally {
+        vhDrawLShapeAutoTickBusy = false;
+      }
+    }, VH_DRAW_LSHAPE_AUTO_MS);
   };
 
   /** 刪除無 connect 之整欄／列並壓縮座標（對齊 taipei d3→e3 Proc2） */
@@ -9639,11 +9804,54 @@
           >
             改為鏡像「先直後橫」層 dataJson
           </button>
+          <div class="my-title-xs-gray pb-2">正交 L 形標示</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            轉折格在<strong>完整路網</strong>（含斜線）上須<strong>僅兩條邊</strong>，且皆為水平／垂直並垂直（不可有第三線或斜線接在轉角）。兩臂沿
+            H／V 延伸，每到一格若在完整路網上有與<strong>臂走向不共線</strong>之連線（含斜線、橫／豎分歧）即為該臂端點並停止。含單一折線內轉角與多路段端點相接之轉角。
+          </div>
+          <div class="d-grid gap-2 mb-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive"
+              @click="onOrthogonalVhDrawLShapeOneClick(layer)"
+            >
+              下一步：標示下一個 L 形（循環）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              :class="vhDrawLShapeAutoActive ? 'my-btn-orange' : 'my-btn-blue'"
+              :disabled="isExecuting"
+              @click="toggleOrthogonalVhDrawLShapeAuto(layer)"
+            >
+              {{
+                vhDrawLShapeAutoActive
+                  ? '停止自動（每秒一個 L）'
+                  : '自動執行：每秒一個 L'
+              }}
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+              :disabled="isExecuting || vhDrawLShapeAutoActive"
+              @click="onOrthogonalVhDrawLShapeHighlightAllClick(layer)"
+            >
+              一鍵：同時標示所有 L 形（青線）
+            </button>
+          </div>
+          <div
+            v-if="vhDrawLShapeStepHint"
+            class="text-muted my-font-size-xs mb-3"
+            style="line-height: 1.45"
+          >
+            {{ vhDrawLShapeStepHint }}
+          </div>
           <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L；否則 N／Z 形</div>
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
-            :disabled="isExecuting"
+            :disabled="isExecuting || vhDrawLShapeAutoActive"
             @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
           >
             一鍵全路網：非 H／V 邊 → L 或 N／Z（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
@@ -9652,7 +9860,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive"
               @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer)"
             >
               下一條路線：只處理目前序號之折線（該線斜邊清完後換下一條，循環）
@@ -9661,7 +9869,7 @@
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
               :class="vhDrawDiagonalRouteAutoActive ? 'my-btn-orange' : 'my-btn-blue'"
-              :disabled="isExecuting"
+              :disabled="isExecuting || vhDrawLShapeAutoActive"
               @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer)"
             >
               {{

@@ -58,6 +58,11 @@ export {
   replaceDiagonalsInRouteUntilClear,
 } from './replaceDiagonalEdgesWithLOrtho.js';
 export {
+  listOrthogonalLShapesInFlatSegments,
+  orthoBundleHighlightForLShape,
+  orthoBundleHighlightForAllLShapes,
+} from './listOrthogonalLShapesInFlatSegments.js';
+export {
   findBestCoPointGroupTargetOnGrid,
   applyBestCoPointGroupMoveOnGrid,
   findBestConnectPointMoveForHV,
