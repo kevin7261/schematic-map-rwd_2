@@ -6261,19 +6261,25 @@
   };
 
   /** 「先直後橫·dataJson 繪製」：一鍵整個路網；`kind` 為 `'l'` 僅 L，`'nz'` 僅 N／Z */
-  const onOrthogonalVhDrawDiagonalToLClick = async (lyr, kind) => {
+  const onOrthogonalVhDrawDiagonalToLClick = async (lyr, kind, opts = {}) => {
+    const silent = opts.silent === true;
+    const externalExecuting = opts.externalExecuting === true;
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
-    if (isExecuting.value) return;
+    if (!externalExecuting && isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
     vhDrawDiagonalRouteCursor.value = 0;
     vhDrawDiagonalRouteStepHint.value = '';
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) {
-      window.alert('無路網；請確認本層已有 dataJson／geojson，且來源「先直後橫」層已更新。');
+      const msg = '無路網；請確認本層已有 dataJson／geojson，且來源「先直後橫」層已更新。';
+      if (silent) vhDrawDiagonalRouteStepHint.value = msg;
+      else window.alert(msg);
       return;
     }
-    isExecuting.value = true;
+    if (!externalExecuting) {
+      isExecuting.value = true;
+    }
     try {
       await nextTick();
       lyr.highlightedSegmentIndex = null;
@@ -6283,11 +6289,15 @@
       );
       const r = replaceDiagonalEdgesWithLOrtho(flat, vhDrawDiagonalOrthoOptsFor(kind));
       if (!r.ok) {
-        window.alert(r.message || '無法套用（路網幾何約束）。');
+        const msg = r.message || '無法套用（路網幾何約束）。';
+        if (silent) vhDrawDiagonalRouteStepHint.value = msg;
+        else window.alert(msg);
         return;
       }
       if (r.replacedCount === 0) {
-        window.alert(r.message || '沒有可替換的非正交邊。');
+        const msg = r.message || '沒有可替換的非正交邊。';
+        if (silent) vhDrawDiagonalRouteStepHint.value = msg;
+        else window.alert(msg);
         return;
       }
       applyJsonGridFromCoordBestMoveSegmentsToLayer(lyr, r.segments);
@@ -6296,18 +6306,29 @@
       });
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
-      window.alert(
-        kind === 'nz'
-          ? `已將 ${r.replacedCount} 條非水平／垂直邊改為 N／Z 形（三段：先豎─橫─豎或先橫─豎─橫，內點轉角枚舉；不試 L）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時先直後橫偏好（N 優先於 Z）。`
-          : `已將 ${r.replacedCount} 條非水平／垂直邊改為正交 L（兩段；不試 N／Z）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則「先直後橫」偏好。`
-      );
+      if (silent) {
+        vhDrawDiagonalRouteStepHint.value =
+          kind === 'nz'
+            ? `斜邊→N／Z：已替換 ${r.replacedCount} 條非 H／V 邊。`
+            : `斜邊→正交 L：已替換 ${r.replacedCount} 條非 H／V 邊。`;
+      } else {
+        window.alert(
+          kind === 'nz'
+            ? `已將 ${r.replacedCount} 條非水平／垂直邊改為 N／Z 形（三段：先豎─橫─豎或先橫─豎─橫，內點轉角枚舉；不試 L）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時先直後橫偏好（N 優先於 Z）。`
+            : `已將 ${r.replacedCount} 條非水平／垂直邊改為正交 L（兩段；不試 N／Z）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則「先直後橫」偏好。`
+        );
+      }
     } catch (err) {
       console.error(err);
-      window.alert('套用時發生錯誤（詳見控制台）。');
+      const msg = '套用時發生錯誤（詳見控制台）。';
+      if (silent) vhDrawDiagonalRouteStepHint.value = msg;
+      else window.alert(msg);
     } finally {
-      setTimeout(() => {
-        isExecuting.value = false;
-      }, 300);
+      if (!externalExecuting) {
+        setTimeout(() => {
+          isExecuting.value = false;
+        }, 300);
+      }
     }
   };
 
@@ -6443,6 +6464,8 @@
   /** 列出之 L 形清單的下一筆索引（逐步／自動循環） */
   const vhDrawLShapeCursor = ref(0);
   const vhDrawLShapeStepHint = ref('');
+  /** 先直後橫·繪製：三合一批次（無 window.alert）結果摘要 */
+  const vhDrawTripleBatchHint = ref('');
 
   const stopVhDrawLShapeAuto = () => {
     if (vhDrawLShapeAutoTimerId != null) {
@@ -6513,23 +6536,31 @@
   };
 
   /** 一鍵：持續尋找可 flip 的 L，直到沒有可行 flip */
-  const onOrthogonalVhDrawLShapeHighlightAllClick = async (lyr) => {
+  const onOrthogonalVhDrawLShapeHighlightAllClick = async (lyr, opts = {}) => {
+    const silent = opts.silent === true;
+    const externalExecuting = opts.externalExecuting === true;
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
-    if (isExecuting.value) return;
+    if (!externalExecuting && isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
     vhDrawLShapeCursor.value = 0;
     const flat = getVhDrawFlatSegments(lyr);
     if (!flat?.length) {
-      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      const msg = '無路網；請確認本層已有 dataJson／geojson。';
+      if (silent) vhDrawLShapeStepHint.value = msg;
+      else window.alert(msg);
       return;
     }
     const firstList = listOrthogonalLShapesInFlatSegments(flat);
     if (!firstList.length) {
-      window.alert(
-        '目前路網中找不到符合條件的正交 L 形（轉折格在含斜線之完整圖上須僅兩條正交邊；兩臂沿 H／V 延伸至「有不同向連線」之格即停）。'
-      );
-      vhDrawLShapeStepHint.value = 'L 形：0 個';
+      if (!silent) {
+        window.alert(
+          '目前路網中找不到符合條件的正交 L 形（轉折格在含斜線之完整圖上須僅兩條正交邊；兩臂沿 H／V 延伸至「有不同向連線」之格即停）。'
+        );
+      }
+      vhDrawLShapeStepHint.value = silent
+        ? 'L 形：0 個可 flip（已略過）'
+        : 'L 形：0 個';
       await applyVhDrawLOrthoBundleHighlight(lyr, null);
       return;
     }
@@ -6555,6 +6586,46 @@
     await applyVhDrawLOrthoBundleHighlight(lyr, bundle);
     vhDrawLShapeStepHint.value = `找到 ${firstList.length} 個 L，但沒有可 flip：${lastNoFlip?.reason || '無可行 flip'}`;
   };
+
+  /** 一鍵連跑：全部 L flip → 斜邊改 L → 斜邊改 N／Z；不使用 window.alert，結果寫於下方摘要 */
+  async function onOrthogonalVhDrawTripleBatchClick(lyr) {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
+    vhDrawTripleBatchHint.value = '';
+    vhDrawLShapeStepHint.value = '';
+    vhDrawDiagonalRouteStepHint.value = '';
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      await onOrthogonalVhDrawLShapeHighlightAllClick(lyr, {
+        silent: true,
+        externalExecuting: true,
+      });
+      const m1 = vhDrawLShapeStepHint.value || '—';
+      let lyr2 = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) || lyr;
+      await onOrthogonalVhDrawDiagonalToLClick(lyr2, 'l', {
+        silent: true,
+        externalExecuting: true,
+      });
+      const m2 = vhDrawDiagonalRouteStepHint.value || '—';
+      lyr2 = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) || lyr2;
+      await onOrthogonalVhDrawDiagonalToLClick(lyr2, 'nz', {
+        silent: true,
+        externalExecuting: true,
+      });
+      const m3 = vhDrawDiagonalRouteStepHint.value || '—';
+      vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3}`;
+    } catch (e) {
+      console.error(e);
+      vhDrawTripleBatchHint.value = '批次中斷：發生錯誤（詳見控制台）。';
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  }
 
   const toggleOrthogonalVhDrawLShapeAuto = (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
@@ -9843,6 +9914,22 @@
           v-if="layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID"
           class="pb-3 mb-3 border-bottom"
         >
+          <div class="my-title-xs-gray pb-2">一鍵批次（不跳視窗）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
+            :disabled="isExecuting || layer.isLoading"
+            @click="onOrthogonalVhDrawTripleBatchClick(layer)"
+          >
+            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z
+          </button>
+          <div
+            v-if="vhDrawTripleBatchHint"
+            class="text-muted my-font-size-xs mb-3"
+            style="line-height: 1.45"
+          >
+            {{ vhDrawTripleBatchHint }}
+          </div>
           <div class="my-title-xs-gray pb-2">本機 JSON（路段匯出）</div>
           <button
             type="button"

@@ -78,9 +78,22 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
     if (osm) {
       try {
         const { geojsonData } = osmXmlStringToGeojsonData(osm);
-        derivedLayer.geojsonData =
+        const lineFeats =
           geojsonData?.type === 'FeatureCollection' && Array.isArray(geojsonData.features)
-            ? geojsonData
+            ? geojsonData.features.filter(
+                (f) =>
+                  f?.geometry &&
+                  (f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString')
+              )
+            : [];
+        const drawGj = draw?.geojsonData;
+        const pointFeats =
+          drawGj?.type === 'FeatureCollection' && Array.isArray(drawGj.features)
+            ? drawGj.features.filter((f) => f?.geometry?.type === 'Point')
+            : [];
+        derivedLayer.geojsonData =
+          lineFeats.length || pointFeats.length
+            ? { type: 'FeatureCollection', features: [...lineFeats, ...pointFeats] }
             : null;
       } catch {
         derivedLayer.geojsonData = null;

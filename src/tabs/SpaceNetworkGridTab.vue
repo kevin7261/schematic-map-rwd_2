@@ -100,7 +100,9 @@
     POINT_ORTHOGONAL_LAYER_ID,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+    LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
     isLineOrthogonalTowardCenterLayerId,
+    isLayoutNetworkGridFromVhDrawLayerId,
     isSpaceGridVhDrawFamilyLayerId,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
@@ -126,6 +128,35 @@
     ];
     for (const id of chainIds) {
       if (id === layerTab) continue;
+      const src = dataStore.findLayerById(id);
+      if (!src) continue;
+      out = mergeSegmentStationsFromPriorExportRows(
+        out,
+        mapDrawnExportRowsFromJsonDrawRoot(src.jsonData, src.dataJson),
+      );
+      out = mergeSegmentStationsFromPriorExportRows(out, src.processedJsonData);
+    }
+    return out;
+  }
+
+  /**
+   * 版面網格檢視：中段車站數來自 MapDrawn 匯出列 `segment.stations`（與 JSON 一致），
+   * 並自系譜各層合併 stations（不強制已有本層 base 才建）。
+   */
+  function buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer) {
+    if (!drawLayer) return [];
+    let base = mapDrawnExportRowsFromJsonDrawRoot(drawLayer.jsonData, drawLayer.dataJson);
+    if (!Array.isArray(base)) base = [];
+    let out = base.length ? JSON.parse(JSON.stringify(base)) : [];
+    out = mergeSegmentStationsFromPriorExportRows(out, drawLayer.processedJsonData);
+    const chainIds = [
+      ...LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+      POINT_ORTHOGONAL_LAYER_ID,
+      JSON_GRID_COORD_NORMALIZED_LAYER_ID,
+      OSM_2_GEOJSON_2_JSON_LAYER_ID,
+    ];
+    for (const id of chainIds) {
+      if (id === drawLayer.layerId) continue;
       const src = dataStore.findLayerById(id);
       if (!src) continue;
       out = mergeSegmentStationsFromPriorExportRows(
@@ -4793,6 +4824,129 @@
           .attr('font-weight', 'bold')
           .attr('fill', edgeLabelFill)
           .text(label);
+      }
+    }
+
+    // layout_network_grid_from_vh_draw：JSON segment.stations 中段車站沿折線以視圖像素弧長均分（每次 drawMap／縮放重算），黑點
+    if (isLayoutNetworkGridFromVhDrawLayerId(layerTab)) {
+      const drawLayer = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+      const exportRowsForSta = buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer);
+      const layoutEpXY = (ep) => {
+        if (!ep || typeof ep !== 'object') return [NaN, NaN];
+        const x = Number(ep.x_grid ?? ep.lon);
+        const y = Number(ep.y_grid ?? ep.lat);
+        return [x, y];
+      };
+      const layoutFindRowForLineGrid = (gridPts, rows) => {
+        const eps = 1e-3;
+        if (!Array.isArray(gridPts) || gridPts.length < 2 || !Array.isArray(rows)) return null;
+        const g0 = gridPts[0];
+        const g1 = gridPts[gridPts.length - 1];
+        for (const row of rows) {
+          const seg = row?.segment;
+          if (!seg) continue;
+          const [ax, ay] = layoutEpXY(seg.start);
+          const [bx, by] = layoutEpXY(seg.end);
+          if (![ax, ay, bx, by].every(Number.isFinite)) continue;
+          const fw =
+            Math.abs(g0[0] - ax) < eps &&
+            Math.abs(g0[1] - ay) < eps &&
+            Math.abs(g1[0] - bx) < eps &&
+            Math.abs(g1[1] - by) < eps;
+          const bw =
+            Math.abs(g0[0] - bx) < eps &&
+            Math.abs(g0[1] - by) < eps &&
+            Math.abs(g1[0] - ax) < eps &&
+            Math.abs(g1[1] - ay) < eps;
+          if (fw || bw) return row;
+        }
+        return null;
+      };
+      const layoutMidStationCountFromJsonRow = (row) => {
+        const mids = Array.isArray(row?.segment?.stations) ? row.segment.stations : [];
+        if (mids.length === 0) return 0;
+        let n = 0;
+        for (const m of mids) {
+          if (!m || typeof m !== 'object') continue;
+          if (m.node_type === 'connect') continue;
+          n++;
+        }
+        return n > 0 ? n : mids.length;
+      };
+      const distPxSeg = (pa, pb) => {
+        const dx = pb[0] - pa[0];
+        const dy = pb[1] - pa[1];
+        return Math.hypot(dx, dy);
+      };
+      const gridXYAtPixelDistanceAlong = (gridPts, targetPx) => {
+        if (!gridPts || gridPts.length < 2) return null;
+        const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
+        const lens = [];
+        let total = 0;
+        for (let i = 0; i < pix.length - 1; i++) {
+          const L = distPxSeg(pix[i], pix[i + 1]);
+          lens.push(L);
+          total += L;
+        }
+        if (!(total > 0) || !Number.isFinite(targetPx) || targetPx <= 0) {
+          const g0 = gridPts[0];
+          return [g0[0], g0[1]];
+        }
+        const d = Math.min(targetPx, total);
+        let acc = 0;
+        for (let i = 0; i < lens.length; i++) {
+          const L = lens[i];
+          if (acc + L >= d) {
+            const t = L > 0 ? (d - acc) / L : 0;
+            const g0 = gridPts[i];
+            const g1 = gridPts[i + 1];
+            return [g0[0] + t * (g1[0] - g0[0]), g0[1] + t * (g1[1] - g0[1])];
+          }
+          acc += L;
+        }
+        const last = gridPts[gridPts.length - 1];
+        return [last[0], last[1]];
+      };
+
+      const layoutStaG = zoomGroup.append('g').attr('class', 'layout-vh-draw-line-stations-pt');
+      const layoutLineFeatCount = routeFeatures.filter(
+        (f) => f?.geometry?.type === 'LineString',
+      ).length;
+      let layoutLineFeatIdx = 0;
+      for (const rf of routeFeatures) {
+        if (!rf?.geometry || rf.geometry.type !== 'LineString') continue;
+        const coords = rf.geometry.coordinates;
+        if (!Array.isArray(coords) || coords.length < 2) continue;
+        const gridPts = coords.map((c) => [Number(c[0]), Number(c[1])]);
+        let row = layoutFindRowForLineGrid(gridPts, exportRowsForSta);
+        if (
+          !row &&
+          exportRowsForSta.length > 0 &&
+          layoutLineFeatCount === exportRowsForSta.length
+        ) {
+          row = exportRowsForSta[layoutLineFeatIdx] ?? null;
+        }
+        layoutLineFeatIdx += 1;
+        const nSta = row ? layoutMidStationCountFromJsonRow(row) : 0;
+        if (nSta <= 0) continue;
+        const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
+        let totalPx = 0;
+        for (let i = 0; i < pix.length - 1; i++) totalPx += distPxSeg(pix[i], pix[i + 1]);
+        if (!(totalPx > 0)) continue;
+        for (let k = 1; k <= nSta; k++) {
+          const target = (k * totalPx) / (nSta + 1);
+          const gxy = gridXYAtPixelDistanceAlong(gridPts, target);
+          if (!gxy) continue;
+          layoutStaG
+            .append('circle')
+            .attr('cx', xScale(gxy[0]))
+            .attr('cy', yScale(gxy[1]))
+            .attr('r', 1.5)
+            .attr('fill', '#000000')
+            .attr('stroke', '#000000')
+            .attr('stroke-width', 1)
+            .style('pointer-events', 'none');
+        }
       }
     }
 
