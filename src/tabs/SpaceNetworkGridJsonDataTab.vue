@@ -293,6 +293,14 @@
       layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID ||
       isCoordNormalizedDataJsonMirrorFollowonLayerId(layer.layerId)
     ) {
+      const rows = mapDrawnExportRowsFromJsonDrawRoot(layer.jsonData, layer.dataJson);
+      if (Array.isArray(rows) && rows.length > 0) {
+        try {
+          return JSON.stringify(rows, null, 2);
+        } catch (e) {
+          return String(e);
+        }
+      }
       const payload = jsonViewerPayloadForCoordNormalizedFamilyLayer(layer);
       if (payload != null) {
         try {

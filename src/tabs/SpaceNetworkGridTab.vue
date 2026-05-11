@@ -66,6 +66,7 @@
   import {
     isMapDrawnRoutesExportArray,
     mapDrawnExportRowsFromJsonDrawRoot,
+    expandLonLatChainFromRouteCoordinates,
   } from '@/utils/mapDrawnRoutesImport.js';
   import {
     getGeoJsonFeatureTagProps,
@@ -102,6 +103,69 @@
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
   import { uniformGridCellFromLayoutMeta } from '@/utils/stationUniformGridGeoJson.js';
+
+  /** 與 MapTab 路段／站點 popup 同源（OSM／GeoJSON → JSON 檢視） */
+  const escapeLayoutTooltipHtml = (s) =>
+    String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+  const routeRowStationsOrderedTooltipSection = (row) => {
+    const seg = row?.segment;
+    if (!seg || typeof seg !== 'object') return '';
+    const ordered = [];
+    if (seg.start) ordered.push(seg.start);
+    if (Array.isArray(seg.stations)) {
+      for (const st of seg.stations) ordered.push(st);
+    }
+    if (seg.end) ordered.push(seg.end);
+    if (!ordered.length) return '';
+    let html = `<strong>stations（依序）</strong> ${ordered.length}<br>`;
+    ordered.forEach((node, idx) => {
+      const sid = escapeLayoutTooltipHtml(node.station_id ?? node.tags?.station_id ?? '');
+      const snm = escapeLayoutTooltipHtml(
+        node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? ''
+      );
+      html += `<strong>#${idx + 1}</strong> station_id ${sid} · station_name ${snm}<br>`;
+    });
+    return html;
+  };
+
+  const routeExportRowPolylineTooltipHtml = (row, chain) => {
+    if (!row || typeof row !== 'object') return '';
+    if (!chain || chain.length < 1) return '';
+    const [flon, flat] = chain[0];
+    const head = `<strong>routeName</strong> ${escapeLayoutTooltipHtml(row.routeName)}<br>
+<strong>route_id</strong> ${escapeLayoutTooltipHtml(row.route_id ?? '')}<br>
+<strong>color</strong> ${escapeLayoutTooltipHtml(row.color)}<br>
+<strong>lon</strong> ${escapeLayoutTooltipHtml(flon)}<br>
+<strong>lat</strong> ${escapeLayoutTooltipHtml(flat)}`;
+    const stations = routeRowStationsOrderedTooltipSection(row);
+    return stations ? `${head}<br>${stations}` : head;
+  };
+
+  const stationEndpointTooltipHtmlFromProps = (propBag, endpointType, lonVal, latVal) => {
+    const p = propBag && typeof propBag === 'object' ? propBag : {};
+    const tags = p.tags && typeof p.tags === 'object' ? p.tags : {};
+    const sid = escapeLayoutTooltipHtml(p.station_id ?? tags.station_id ?? '');
+    const snm = escapeLayoutTooltipHtml(
+      p.station_name ?? tags.station_name ?? tags.name ?? ''
+    );
+    const rnl = p.route_name_list ?? tags.route_name_list;
+    const rnlStr = Array.isArray(rnl)
+      ? escapeLayoutTooltipHtml(JSON.stringify(rnl))
+      : escapeLayoutTooltipHtml(String(rnl ?? '[]'));
+    const cn = p.connect_number ?? tags.connect_number ?? '';
+    return `<strong>station_id</strong> ${sid}<br>
+<strong>station_name</strong> ${snm}<br>
+<strong>route_name_list</strong> ${rnlStr}<br>
+<strong>type</strong> <code style="color:#c2185b">${escapeLayoutTooltipHtml(endpointType)}</code><br>
+<strong>connect_number</strong> ${escapeLayoutTooltipHtml(cn)}<br>
+<strong>lon</strong> ${escapeLayoutTooltipHtml(lonVal)}<br>
+<strong>lat</strong> ${escapeLayoutTooltipHtml(latVal)}`;
+  };
 
   /**
    * @param {*} meta — layoutUniformGridMeta（wgs84／compressed）
@@ -2295,6 +2359,7 @@
    */
   const drawMap = () => {
     const layerTab = spaceGridDataLayerTabId.value;
+    const uniformGridRouteFamilyTab = isSpaceLayoutUniformGridViewerLayerId(layerTab);
     const forceThisDraw = drawMapForceNext;
     drawMapForceNext = false;
     if (!mapGeoJsonData.value) return;
@@ -2394,14 +2459,25 @@
       .attr('class', 'd3js-map-tooltip')
       .style('position', 'absolute')
       .style('padding', '8px 12px')
-      .style('background-color', 'rgba(0, 0, 0, 0.8)')
-      .style('color', '#FFFFFF')
-      .style('border-radius', '4px')
+      .style(
+        'background-color',
+        uniformGridRouteFamilyTab ? '#ffffff' : 'rgba(0, 0, 0, 0.8)'
+      )
+      .style('color', uniformGridRouteFamilyTab ? '#1a1a1a' : '#FFFFFF')
+      .style('border-radius', uniformGridRouteFamilyTab ? '6px' : '4px')
       .style('font-size', '12px')
       .style('pointer-events', 'none')
       .style('opacity', 0)
       .style('z-index', 1000)
-      .style('max-width', '300px');
+      .style('max-width', uniformGridRouteFamilyTab ? '340px' : '300px')
+      .style(
+        'box-shadow',
+        uniformGridRouteFamilyTab ? '0 3px 14px rgba(0,0,0,0.35)' : 'none'
+      )
+      .style(
+        'border',
+        uniformGridRouteFamilyTab ? '1px solid rgba(0,0,0,0.12)' : 'none'
+      );
 
     // 檢查是否為 Normalize Segments 格式
     const isNormalizeFormat = mapGeoJsonData.value.type === 'NormalizeSegments';
@@ -2421,6 +2497,51 @@
     if (isNormalizeFormat) {
       // Normalize Segments 格式處理（優先使用 layer 當前資料，以反映 flip 後的狀態）
       const activeLayerForSegments = dataStore.findLayerById(layerTab);
+      const jrForTooltipRowMatch = isSpaceLayoutUniformGridViewerLayerId(layerTab)
+        ? mapDrawnExportRowsFromJsonDrawRoot(
+            activeLayerForSegments?.jsonData,
+            activeLayerForSegments?.dataJson
+          )
+        : null;
+      const matchExportRowIndexForNormalizeSegment = (seg) => {
+        if (!Array.isArray(jrForTooltipRowMatch) || jrForTooltipRowMatch.length === 0) return null;
+        const pts = seg?.points;
+        if (!Array.isArray(pts) || pts.length < 2) return null;
+        const p0 = pts[0];
+        const p1 = pts[pts.length - 1];
+        const ax = Number(Array.isArray(p0) ? p0[0] : p0?.x);
+        const ay = Number(Array.isArray(p0) ? p0[1] : p0?.y);
+        const bx = Number(Array.isArray(p1) ? p1[0] : p1?.x);
+        const by = Number(Array.isArray(p1) ? p1[1] : p1?.y);
+        if (
+          !Number.isFinite(ax) ||
+          !Number.isFinite(ay) ||
+          !Number.isFinite(bx) ||
+          !Number.isFinite(by)
+        ) {
+          return null;
+        }
+        const eps = 1e-3;
+        for (let i = 0; i < jrForTooltipRowMatch.length; i++) {
+          const r = jrForTooltipRowMatch[i];
+          const s = r?.segment?.start;
+          const e = r?.segment?.end;
+          if (!s || !e) continue;
+          const sax = Number(s.x_grid ?? s.lon);
+          const say = Number(s.y_grid ?? s.lat);
+          const ebx = Number(e.x_grid ?? e.lon);
+          const eby = Number(e.y_grid ?? e.lat);
+          if (
+            Math.abs(sax - ax) <= eps &&
+            Math.abs(say - ay) <= eps &&
+            Math.abs(ebx - bx) <= eps &&
+            Math.abs(eby - by) <= eps
+          ) {
+            return i;
+          }
+        }
+        return null;
+      };
       const currentLayerData = activeLayerForSegments?.spaceNetworkGridJsonData;
       const segments =
         Array.isArray(currentLayerData) && currentLayerData.length > 0
@@ -2504,6 +2625,7 @@
               points: seg.points, // 傳遞 points 用於計算距離
               l3_black_dot_reduced_weight_green: Boolean(seg.l3_black_dot_reduced_weight_green),
               _flatSegmentIndex: flatSegmentIndex,
+              map_draw_row_index: matchExportRowIndexForNormalizeSegment(seg),
             },
           };
         } else {
@@ -2525,6 +2647,7 @@
               points: seg.points, // 傳遞 points 用於計算距離
               l3_black_dot_reduced_weight_green: Boolean(seg.l3_black_dot_reduced_weight_green),
               _flatSegmentIndex: flatSegmentIndex,
+              map_draw_row_index: matchExportRowIndexForNormalizeSegment(seg),
             },
           };
         }
@@ -4013,12 +4136,8 @@
       return n.toFixed(10).replace(/\.?0+$/, '');
     };
 
-    const routeStrokeScaleLinear = dataStore.showRouteThickness
-      ? buildRouteWeightStrokeScaleLinear(collectWeightsFromGeoRouteFeatures(routeFeatures))
-      : null;
-
-    /** json 繪製路段 tooltip：segment.start→stations→end（與資料節點之 lon/lat、grid 鍵對齊） */
-    const tooltipHtmlSegmentStationsOrdered = (seg) => {
+    /** space-network-grid 分頁：路段匯出 stations 附錄（含格線／lon·lat；非 layout-viewer） */
+    const tooltipHtmlSegmentStationsOrderedVerbose = (seg) => {
       if (!seg || typeof seg !== 'object') return '';
       const esc = (t) =>
         String(t ?? '')
@@ -4052,6 +4171,10 @@
       });
       return h;
     };
+
+    const routeStrokeScaleLinear = dataStore.showRouteThickness
+      ? buildRouteWeightStrokeScaleLinear(collectWeightsFromGeoRouteFeatures(routeFeatures))
+      : null;
 
     const drawRoutePath = (
       coords,
@@ -4099,6 +4222,7 @@
         linePx != null ? formatStrokeWidthPx(linePx * 1.5) : isHvZTest3E3F3Highlight ? 9 : 5;
 
       let routeTooltipHtml = '';
+      let routeTooltipAppendNearLine = true;
 
       const pathElement = zoomGroup
         .append('path')
@@ -4114,58 +4238,92 @@
       // 添加 hover 效果
       pathElement
         .on('mouseover', function (event) {
-          // 高亮路線
           d3.select(this).attr('stroke-width', hoverStrokeW).attr('opacity', 1);
 
-          // 顯示 tooltip
-          let tooltipContent = '';
-          if (name) {
-            tooltipContent += `<strong>路線名稱:</strong> ${name}<br>`;
-          }
-          /** 路徑上除起迄外的每一個頂點（含共線中間點），與資料折線一致 */
-          const interiorCoords = coords.length > 2 ? coords.slice(1, -1) : [];
-          const fmt = (p) => {
-            if (!p) return '';
-            const gx = Number(p[0]);
-            const gy = Number(p[1]);
-            const show = `(${formatPathCoordNumber(gx)}, ${formatPathCoordNumber(gy)})`;
-            return `${show}${minSpacingInline(gx, gy)}`;
+          const buildLegacyLineTooltip = () => {
+            let tooltipContent = '';
+            if (name) {
+              tooltipContent += `<strong>路線名稱:</strong> ${name}<br>`;
+            }
+            const interiorCoords = coords.length > 2 ? coords.slice(1, -1) : [];
+            const fmt = (p) => {
+              if (!p) return '';
+              const gx = Number(p[0]);
+              const gy = Number(p[1]);
+              const show = `(${formatPathCoordNumber(gx)}, ${formatPathCoordNumber(gy)})`;
+              return `${show}${minSpacingInline(gx, gy)}`;
+            };
+            tooltipContent += `<strong>這一個路段的轉折點數:</strong> ${interiorCoords.length}`;
+            if (coords.length >= 2) {
+              tooltipContent += `<br><strong>起點座標:</strong> ${fmt(coords[0])}<br><strong>終點座標:</strong> ${fmt(coords[coords.length - 1])}`;
+            }
+            if (interiorCoords.length > 0) {
+              tooltipContent += `<br><strong>轉折點座標（依序）:</strong> ${interiorCoords.map((p) => fmt(p)).join('；')}`;
+            } else if (coords.length >= 2) {
+              tooltipContent += `<br><strong>轉折點座標:</strong> （無）`;
+            }
+            tooltipContent += '<br>';
+            if (tags) {
+              const tagsHtml = Object.entries(tags)
+                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                .join('<br>');
+              tooltipContent += tagsHtml || '無標籤資訊';
+            }
+            if (stationWeights && Array.isArray(stationWeights) && stationWeights.length > 0) {
+              tooltipContent += '<br><strong>站間權重 (station_weights):</strong><br>';
+              stationWeights.forEach((w, wi) => {
+                const sw = w?.start_idx;
+                const ew = w?.end_idx;
+                const wt = w?.weight;
+                tooltipContent += `  #${wi + 1} start_idx=${sw} → end_idx=${ew}，weight=${wt}<br>`;
+              });
+            }
+            if (uniformGridRouteFamilyTab) {
+              const jl = dataStore.findLayerById(layerTab);
+              const jr = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
+              if (Array.isArray(jr)) {
+                const idxHint =
+                  exportRowIndexHint != null && Number.isFinite(Number(exportRowIndexHint))
+                    ? Number(exportRowIndexHint)
+                    : null;
+                let segMatch = null;
+                if (
+                  idxHint != null &&
+                  idxHint >= 0 &&
+                  idxHint < jr.length &&
+                  jr[idxHint] &&
+                  typeof jr[idxHint] === 'object'
+                ) {
+                  segMatch = jr[idxHint]?.segment ?? null;
+                }
+                const rid = routeFeatureRouteId != null ? String(routeFeatureRouteId) : '';
+                const rnm = name != null ? String(name) : '';
+                if (!segMatch && rid !== '') {
+                  const hits = jr.filter((r) => r && String(r.route_id ?? '') === rid);
+                  segMatch = hits.length === 1 ? (hits[0]?.segment ?? null) : null;
+                }
+                if (!segMatch && rnm !== '') {
+                  const hitsNm = jr.filter((r) => r && String(r.routeName ?? '') === rnm);
+                  segMatch = hitsNm.length === 1 ? (hitsNm[0]?.segment ?? null) : null;
+                }
+                if (segMatch) {
+                  tooltipContent += tooltipHtmlSegmentStationsOrderedVerbose(segMatch);
+                }
+              }
+            }
+            return tooltipContent || '無標籤資訊';
           };
-          tooltipContent += `<strong>這一個路段的轉折點數:</strong> ${interiorCoords.length}`;
-          if (coords.length >= 2) {
-            tooltipContent += `<br><strong>起點座標:</strong> ${fmt(coords[0])}<br><strong>終點座標:</strong> ${fmt(coords[coords.length - 1])}`;
-          }
-          if (interiorCoords.length > 0) {
-            tooltipContent += `<br><strong>轉折點座標（依序）:</strong> ${interiorCoords.map((p) => fmt(p)).join('；')}`;
-          } else if (coords.length >= 2) {
-            tooltipContent += `<br><strong>轉折點座標:</strong> （無）`;
-          }
-          tooltipContent += '<br>';
-          if (tags) {
-            const tagsHtml = Object.entries(tags)
-              .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
-              .join('<br>');
-            tooltipContent += tagsHtml || '無標籤資訊';
-          }
-          if (stationWeights && Array.isArray(stationWeights) && stationWeights.length > 0) {
-            tooltipContent += '<br><strong>站間權重 (station_weights):</strong><br>';
-            stationWeights.forEach((w, wi) => {
-              const sw = w?.start_idx;
-              const ew = w?.end_idx;
-              const wt = w?.weight;
-              tooltipContent += `  #${wi + 1} start_idx=${sw} → end_idx=${ew}，weight=${wt}<br>`;
-            });
-          }
 
-          if (isSpaceLayoutUniformGridViewerLayerId(layerTab)) {
+          if (uniformGridRouteFamilyTab) {
+            routeTooltipAppendNearLine = false;
             const jl = dataStore.findLayerById(layerTab);
             const jr = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson);
+            let rowMatch = null;
             if (Array.isArray(jr)) {
               const idxHint =
                 exportRowIndexHint != null && Number.isFinite(Number(exportRowIndexHint))
                   ? Number(exportRowIndexHint)
                   : null;
-              let segMatch = null;
               if (
                 idxHint != null &&
                 idxHint >= 0 &&
@@ -4173,25 +4331,41 @@
                 jr[idxHint] &&
                 typeof jr[idxHint] === 'object'
               ) {
-                segMatch = jr[idxHint]?.segment ?? null;
+                rowMatch = jr[idxHint];
               }
               const rid = routeFeatureRouteId != null ? String(routeFeatureRouteId) : '';
               const rnm = name != null ? String(name) : '';
-              if (!segMatch && rid !== '') {
+              if (!rowMatch && rid !== '') {
                 const hits = jr.filter((r) => r && String(r.route_id ?? '') === rid);
-                segMatch = hits.length === 1 ? (hits[0]?.segment ?? null) : null;
+                rowMatch = hits.length === 1 ? hits[0] : null;
               }
-              if (!segMatch && rnm !== '') {
+              if (!rowMatch && rnm !== '') {
                 const hitsNm = jr.filter((r) => r && String(r.routeName ?? '') === rnm);
-                segMatch = hitsNm.length === 1 ? (hitsNm[0]?.segment ?? null) : null;
-              }
-              if (segMatch) {
-                tooltipContent += tooltipHtmlSegmentStationsOrdered(segMatch);
+                if (hitsNm.length === 1) {
+                  rowMatch = hitsNm[0];
+                } else if (
+                  hitsNm.length > 1 &&
+                  idxHint != null &&
+                  idxHint >= 0 &&
+                  idxHint < jr.length &&
+                  jr[idxHint] &&
+                  String(jr[idxHint]?.routeName ?? '') === rnm
+                ) {
+                  rowMatch = jr[idxHint];
+                }
               }
             }
+            if (rowMatch) {
+              const chain = expandLonLatChainFromRouteCoordinates(rowMatch.routeCoordinates);
+              routeTooltipHtml = routeExportRowPolylineTooltipHtml(rowMatch, chain);
+            } else {
+              routeTooltipAppendNearLine = true;
+              routeTooltipHtml = buildLegacyLineTooltip();
+            }
+          } else {
+            routeTooltipAppendNearLine = true;
+            routeTooltipHtml = buildLegacyLineTooltip();
           }
-
-          routeTooltipHtml = tooltipContent || '無標籤資訊';
 
           tooltip
             .html(routeTooltipHtml)
@@ -4201,6 +4375,7 @@
         })
         .on('mousemove', function (event) {
           tooltip.style('left', event.pageX + 10 + 'px').style('top', event.pageY - 10 + 'px');
+          if (!routeTooltipAppendNearLine) return;
           if ((!minSpacingOverlay && !taipeiCReducedOverlayDraw) || !routeTooltipHtml) return;
           const [gx, gy] = eventToNetworkXY(event);
           const near = closestPointOnPolyline(coords, gx, gy);
@@ -4341,9 +4516,11 @@
       const routeFeatId =
         props.route_id != null && props.route_id !== '' ? String(props.route_id) : '';
       const exportRowIdx =
-        props.export_row_index != null && Number.isFinite(Number(props.export_row_index))
-          ? Number(props.export_row_index)
-          : null;
+        props.map_draw_row_index != null && Number.isFinite(Number(props.map_draw_row_index))
+          ? Number(props.map_draw_row_index)
+          : props.export_row_index != null && Number.isFinite(Number(props.export_row_index))
+            ? Number(props.export_row_index)
+            : null;
 
       if (geom.type === 'LineString') {
         drawRoutePath(
@@ -4559,6 +4736,10 @@
         strokeWidth = b.strokeW;
         cn = props.connect_number ?? tags.connect_number;
       } else {
+        const tagMergedGrid = getGeoJsonFeatureTagProps(feature);
+        endpointNormForHover = normalizeRouteSegmentEndpointType(
+          props.type ?? tags.type ?? tagMergedGrid.type ?? 'normal'
+        );
         fillColor =
           isConnect && connectBlueFromTaggedTerminal(props, tags)
             ? '#1565c0'
@@ -4677,6 +4858,31 @@
           }
 
           // 顯示 tooltip（包含座標和標籤）
+          /** 版面網格／座標正規化家族：站點 hover 與 MapTab popup 同欄位（含 type／route_name_list） */
+          if (uniformGridRouteFamilyTab) {
+            const lonTip = Number.isFinite(segmentNodeLon(props)) ? segmentNodeLon(props) : Number(x);
+            const latTip = Number.isFinite(segmentNodeLat(props)) ? segmentNodeLat(props) : Number(y);
+            const tagForStationType = getGeoJsonFeatureTagProps(feature);
+            const typeForTooltip = normalizeRouteSegmentEndpointType(
+              props.type ??
+                tags.type ??
+                tagForStationType.type ??
+                endpointNormForHover
+            );
+            const tooltipContent = stationEndpointTooltipHtmlFromProps(
+              props,
+              typeForTooltip,
+              lonTip,
+              latTip
+            );
+            tooltip
+              .html(tooltipContent)
+              .style('opacity', 1)
+              .style('left', event.pageX + 10 + 'px')
+              .style('top', event.pageY - 10 + 'px');
+            return;
+          }
+
           const gridGx =
             props.x_proj !== undefined && props.y_proj !== undefined
               ? Number(props.x_proj)

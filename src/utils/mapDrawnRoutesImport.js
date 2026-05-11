@@ -600,6 +600,46 @@ export function mapDrawnExportRowsFromJsonDrawRoot(jsonData, dataJson) {
   return routesFrom(jsonData) ?? routesFrom(dataJson);
 }
 
+/** 匯出列對齊鍵：路線名 + 起迄站號（供管線覆寫 json 時保留 segment.stations） */
+export function exportRowStationEndpointsKey(row) {
+  if (!row || typeof row !== 'object') return '';
+  const s = row.segment?.start;
+  const e = row.segment?.end;
+  if (!s || !e) return '';
+  const sid = String(s.station_id ?? '').trim();
+  const eid = String(e.station_id ?? '').trim();
+  const rn = String(row.routeName ?? '').trim();
+  return `${rn}\0${sid}\0${eid}`;
+}
+
+/**
+ * 正規化管線寫回 jsonData 時，flatSegments 轉匯出列常會得到 `stations: []`；
+ * 若上一版記憶體中同起迄之路段仍有中段站，則深拷貝合併回來（不刪使用者／OSM 中段資料）。
+ *
+ * @param {unknown[]} newRows
+ * @param {unknown[]|null|undefined} priorRows
+ */
+export function mergeSegmentStationsFromPriorExportRows(newRows, priorRows) {
+  if (!Array.isArray(newRows) || newRows.length === 0) return newRows;
+  if (!Array.isArray(priorRows) || priorRows.length === 0) return newRows;
+  const mapOld = new Map();
+  for (const r of priorRows) {
+    const k = exportRowStationEndpointsKey(r);
+    if (k) mapOld.set(k, r);
+  }
+  for (const row of newRows) {
+    if (!row || typeof row !== 'object' || !row.segment || typeof row.segment !== 'object') continue;
+    const st = row.segment.stations;
+    if (Array.isArray(st) && st.length > 0) continue;
+    const old = mapOld.get(exportRowStationEndpointsKey(row));
+    const oldSt = old?.segment?.stations;
+    if (Array.isArray(oldSt) && oldSt.length > 0) {
+      row.segment.stations = JSON.parse(JSON.stringify(oldSt));
+    }
+  }
+  return newRows;
+}
+
 /**
  * 將均勻網格產物寫入 `dataJson`：含 routes 快照與格線／meta（與圖層欄位一致供持久化）。
  * @param {unknown[]} rows

@@ -4,7 +4,12 @@
  */
 
 import { LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID } from '../osm_2_geojson_2_json/sessionOsmXml.js';
-import { minimalLineStringFeatureCollectionFromRouteExportRows } from '../../mapDrawnRoutesImport.js';
+import { useDataStore } from '@/stores/dataStore.js';
+import {
+  mapDrawnExportRowsFromJsonDrawRoot,
+  mergeSegmentStationsFromPriorExportRows,
+  minimalLineStringFeatureCollectionFromRouteExportRows,
+} from '../../mapDrawnRoutesImport.js';
 import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
 import { JSON_GRID_COORD_NORMALIZED_LAYER_ID } from './layerIds.js';
 import { syncJsonGridFromCoordNormalizedMirrorFromParent } from './mirrorFromCoordNormalizedLayer.js';
@@ -51,7 +56,19 @@ export function syncJsonGridCoordNormalizedDataJsonFromPipeline(layer) {
     }
   }
   if (!Array.isArray(rows) || rows.length === 0) return;
+  const priorExport = mapDrawnExportRowsFromJsonDrawRoot(layer.jsonData, layer.dataJson);
   const arr = JSON.parse(JSON.stringify(rows));
+  mergeSegmentStationsFromPriorExportRows(arr, priorExport);
+  try {
+    const store = useDataStore();
+    const parent = store.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID);
+    const parentExport = mapDrawnExportRowsFromJsonDrawRoot(parent?.jsonData, parent?.dataJson);
+    if (Array.isArray(parentExport) && parentExport.length > 0) {
+      mergeSegmentStationsFromPriorExportRows(arr, parentExport);
+    }
+  } catch (e) {
+    void e;
+  }
   layer.jsonData = arr;
   layer.dataJson = arr;
   layer.geojsonData = minimalLineStringFeatureCollectionFromRouteExportRows(arr, {

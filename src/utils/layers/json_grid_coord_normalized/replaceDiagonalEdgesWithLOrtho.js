@@ -1,7 +1,8 @@
 /**
  * 將各折線上「非水平／非垂直」的單一邊改為 L（兩段正交），
  * 並以 ortho 硬約束過濾交叉／共線重疊／頂點落線，以及「正交線段開放內部壓過紅／藍 connect 顯示格」（含 display_x/y）；
- * 另：L 轉角格不得落在**他線**紅／藍 connect 的顯示格上（除非與該斜邊兩端點之 connect 允許重合），否則略過不改此斜邊。
+ * 另：L 轉角格不得落在**其他折線**之任一頂點格（與他線共格視為重疊），亦不得落在**他線**紅／藍 connect 的顯示格上（除非與該斜邊兩端點之 connect 允許重合）；
+ * 若任一種 L 違反以上任一事項則略過不改該斜邊。
  * 若兩種 L 皆可，`preferVertFirst` 為 true 時平手優先「先直後橫」（先豎再橫），否則仍優先先橫後豎；
  * 其餘以與前後鄰邊「串成直線」評分為主。
  */
@@ -186,6 +187,30 @@ export function orthoLcCornerTouchesForeignRbConnectDisplay(
   return false;
 }
 
+/**
+ * L 轉角格是否與**其他折線**（非當前路段 `excludeSegIndex`）上任一頂點共格。
+ */
+export function orthoLcCornerCoincidesOtherRoutePolylineVertex(
+  cornerGx,
+  cornerGy,
+  segments,
+  excludeSegIndex,
+) {
+  const cx = num(cornerGx);
+  const cy = num(cornerGy);
+  if (!segments?.length || excludeSegIndex < 0 || excludeSegIndex >= segments.length) return false;
+  for (let sj = 0; sj < segments.length; sj++) {
+    if (sj === excludeSegIndex) continue;
+    const pts = segments[sj]?.points;
+    if (!Array.isArray(pts)) continue;
+    for (let pj = 0; pj < pts.length; pj++) {
+      const [vx, vy] = getXY(pts[pj]);
+      if (vx === cx && vy === cy) return true;
+    }
+  }
+  return false;
+}
+
 function rbConnectAllowedCornerKeysForDiagonalEdge(segments, diagonalSi, diagonalPi) {
   const allowed = new Set();
   const seg = segments?.[diagonalSi];
@@ -294,6 +319,7 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
               pi + 2,
               allowedCornerKeys,
             ) ||
+            orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
             orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
           )
             continue;

@@ -546,7 +546,7 @@ export const useDataStore = defineStore(
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
           {
-            /** 預設鏡像「先直後橫」層；可於 Control 本機選 JSON（路段匯出）覆寫，見 vhDrawUserJsonOverride */
+            /** 預設鏡像「先直後橫」層；可於 Control 本機選 JSON（路段匯出）覆寫，見 vhDrawUserJsonOverride；斜向改 L 時若會與他線重疊或壓到紅／藍 connect 顯示格則略過（replaceDiagonalEdgesWithLOrtho） */
             layerId: 'orthogonal_toward_center_vh_draw',
             layerName: '站點與路線（先直後橫）·dataJson 繪製',
             visible: false,

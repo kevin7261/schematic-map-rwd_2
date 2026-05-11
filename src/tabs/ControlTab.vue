@@ -6150,7 +6150,7 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
-  /** 「先直後橫·dataJson 繪製」：斜邊改 L；與 hill climb 同交叉／共線重疊／頂點落線約束，且不可壓過非端點之紅／藍 connect 顯示格；平手優先先直後橫 */
+  /** 「先直後橫·dataJson 繪製」：斜邊改 L；與 hill climb 同交叉／共線重疊／頂點落線約束，且不可壓過非端點之紅／藍 connect 顯示格、轉角不得與他線頂點共格；違反則略過該斜邊；平手優先先直後橫 */
   const onOrthogonalVhDrawDiagonalToLClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
@@ -6181,7 +6181,7 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       window.alert(
-        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、L 轉角不重疊他線紅／藍 connect 顯示格）；兩種皆可時優先與鄰邊串成直線，平手則先直後橫。`,
+        `已將 ${r.replacedCount} 條非水平／垂直邊改為 L（無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、L 轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格）；其餘斜向邊若任一 L 會違反上述約束則略過。兩種皆可時優先與鄰邊串成直線，平手則先直後橫。`,
       );
     } catch (err) {
       console.error(err);
@@ -9430,12 +9430,12 @@
             :disabled="isExecuting"
             @click="onOrthogonalVhDrawDiagonalToLClick(layer)"
           >
-            非水平／垂直邊改 L（不可交叉／不可與他線重疊）
+            非水平／垂直邊改 L（不可交叉／不可與他線重疊；壓到紅／藍或轉角疊他線頂點則略過）
           </button>
           <div class="text-muted my-font-size-xs" style="line-height: 1.45">
             <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含
             <code class="small">mapDrawnRoutes</code> 之物件。<strong>L</strong
-            >：逐條將單一斜向邊拆成兩段正交；兩種皆可時優先與鄰邊串成直線。
+            >：逐條將單一斜向邊拆成兩段正交；若會與他線重疊、壓到非端點之紅／藍 connect、或轉角與他線頂點共格則略過該邊；兩種皆可時優先與鄰邊串成直線。
           </div>
         </div>
 

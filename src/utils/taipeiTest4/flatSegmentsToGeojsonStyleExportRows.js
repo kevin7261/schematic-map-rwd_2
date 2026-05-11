@@ -144,6 +144,29 @@ export function mapFlatSegmentsToExportRowsOrNull(flatSegments) {
     } else {
       start = endpointExportShape({}, ps, points[0]);
       end = endpointExportShape({}, pe, points[points.length - 1]);
+      /** nodes 長度與 points 不一致時，仍盡力取中段節點（避免 segment.stations 整段被清空） */
+      for (let i = 1; i < points.length - 1; i++) {
+        const ni = nodes[i];
+        if (!ni || typeof ni !== 'object') continue;
+        const row = lineStationFromNode(ni, points[i]);
+        if (row) {
+          midStations.push(row);
+          continue;
+        }
+        if (ni.node_type === 'connect') {
+          midStations.push({
+            station_id: String(ni.station_id ?? ni.tags?.station_id ?? '').trim(),
+            station_name: String(
+              ni.station_name ?? ni.tags?.station_name ?? ni.tags?.name ?? ''
+            ).trim(),
+            x_grid: num(points[i][0]),
+            y_grid: num(points[i][1]),
+            node_type: 'connect',
+            connect_number: ni.connect_number ?? ni.tags?.connect_number ?? null,
+            tags: ni.tags ? { ...ni.tags } : {},
+          });
+        }
+      }
     }
 
     out.push({
