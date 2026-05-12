@@ -640,6 +640,7 @@ export const useDataStore = defineStore(
             dataJson: null,
             layoutUniformGridGeoJson: null,
             layoutUniformGridMeta: null,
+            layoutVhDrawFineGrid: null,
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],

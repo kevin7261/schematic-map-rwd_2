@@ -184,6 +184,7 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
   lyr.lineOrthoTowardCrossFrozenCenter = null;
   lyr.layoutUniformGridGeoJson = null;
   lyr.layoutUniformGridMeta = null;
+  lyr.layoutVhDrawFineGrid = null;
   lyr.showStationPlacement = true;
 }
 
@@ -200,6 +201,7 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
     dataJson: layer.dataJson,
     layoutUniformGridGeoJson: layer.layoutUniformGridGeoJson ?? null,
     layoutUniformGridMeta: layer.layoutUniformGridMeta ?? null,
+    layoutVhDrawFineGrid: layer.layoutVhDrawFineGrid ?? null,
     spaceNetworkGridJsonData: layer.spaceNetworkGridJsonData,
     spaceNetworkGridJsonData_SectionData: layer.spaceNetworkGridJsonData_SectionData,
     spaceNetworkGridJsonData_ConnectData: layer.spaceNetworkGridJsonData_ConnectData,

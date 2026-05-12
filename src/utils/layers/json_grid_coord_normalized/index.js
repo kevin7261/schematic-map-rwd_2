@@ -42,6 +42,16 @@ export {
 } from './mirrorFromCoordNormalizedLayer.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
 export {
+  buildVhDrawStationRowsForLayoutMap,
+  maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
+  maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,
+  buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine,
+  featureCollectionGridBounds,
+  computeLayoutVhDrawFineGridSpec,
+  applyLayoutVhDrawFineGridToFeatureCollection,
+  gridXYAtGridDistanceAlongLineString,
+} from './layoutVhDrawFineIntegerGrid.js';
+export {
   lineStringFeatureCollectionFromSpaceNetwork,
   writeLayoutNormalizedLayerDataOsmFromNetwork,
   resolveB3InputSpaceNetwork,

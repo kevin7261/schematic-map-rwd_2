@@ -104,6 +104,13 @@
     isLineOrthogonalTowardCenterLayerId,
     isLayoutNetworkGridFromVhDrawLayerId,
     isSpaceGridVhDrawFamilyLayerId,
+    buildVhDrawStationRowsForLayoutMap,
+    maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
+    maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,
+    buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine,
+    applyLayoutVhDrawFineGridToFeatureCollection,
+    featureCollectionGridBounds,
+    gridXYAtGridDistanceAlongLineString,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -137,248 +144,6 @@
       out = mergeSegmentStationsFromPriorExportRows(out, src.processedJsonData);
     }
     return out;
-  }
-
-  /**
-   * 版面網格檢視：中段車站數來自 MapDrawn 匯出列 `segment.stations`（與 JSON 一致），
-   * 並自系譜各層合併 stations（不強制已有本層 base 才建）。
-   */
-  function buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer) {
-    if (!drawLayer) return [];
-    let base = mapDrawnExportRowsFromJsonDrawRoot(drawLayer.jsonData, drawLayer.dataJson);
-    if (!Array.isArray(base)) base = [];
-    let out = base.length ? JSON.parse(JSON.stringify(base)) : [];
-    out = mergeSegmentStationsFromPriorExportRows(out, drawLayer.processedJsonData);
-    const chainIds = [
-      ...LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
-      POINT_ORTHOGONAL_LAYER_ID,
-      JSON_GRID_COORD_NORMALIZED_LAYER_ID,
-      OSM_2_GEOJSON_2_JSON_LAYER_ID,
-    ];
-    for (const id of chainIds) {
-      if (id === drawLayer.layerId) continue;
-      const src = dataStore.findLayerById(id);
-      if (!src) continue;
-      out = mergeSegmentStationsFromPriorExportRows(
-        out,
-        mapDrawnExportRowsFromJsonDrawRoot(src.jsonData, src.dataJson)
-      );
-      out = mergeSegmentStationsFromPriorExportRows(out, src.processedJsonData);
-    }
-    return out;
-  }
-
-  /**
-   * 兩條縱軸刻度 x=t0、t1 所對應之垂直格線為邊界，取開帶 min(t0,t1) < x < max(t0,t1)：
-   * 同一折線段子邊 `{fi,si}` 上，黑點之 gx 落入該帶區者數之極大值（與圖上中段黑點插補同源）。
-   */
-  function maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(dotRows, t0, t1) {
-    const lo = Math.min(Number(t0), Number(t1));
-    const hi = Math.max(Number(t0), Number(t1));
-    const tol = 1e-9;
-    if (!(hi > lo)) return 0;
-    const byLeg = new Map();
-    for (let i = 0; i < dotRows.length; i++) {
-      const d = dotRows[i];
-      const gx = Number(d.gx);
-      if (!(gx > lo + tol && gx < hi - tol)) continue;
-      const k = `${d.fi}|${d.si}`;
-      byLeg.set(k, (byLeg.get(k) ?? 0) + 1);
-    }
-    let m = 0;
-    for (const cnt of byLeg.values()) {
-      if (cnt > m) m = cnt;
-    }
-    return m;
-  }
-
-  /**
-   * 兩水平刻度線 y=t0、t1 所夾開帶區 `min<y<max`：同上，以 gy 判定。
-   */
-  function maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(dotRows, t0, t1) {
-    const lo = Math.min(Number(t0), Number(t1));
-    const hi = Math.max(Number(t0), Number(t1));
-    const tol = 1e-9;
-    if (!(hi > lo)) return 0;
-    const byLeg = new Map();
-    for (let i = 0; i < dotRows.length; i++) {
-      const d = dotRows[i];
-      const gy = Number(d.gy);
-      if (!(gy > lo + tol && gy < hi - tol)) continue;
-      const k = `${d.fi}|${d.si}`;
-      byLeg.set(k, (byLeg.get(k) ?? 0) + 1);
-    }
-    let m = 0;
-    for (const cnt of byLeg.values()) {
-      if (cnt > m) m = cnt;
-    }
-    return m;
-  }
-
-  /**
-   * `layout_network_grid_from_vh_draw`：與圖上中段黑點同源（弧長均分），
-   * 紀錄每顆插補點 `{ gx, gy, fi, si }`；並保留整數線上「單一正交邊段」集中度供除錯或它用。
-   */
-  function buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(
-    dataStore,
-    routeFeatures,
-    xScale,
-    yScale
-  ) {
-    const drawLayer = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
-    const exportRowsForSta = buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer);
-    const eps = 1e-3;
-    const layoutEpXY = (ep) => {
-      if (!ep || typeof ep !== 'object') return [NaN, NaN];
-      const x = Number(ep.x_grid ?? ep.lon);
-      const y = Number(ep.y_grid ?? ep.lat);
-      return [x, y];
-    };
-    const layoutFindRowForLineGrid = (gridPts, rows) => {
-      if (!Array.isArray(gridPts) || gridPts.length < 2 || !Array.isArray(rows)) return null;
-      const g0 = gridPts[0];
-      const g1 = gridPts[gridPts.length - 1];
-      for (const row of rows) {
-        const seg = row?.segment;
-        if (!seg) continue;
-        const [ax, ay] = layoutEpXY(seg.start);
-        const [bx, by] = layoutEpXY(seg.end);
-        if (![ax, ay, bx, by].every(Number.isFinite)) continue;
-        const fw =
-          Math.abs(g0[0] - ax) < eps &&
-          Math.abs(g0[1] - ay) < eps &&
-          Math.abs(g1[0] - bx) < eps &&
-          Math.abs(g1[1] - by) < eps;
-        const bw =
-          Math.abs(g0[0] - bx) < eps &&
-          Math.abs(g0[1] - by) < eps &&
-          Math.abs(g1[0] - ax) < eps &&
-          Math.abs(g1[1] - ay) < eps;
-        if (fw || bw) return row;
-      }
-      return null;
-    };
-    const layoutMidStationCountFromJsonRow = (row) => {
-      const mids = Array.isArray(row?.segment?.stations) ? row.segment.stations : [];
-      if (mids.length === 0) return 0;
-      let n = 0;
-      for (const m of mids) {
-        if (!m || typeof m !== 'object') continue;
-        if (m.node_type === 'connect') continue;
-        n++;
-      }
-      return n > 0 ? n : mids.length;
-    };
-    const distPxSeg = (pa, pb) => {
-      const dx = pb[0] - pa[0];
-      const dy = pb[1] - pa[1];
-      return Math.hypot(dx, dy);
-    };
-    const gridXYAndSegAtPixelDistanceAlong = (gridPts, targetPx) => {
-      if (!gridPts || gridPts.length < 2) return null;
-      const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
-      const lens = [];
-      let total = 0;
-      for (let i = 0; i < pix.length - 1; i++) {
-        const L = distPxSeg(pix[i], pix[i + 1]);
-        lens.push(L);
-        total += L;
-      }
-      if (!(total > 0) || !Number.isFinite(targetPx) || targetPx <= 0) {
-        return { gx: gridPts[0][0], gy: gridPts[0][1], segIndex: 0 };
-      }
-      const d = Math.min(targetPx, total);
-      let acc = 0;
-      for (let i = 0; i < lens.length; i++) {
-        const L = lens[i];
-        if (acc + L >= d) {
-          const t = L > 0 ? (d - acc) / L : 0;
-          const g0 = gridPts[i];
-          const g1 = gridPts[i + 1];
-          return {
-            gx: g0[0] + t * (g1[0] - g0[0]),
-            gy: g0[1] + t * (g1[1] - g0[1]),
-            segIndex: i,
-          };
-        }
-        acc += L;
-      }
-      const last = gridPts[gridPts.length - 1];
-      return { gx: last[0], gy: last[1], segIndex: gridPts.length - 2 };
-    };
-
-    const vertEdgeKeyToCount = new Map();
-    const horzEdgeKeyToCount = new Map();
-    const bumpEdge = (map, key) => {
-      map.set(key, (map.get(key) ?? 0) + 1);
-    };
-
-    const dotsForBandMax = [];
-    const layoutLineFeatCount = routeFeatures.filter(
-      (f) => f?.geometry?.type === 'LineString'
-    ).length;
-    let layoutLineFeatIdx = 0;
-
-    for (let fi = 0; fi < routeFeatures.length; fi++) {
-      const rf = routeFeatures[fi];
-      if (!rf?.geometry || rf.geometry.type !== 'LineString') continue;
-      const coords = rf.geometry.coordinates;
-      if (!Array.isArray(coords) || coords.length < 2) continue;
-      const gridPts = coords.map((c) => [Number(c[0]), Number(c[1])]);
-      let row = layoutFindRowForLineGrid(gridPts, exportRowsForSta);
-      if (!row && exportRowsForSta.length > 0 && layoutLineFeatCount === exportRowsForSta.length) {
-        row = exportRowsForSta[layoutLineFeatIdx] ?? null;
-      }
-      layoutLineFeatIdx += 1;
-      const nSta = row ? layoutMidStationCountFromJsonRow(row) : 0;
-      if (nSta <= 0) continue;
-
-      const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
-      let totalPx = 0;
-      for (let i = 0; i < pix.length - 1; i++) totalPx += distPxSeg(pix[i], pix[i + 1]);
-      if (!(totalPx > 0)) continue;
-
-      for (let k = 1; k <= nSta; k++) {
-        const target = (k * totalPx) / (nSta + 1);
-        const hit = gridXYAndSegAtPixelDistanceAlong(gridPts, target);
-        if (!hit) continue;
-        dotsForBandMax.push({
-          gx: hit.gx,
-          gy: hit.gy,
-          fi,
-          si: hit.segIndex,
-        });
-        const si = hit.segIndex;
-        const g0 = gridPts[si];
-        const g1 = gridPts[si + 1];
-        if (!g0 || !g1) continue;
-        const ax = g0[0];
-        const ay = g0[1];
-        const bx = g1[0];
-        const by = g1[1];
-        if (Math.abs(ax - bx) < eps && Math.abs(ay - by) >= eps) {
-          const xLine = Math.round(ax);
-          bumpEdge(vertEdgeKeyToCount, `${xLine}|${fi}|${si}`);
-        } else if (Math.abs(ay - by) < eps && Math.abs(ax - bx) >= eps) {
-          const yLine = Math.round(ay);
-          bumpEdge(horzEdgeKeyToCount, `${yLine}|${fi}|${si}`);
-        }
-      }
-    }
-
-    const maxVertLineByX = new Map();
-    for (const [key, cnt] of vertEdgeKeyToCount) {
-      const xLine = Number(String(key).split('|')[0]);
-      if (!Number.isFinite(xLine)) continue;
-      maxVertLineByX.set(xLine, Math.max(maxVertLineByX.get(xLine) ?? 0, cnt));
-    }
-    const maxHorzLineByY = new Map();
-    for (const [key, cnt] of horzEdgeKeyToCount) {
-      const yLine = Number(String(key).split('|')[0]);
-      if (!Number.isFinite(yLine)) continue;
-      maxHorzLineByY.set(yLine, Math.max(maxHorzLineByY.get(yLine) ?? 0, cnt));
-    }
-    return { maxVertLineByX, maxHorzLineByY, dotsForBandMax };
   }
 
   /** 與 MapTab 路段／站點 popup 同源（OSM／GeoJSON → JSON 檢視） */
@@ -1021,6 +786,18 @@
       }
     }
     if (!base) return null;
+    /** @type {{ type:'FeatureCollection', features: unknown[] }} */
+    let out = base;
+    if (
+      isLayoutNetworkGridFromVhDrawLayerId(layer.layerId) &&
+      layer.layoutVhDrawFineGrid &&
+      Number.isFinite(layer.layoutVhDrawFineGrid.m) &&
+      Number.isFinite(layer.layoutVhDrawFineGrid.x0) &&
+      Number.isFinite(layer.layoutVhDrawFineGrid.y0)
+    ) {
+      out = JSON.parse(JSON.stringify(base));
+      applyLayoutVhDrawFineGridToFeatureCollection(out, layer.layoutVhDrawFineGrid);
+    }
     const ug = layer.layoutUniformGridGeoJson;
     if (
       ug &&
@@ -1030,10 +807,10 @@
     ) {
       return {
         type: 'FeatureCollection',
-        features: [...base.features, ...ug.features],
+        features: [...out.features, ...ug.features],
       };
     }
-    return base;
+    return out;
   };
 
   /**
@@ -4224,8 +4001,61 @@
       }
     }
 
+    const layoutLayerForFineGrid = isLayoutNetworkGridFromVhDrawLayerId(layerTab)
+      ? dataStore.findLayerById(layerTab)
+      : null;
+    const layoutFineGridSpec =
+      layoutLayerForFineGrid?.layoutVhDrawFineGrid &&
+      Number.isFinite(layoutLayerForFineGrid.layoutVhDrawFineGrid.m) &&
+      Number.isFinite(layoutLayerForFineGrid.layoutVhDrawFineGrid.x0) &&
+      Number.isFinite(layoutLayerForFineGrid.layoutVhDrawFineGrid.y0)
+        ? layoutLayerForFineGrid.layoutVhDrawFineGrid
+        : null;
+    const coarseFcLayout = layoutLayerForFineGrid?.geojsonData;
+    const routeFeaturesForLayoutBlackMax =
+      layoutFineGridSpec &&
+      coarseFcLayout?.type === 'FeatureCollection' &&
+      Array.isArray(coarseFcLayout.features)
+        ? coarseFcLayout.features.filter(
+            (f) =>
+              f?.geometry?.type === 'LineString' || f?.geometry?.type === 'MultiLineString'
+          )
+        : routeFeatures;
+
+    let layoutBlackMaxXTicks = xTicks;
+    let layoutBlackMaxYTicks = yTicks;
+    if (
+      layoutFineGridSpec &&
+      coarseFcLayout?.type === 'FeatureCollection' &&
+      Array.isArray(coarseFcLayout.features)
+    ) {
+      const b = featureCollectionGridBounds(coarseFcLayout);
+      if (
+        Number.isFinite(b.xMin) &&
+        Number.isFinite(b.xMax) &&
+        Number.isFinite(b.yMin) &&
+        Number.isFinite(b.yMax)
+      ) {
+        const x0c = Math.floor(b.xMin);
+        const x1c = Math.ceil(b.xMax);
+        const y0c = Math.floor(b.yMin);
+        const y1c = Math.ceil(b.yMax);
+        layoutBlackMaxXTicks = [];
+        for (let x = x0c; x <= x1c; x++) layoutBlackMaxXTicks.push(x);
+        layoutBlackMaxYTicks = [];
+        for (let y = y0c; y <= y1c; y++) layoutBlackMaxYTicks.push(y);
+      }
+    }
+
     const layoutVhDrawOrthoBlackMax = isLayoutNetworkGridFromVhDrawLayerId(layerTab)
-      ? buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(dataStore, routeFeatures, xScale, yScale)
+      ? buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(dataStore, routeFeaturesForLayoutBlackMax)
+      : null;
+
+    const layoutFineGridMapX = layoutFineGridSpec
+      ? (gx) => Math.round((Number(gx) - layoutFineGridSpec.x0) * (layoutFineGridSpec.m + 1))
+      : null;
+    const layoutFineGridMapY = layoutFineGridSpec
+      ? (gy) => Math.round((Number(gy) - layoutFineGridSpec.y0) * (layoutFineGridSpec.m + 1))
       : null;
 
     // 🎯 繪製座標軸和刻度（在邊界外）
@@ -4257,16 +4087,18 @@
         .text(xTickLabel);
     });
 
-    if (layoutVhDrawOrthoBlackMax && xTicks.length >= 2) {
-      for (let xi = 0; xi < xTicks.length - 1; xi++) {
-        const t0 = xTicks[xi];
-        const t1 = xTicks[xi + 1];
+    if (layoutVhDrawOrthoBlackMax && layoutBlackMaxXTicks.length >= 2) {
+      for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
+        const t0 = layoutBlackMaxXTicks[xi];
+        const t1 = layoutBlackMaxXTicks[xi + 1];
         const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(
           layoutVhDrawOrthoBlackMax.dotsForBandMax ?? [],
           t0,
           t1
         );
-        const cx = (xScale(t0) + xScale(t1)) / 2;
+        const fx0 = layoutFineGridMapX ? layoutFineGridMapX(t0) : t0;
+        const fx1 = layoutFineGridMapX ? layoutFineGridMapX(t1) : t1;
+        const cx = (xScale(fx0) + xScale(fx1)) / 2;
         axisGroup
           .append('text')
           .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
@@ -4307,17 +4139,19 @@
         .text(yTickLabel);
     });
 
-    if (layoutVhDrawOrthoBlackMax && yTicks.length >= 2) {
+    if (layoutVhDrawOrthoBlackMax && layoutBlackMaxYTicks.length >= 2) {
       const yBandLabelX = margin.left - 46;
-      for (let yi = 0; yi < yTicks.length - 1; yi++) {
-        const t0 = yTicks[yi];
-        const t1 = yTicks[yi + 1];
+      for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
+        const t0 = layoutBlackMaxYTicks[yi];
+        const t1 = layoutBlackMaxYTicks[yi + 1];
         const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(
           layoutVhDrawOrthoBlackMax.dotsForBandMax ?? [],
           t0,
           t1
         );
-        const cy = (yScale(t0) + yScale(t1)) / 2;
+        const fy0 = layoutFineGridMapY ? layoutFineGridMapY(t0) : t0;
+        const fy1 = layoutFineGridMapY ? layoutFineGridMapY(t1) : t1;
+        const cy = (yScale(fy0) + yScale(fy1)) / 2;
         axisGroup
           .append('text')
           .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
@@ -5297,12 +5131,31 @@
         const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
         let totalPx = 0;
         for (let i = 0; i < pix.length - 1; i++) totalPx += distPxSeg(pix[i], pix[i + 1]);
-        if (!(totalPx > 0)) continue;
+        let totalGrid = 0;
+        for (let i = 0; i < gridPts.length - 1; i++) {
+          totalGrid += Math.hypot(
+            gridPts[i + 1][0] - gridPts[i][0],
+            gridPts[i + 1][1] - gridPts[i][1]
+          );
+        }
+        if (layoutFineGridSpec) {
+          if (!(totalGrid > 0)) continue;
+        } else if (!(totalPx > 0)) {
+          continue;
+        }
         const dotRadius = 2.5;
         for (let k = 1; k <= nSta; k++) {
-          const target = (k * totalPx) / (nSta + 1);
-          const gxy = gridXYAtPixelDistanceAlong(gridPts, target);
-          if (!gxy) continue;
+          let gxy;
+          if (layoutFineGridSpec) {
+            const targetG = (k * totalGrid) / (nSta + 1);
+            const raw = gridXYAtGridDistanceAlongLineString(gridPts, targetG);
+            if (!raw) continue;
+            gxy = [Math.round(raw[0]), Math.round(raw[1])];
+          } else {
+            const target = (k * totalPx) / (nSta + 1);
+            gxy = gridXYAtPixelDistanceAlong(gridPts, target);
+            if (!gxy) continue;
+          }
           const sta = midsArc[k - 1] ?? {};
           layoutStaG
             .append('circle')

@@ -41,12 +41,12 @@
     POINT_ORTHOGONAL_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+    LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
     refreshLayoutNetworkGridFromVhDrawIfVisible,
-    mirrorResetAndPersistJsonGridFromCoordNormalized,
     replaceDiagonalEdgesWithLOrtho,
     replaceDiagonalsInRouteUntilClear,
     listOrthogonalLShapesInFlatSegments,
@@ -59,6 +59,7 @@
     shallowCloneOrthoSegmentsSynced,
     buildInitialOrthoCoPointGroups,
     findBestConnectPointMoveForHV,
+    computeLayoutVhDrawFineGridSpec,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
@@ -6177,7 +6178,7 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       window.alert(
-        `已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）；可按「改為鏡像 VH 層」還原。`
+        `已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）。`
       );
     } catch (err) {
       console.error(err);
@@ -6187,16 +6188,26 @@
     }
   };
 
-  const onOrthogonalVhDrawRestoreMirrorFromVhClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+  const onLayoutNetworkApplyFineIntegerGridClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
-    lyr.vhDrawUserJsonOverride = false;
-    lyr.jsonFileName = null;
-    mirrorResetAndPersistJsonGridFromCoordNormalized(
-      dataStore.findLayerById.bind(dataStore),
-      dataStore.saveLayerState.bind(dataStore),
-      lyr
-    );
+    const fc = lyr.geojsonData;
+    const spec = computeLayoutVhDrawFineGridSpec(dataStore, fc);
+    if (!spec) {
+      window.alert('無法計算細格：請確認本層 geojson 有 LineString。');
+      return;
+    }
+    lyr.layoutVhDrawFineGrid = spec;
+    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  const onLayoutNetworkClearFineIntegerGridClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    lyr.layoutVhDrawFineGrid = null;
+    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
@@ -6230,9 +6241,7 @@
 
   function vhDrawDiagonalAutoButtonLabel(kind) {
     if (vhDrawDiagonalRouteAutoActive.value && vhDrawDiagonalRouteAutoKind.value === kind) {
-      return kind === 'nz'
-        ? '停止自動（每秒一條路線·N／Z）'
-        : '停止自動（每秒一條路線·僅 L）';
+      return kind === 'nz' ? '停止自動（每秒一條路線·N／Z）' : '停止自動（每秒一條路線·僅 L）';
     }
     return kind === 'nz' ? '自動執行：每秒一條路線（僅 N／Z）' : '自動執行：每秒一條路線（僅 L）';
   }
@@ -6428,7 +6437,11 @@
           return;
         }
         const si = ((vhDrawDiagonalRouteCursor.value % n) + n) % n;
-        const r = replaceDiagonalsInRouteUntilClear(f, si, vhDrawDiagonalOrthoOptsFor(vhDrawDiagonalRouteAutoKind.value));
+        const r = replaceDiagonalsInRouteUntilClear(
+          f,
+          si,
+          vhDrawDiagonalOrthoOptsFor(vhDrawDiagonalRouteAutoKind.value)
+        );
         if (!r.ok) {
           stopVhDrawDiagonalRouteAuto();
           window.alert(r.message || '路網約束錯誤，已停止自動。');
@@ -6558,9 +6571,7 @@
           '目前路網中找不到符合條件的正交 L 形（轉折格在含斜線之完整圖上須僅兩條正交邊；兩臂沿 H／V 延伸至「有不同向連線」之格即停）。'
         );
       }
-      vhDrawLShapeStepHint.value = silent
-        ? 'L 形：0 個可 flip（已略過）'
-        : 'L 形：0 個';
+      vhDrawLShapeStepHint.value = silent ? 'L 形：0 個可 flip（已略過）' : 'L 形：0 個';
       await applyVhDrawLOrthoBundleHighlight(lyr, null);
       return;
     }
@@ -9931,14 +9942,6 @@
             目前來源：<strong>{{ layer.jsonFileName }}</strong
             >（不會隨 VH 層自動更新）
           </div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary mb-3"
-            :disabled="isExecuting"
-            @click="onOrthogonalVhDrawRestoreMirrorFromVhClick(layer)"
-          >
-            改為鏡像「先直後橫」層 dataJson
-          </button>
           <div class="my-title-xs-gray pb-2">一鍵批次（不跳視窗）</div>
           <button
             type="button"
@@ -9977,7 +9980,11 @@
               :disabled="isExecuting"
               @click="toggleOrthogonalVhDrawLShapeAuto(layer)"
             >
-              {{ vhDrawLShapeAutoActive ? '停止自動（每秒一個 L）' : '自動執行：每秒一個 L 並嘗試 flip' }}
+              {{
+                vhDrawLShapeAutoActive
+                  ? '停止自動（每秒一個 L）'
+                  : '自動執行：每秒一個 L 並嘗試 flip'
+              }}
             </button>
             <button
               type="button"
@@ -9997,7 +10004,8 @@
           </div>
           <div class="my-title-xs-gray pb-2">斜向邊 → 正交 L</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            僅嘗試兩種<strong>正交 L</strong>（一角、兩段 H／V）；不試 N／Z。逐條處理單一斜向邊；約束同下（交叉／共線重疊／壓紅藍／轉角疊他線頂點則略過）。
+            僅嘗試兩種<strong>正交 L</strong>（一角、兩段 H／V）；不試
+            N／Z。逐條處理單一斜向邊；約束同下（交叉／共線重疊／壓紅藍／轉角疊他線頂點則略過）。
           </div>
           <div class="d-grid gap-2 mb-3">
             <button
@@ -10037,7 +10045,9 @@
 
           <div class="my-title-xs-gray pb-2">斜向邊 → N／Z 形</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            不試 L，僅以 <strong>Z</strong>（橫─豎─橫）或 <strong>N／反 N</strong>（豎─橫─豎）替換斜邊，內點轉角枚舉；約束同上。平手時「先直後橫」偏好（N 優先於 Z）。
+            不試 L，僅以 <strong>Z</strong>（橫─豎─橫）或
+            <strong>N／反 N</strong
+            >（豎─橫─豎）替換斜邊，內點轉角枚舉；約束同上。平手時「先直後橫」偏好（N 優先於 Z）。
           </div>
           <div class="d-grid gap-2 mb-2">
             <button
@@ -10086,6 +10096,35 @@
             <code class="small">mapDrawnRoutes</code>
             之物件。兩區塊共用同一條路線序號與提示列；自動執行僅能擇一（L 或 N／Z）運行。
           </div>
+        </div>
+
+        <!-- layout_network_grid_from_vh_draw：依邊緣區間黑點 max 之全域極大 M，檢視細格整數座標 -->
+        <div
+          v-if="layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">細格整數座標（僅檢視）</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            取各欄／各列區間標籤數字之<strong>全域最大值 M</strong>，在 x、y 兩向皆以
+            <strong>M+1</strong> 倍粗格並四捨五入；資料層 geojson 不變，紅／藍端點與路線一併變換。各區間數字不同時仍採單一
+            M，故細格範圍由「最吃緊」區間決定。
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            :disabled="isExecuting || layer.isLoading"
+            @click="onLayoutNetworkApplyFineIntegerGridClick(layer)"
+          >
+            套用細格（M+1 倍·整數檢視）
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary"
+            :disabled="isExecuting || layer.isLoading || !layer.layoutVhDrawFineGrid"
+            @click="onLayoutNetworkClearFineIntegerGridClick(layer)"
+          >
+            還原粗格檢視
+          </button>
         </div>
 
         <!-- 往中心聚集（列→欄 或 欄→列）：各列／欄 HV 線段（表格：站名＋座標） -->
