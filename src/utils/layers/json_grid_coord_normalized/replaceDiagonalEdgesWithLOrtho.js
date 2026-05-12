@@ -4,6 +4,8 @@
  * 1. **L 形**（兩段正交、一個轉角）：先橫後豎 `(x1,y)` 或先豎後橫 `(x,y1)`；`tryL === false` 時略過。
  * 2. 若兩種 L 皆不可行且 `tryNzIfNoL` 為 true，再試 **Z 形**（H-V-H：`(x0,y0)→(kx,y0)→(kx,y1)→(x1,y1)`）
  *    與 **N／反 N 形**（V-H-V：`(x0,y0)→(x0,ky)→(x1,ky)→(x1,y1)`），其中 `kx`、`ky` 為起迄之間的格點內點。
+ * 3. 若 `tryHv45` 為 true（通常與 L／N／Z 互斥）：將 **|Δx|≠|Δy|** 之斜邊改為<strong>兩段</strong>，每段僅為水平、垂直或 45°（|Δx|=|Δy|）——
+ *    先斜後正或先正後斜（兩種極小轉折枚舉）；已是單段 45° 斜線則略過。約束同 L／N／Z（交叉、共線重疊、紅藍 connect、轉角／線內部）。
  *
  * 約束（L 與 N／Z 共用）：ortho 硬約束過濾交叉／共線重疊／頂點落線，以及「正交線段開放內部壓過紅／藍 connect 顯示格」（含 display_x/y）；
  * 轉角格不得落在**其他折線**之任一頂點格（與他線共格視為重疊），亦不得落在**他線**紅／藍 connect 的顯示格上（除非與該斜邊兩端點之 connect 允許重合）。
@@ -133,8 +135,24 @@ function pointStrictlyInteriorOnOrthoSegment(px, py, ax, ay, bx, by) {
   return true;
 }
 
+/** 點是否在 45° 格斜線段（|Δx|=|Δy|≠0）之開放內部 */
+function pointStrictlyInteriorOn45Segment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (dx === 0 || dy === 0) return false;
+  if (Math.abs(dx) !== Math.abs(dy)) return false;
+  const cross = dx * (py - ay) - dy * (px - ax);
+  if (cross !== 0) return false;
+  const minx = Math.min(ax, bx);
+  const maxx = Math.max(ax, bx);
+  const miny = Math.min(ay, by);
+  const maxy = Math.max(ay, by);
+  if (px <= minx || px >= maxx || py <= miny || py >= maxy) return false;
+  return true;
+}
+
 /**
- * 任一段水平／垂直邊之**開放內部**若落在任一紅／藍 connect 的顯示格上（與線上頂點座標可分離），視為無效。
+ * 任一段水平／垂直／45° 斜邊之**開放內部**若落在任一紅／藍 connect 的顯示格上（與線上頂點座標可分離），視為無效。
  * @param {unknown[]} segments
  * @param {{ flipSegmentIndices?: Set<number> }} [options] L-flip 驗證時可傳：若邊與 connect 所屬路段**皆**在此集合內，略過（只擋非本次 flip 之路線壓到紅／藍點）。
  */
@@ -156,10 +174,16 @@ export function orthoFlatSegmentsOverlapsForeignConnectDisplay(segments, options
     for (let pi = 0; pi < pts.length - 1; pi++) {
       const [ax, ay] = getXY(pts[pi]);
       const [bx, by] = getXY(pts[pi + 1]);
-      if (ax !== bx && ay !== by) continue;
+      const isOrtho = ax === bx || ay === by;
+      const dxe = bx - ax;
+      const dye = by - ay;
+      const is45 = !isOrtho && dxe !== 0 && dye !== 0 && Math.abs(dxe) === Math.abs(dye);
+      if (!isOrtho && !is45) continue;
       for (const { gx, gy, si: siConn } of grids) {
         if (flipSi != null && flipSi.has(si) && flipSi.has(siConn)) continue;
-        if (pointStrictlyInteriorOnOrthoSegment(gx, gy, ax, ay, bx, by)) return true;
+        if (isOrtho) {
+          if (pointStrictlyInteriorOnOrthoSegment(gx, gy, ax, ay, bx, by)) return true;
+        } else if (pointStrictlyInteriorOn45Segment(gx, gy, ax, ay, bx, by)) return true;
       }
     }
   }
@@ -386,13 +410,119 @@ function buildNzReplacementsForDiagonal(
   return viable;
 }
 
+/** 頂點 b 之前後邊段是否共線且同向（正交或 45°） */
+function collinearSameDirection(ax, ay, bx, by, cx, cy) {
+  const v1x = bx - ax;
+  const v1y = by - ay;
+  const v2x = cx - bx;
+  const v2y = cy - by;
+  if ((v1x === 0 && v1y === 0) || (v2x === 0 && v2y === 0)) return false;
+  const cross = v1x * v2y - v1y * v2x;
+  if (cross !== 0) return false;
+  const dot = v1x * v2x + v1y * v2y;
+  return dot > 0;
+}
+
+function hv45StraightContinuationScore(x0, y0, cx, cy, x1, y1, px0, py0, nx1, ny1) {
+  let s = 0;
+  if (px0 != null && py0 != null) {
+    if (collinearSameDirection(px0, py0, x0, y0, cx, cy)) s++;
+  }
+  if (nx1 != null && ny1 != null) {
+    if (collinearSameDirection(cx, cy, x1, y1, nx1, ny1)) s++;
+  }
+  return s;
+}
+
+/**
+ * 將 |Δx|≠|Δy| 之斜邊改為兩段（先斜後正／先正後斜），每段僅 H、V 或 45°。
+ * @returns {Array<{ trial: object[], score: number, kind: 'do'|'od' }>}
+ */
+function buildHv45ReplacementsForDiagonal(
+  work,
+  si,
+  pi,
+  x0,
+  y0,
+  x1,
+  y1,
+  px0,
+  py0,
+  nx1,
+  ny1,
+  allowedCornerKeys,
+  preferVertFirst,
+) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  const sx = dx > 0 ? 1 : -1;
+  const sy = dy > 0 ? 1 : -1;
+  const viable = [];
+
+  if (adx === ady) return viable;
+
+  const k = Math.min(adx, ady);
+  const cdo = [x0 + sx * k, y0 + sy * k];
+  const cod = adx > ady ? [x1 - sx * ady, y0] : [x0, y1 - sy * adx];
+
+  const raw = [
+    { cx: cdo[0], cy: cdo[1], kind: /** @type {'do'} */ ('do') },
+    { cx: cod[0], cy: cod[1], kind: /** @type {'od'} */ ('od') },
+  ];
+  const seen = new Set();
+  for (const { cx, cy, kind } of raw) {
+    const key = `${cx},${cy}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
+
+    const trial = JSON.parse(JSON.stringify(work));
+    if (!insertCorner(trial, si, pi, cx, cy)) continue;
+    syncOrthoFlatSegmentEndpoints(trial);
+    if (
+      orthoLcCornerTouchesForeignRbConnectDisplay(
+        cx,
+        cy,
+        trial,
+        si,
+        pi,
+        pi + 2,
+        allowedCornerKeys,
+      ) ||
+      orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
+      orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
+    ) {
+      continue;
+    }
+    viable.push({
+      trial,
+      score: hv45StraightContinuationScore(x0, y0, cx, cy, x1, y1, px0, py0, nx1, ny1),
+      kind,
+    });
+  }
+
+  viable.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const pri = (v) => {
+      if (v.kind === 'od' && ady > adx) return preferVertFirst ? 2 : 0;
+      if (v.kind === 'od' && adx > ady) return preferVertFirst ? 0 : 2;
+      return 1;
+    };
+    return pri(b) - pri(a);
+  });
+
+  return viable;
+}
+
 /**
  * 僅掃描 `work[routeSegmentIndex]`：若該折線上有一條可替換斜邊，替換**第一個**（pi 由小到大）並回傳新路網。
  * @param {Array<object>} work 目前 flat 路網（會被結果取代；呼叫端應傳入可更新之物件）
  * @param {number} routeSegmentIndex flatSegments 折線索引
  */
 function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options) {
-  const { preferVertFirst = false, tryNzIfNoL = true, tryL = true } = options;
+  const { preferVertFirst = false, tryNzIfNoL = true, tryL = true, tryHv45 = false } = options;
   const si = routeSegmentIndex;
   const pts = work[si]?.points;
   if (!Array.isArray(pts) || pts.length < 2) return { work, replacedCount: 0 };
@@ -454,38 +584,65 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
       }
     }
 
-    if (!tryNzIfNoL) continue;
-
-    const nzViable = buildNzReplacementsForDiagonal(
-      work,
-      si,
-      pi,
-      x0,
-      y0,
-      x1,
-      y1,
-      px0,
-      py0,
-      nx1,
-      ny1,
-      allowedCornerKeys,
-    );
-    if (nzViable.length === 0) continue;
-
-    nzViable.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (preferVertFirst) {
-        if (a.kind === 'n' && b.kind === 'z') return -1;
-        if (a.kind === 'z' && b.kind === 'n') return 1;
-      } else {
-        if (a.kind === 'z' && b.kind === 'n') return -1;
-        if (a.kind === 'n' && b.kind === 'z') return 1;
+    if (tryNzIfNoL) {
+      const nzViable = buildNzReplacementsForDiagonal(
+        work,
+        si,
+        pi,
+        x0,
+        y0,
+        x1,
+        y1,
+        px0,
+        py0,
+        nx1,
+        ny1,
+        allowedCornerKeys,
+      );
+      if (nzViable.length > 0) {
+        nzViable.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (preferVertFirst) {
+            if (a.kind === 'n' && b.kind === 'z') return -1;
+            if (a.kind === 'z' && b.kind === 'n') return 1;
+          } else {
+            if (a.kind === 'z' && b.kind === 'n') return -1;
+            if (a.kind === 'n' && b.kind === 'z') return 1;
+          }
+          return 0;
+        });
+        const nextNz = nzViable[0].trial;
+        syncOrthoFlatSegmentEndpoints(nextNz);
+        return { work: nextNz, replacedCount: 1 };
       }
-      return 0;
-    });
-    const next = nzViable[0].trial;
-    syncOrthoFlatSegmentEndpoints(next);
-    return { work: next, replacedCount: 1 };
+    }
+
+    if (tryHv45) {
+      const adxM = Math.abs(x1 - x0);
+      const adyM = Math.abs(y1 - y0);
+      if (adxM !== adyM) {
+        const hvViable = buildHv45ReplacementsForDiagonal(
+          work,
+          si,
+          pi,
+          x0,
+          y0,
+          x1,
+          y1,
+          px0,
+          py0,
+          nx1,
+          ny1,
+          allowedCornerKeys,
+          preferVertFirst,
+        );
+        if (hvViable.length > 0) {
+          const nextHv = hvViable[0].trial;
+          syncOrthoFlatSegmentEndpoints(nextHv);
+          return { work: nextHv, replacedCount: 1 };
+        }
+      }
+    }
   }
 
   return { work, replacedCount: 0 };
@@ -493,7 +650,7 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
 
 /**
  * 僅針對單一折線（`flatSegments[routeSegmentIndex]`）：替換**一處**斜邊（若存在）。
- * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean, tryL?: boolean }} [options] `tryL` 預設 true；`tryNzIfNoL` 預設 true。
+ * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean, tryL?: boolean, tryHv45?: boolean }} [options] `tryL` 預設 true；`tryNzIfNoL` 預設 true。
  */
 export function replaceOneDiagonalInRoute(flatSegments, routeSegmentIndex, options = {}) {
   if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
@@ -575,11 +732,11 @@ export function replaceDiagonalsInRouteUntilClear(flatSegments, routeSegmentInde
 
 /**
  * @param {Array<object>} flatSegments normalizeSpaceNetworkDataToFlatSegments 結果
- * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean, tryL?: boolean }} [options]
+ * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean, tryL?: boolean, tryHv45?: boolean }} [options]
  * @returns {{ ok: boolean, segments: Array<object>, replacedCount: number, message?: string }}
  */
 export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
-  const opts = { tryL: true, tryNzIfNoL: true, preferVertFirst: false, ...options };
+  const opts = { tryL: true, tryNzIfNoL: true, preferVertFirst: false, tryHv45: false, ...options };
   if (!Array.isArray(flatSegments) || flatSegments.length === 0) {
     return {
       ok: false,
@@ -622,6 +779,7 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
 
   const tryL = opts.tryL !== false;
   const tryNz = opts.tryNzIfNoL !== false;
+  const tryHv45Only = opts.tryHv45 === true;
   let modePhrase = '優先 L，否則 N／Z 形三正交段';
   let emptyPhrase = '沒有可替換的非正交邊，或 L／N／Z 皆違反約束。';
   if (tryL && !tryNz) {
@@ -630,6 +788,10 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
   } else if (!tryL && tryNz) {
     modePhrase = '僅 N／Z 形三正交段';
     emptyPhrase = '沒有可替換的非正交邊，或 N／Z 皆違反約束。';
+  } else if (!tryL && !tryNz && tryHv45Only) {
+    modePhrase = '僅水平／垂直／45°（兩段；先斜後正或先正後斜）';
+    emptyPhrase =
+      '沒有可替換之 |Δx|≠|Δy| 斜邊，或兩種路徑皆違反約束（若已為單段 45° 則不需替換）。';
   }
 
   return {

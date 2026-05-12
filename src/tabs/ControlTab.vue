@@ -6215,7 +6215,7 @@
   const VH_DRAW_DIAGONAL_ROUTE_AUTO_MS = 1000;
   let vhDrawDiagonalRouteAutoTimerId = null;
   const vhDrawDiagonalRouteAutoActive = ref(false);
-  /** 斜向替換自動模式：`'l'` 僅正交 L；`'nz'` 僅 N／Z */
+  /** 斜向替換自動模式：`'l'` 僅正交 L；`'nz'` 僅 N／Z；`'hv45'` 僅 H／V／45° */
   const vhDrawDiagonalRouteAutoKind = ref('l');
   let vhDrawDiagonalRouteAutoTickBusy = false;
   /** 下一條要處理的 flat 折線索引（循環 0…n−1，與 normalize 後 segment 序一致） */
@@ -6235,15 +6235,21 @@
   };
 
   function vhDrawDiagonalOrthoOptsFor(kind) {
-    if (kind === 'nz') return { preferVertFirst: true, tryL: false, tryNzIfNoL: true };
-    return { preferVertFirst: true, tryL: true, tryNzIfNoL: false };
+    if (kind === 'nz') return { preferVertFirst: true, tryL: false, tryNzIfNoL: true, tryHv45: false };
+    if (kind === 'hv45')
+      return { preferVertFirst: true, tryL: false, tryNzIfNoL: false, tryHv45: true };
+    return { preferVertFirst: true, tryL: true, tryNzIfNoL: false, tryHv45: false };
   }
 
   function vhDrawDiagonalAutoButtonLabel(kind) {
     if (vhDrawDiagonalRouteAutoActive.value && vhDrawDiagonalRouteAutoKind.value === kind) {
-      return kind === 'nz' ? '停止自動（每秒一條路線·N／Z）' : '停止自動（每秒一條路線·僅 L）';
+      if (kind === 'nz') return '停止自動（每秒一條路線·N／Z）';
+      if (kind === 'hv45') return '停止自動（每秒一條路線·H／V／45°）';
+      return '停止自動（每秒一條路線·僅 L）';
     }
-    return kind === 'nz' ? '自動執行：每秒一條路線（僅 N／Z）' : '自動執行：每秒一條路線（僅 L）';
+    if (kind === 'nz') return '自動執行：每秒一條路線（僅 N／Z）';
+    if (kind === 'hv45') return '自動執行：每秒一條路線（H／V／45°）';
+    return '自動執行：每秒一條路線（僅 L）';
   }
 
   const applyVhDrawDiagonalAfterReplace = async (lyr, segments) => {
@@ -6269,7 +6275,7 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
-  /** 「先直後橫·dataJson 繪製」：一鍵整個路網；`kind` 為 `'l'` 僅 L，`'nz'` 僅 N／Z */
+  /** 「先直後橫·dataJson 繪製」：一鍵整個路網；`kind` 為 `'l'` 僅 L，`'nz'` 僅 N／Z，`'hv45'` 僅 H／V／45° */
   const onOrthogonalVhDrawDiagonalToLClick = async (lyr, kind, opts = {}) => {
     const silent = opts.silent === true;
     const externalExecuting = opts.externalExecuting === true;
@@ -6316,15 +6322,24 @@
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       if (silent) {
-        vhDrawDiagonalRouteStepHint.value =
-          kind === 'nz'
-            ? `斜邊→N／Z：已替換 ${r.replacedCount} 條非 H／V 邊。`
-            : `斜邊→正交 L：已替換 ${r.replacedCount} 條非 H／V 邊。`;
+        if (kind === 'nz') {
+          vhDrawDiagonalRouteStepHint.value = `斜邊→N／Z：已替換 ${r.replacedCount} 條非 H／V 邊。`;
+        } else if (kind === 'hv45') {
+          vhDrawDiagonalRouteStepHint.value = `斜邊→H／V／45°：已替換 ${r.replacedCount} 條 |Δx|≠|Δy| 斜邊。`;
+        } else {
+          vhDrawDiagonalRouteStepHint.value = `斜邊→正交 L：已替換 ${r.replacedCount} 條非 H／V 邊。`;
+        }
+      } else if (kind === 'nz') {
+        window.alert(
+          `已將 ${r.replacedCount} 條非水平／垂直邊改為 N／Z 形（三段：先豎─橫─豎或先橫─豎─橫，內點轉角枚舉；不試 L）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時先直後橫偏好（N 優先於 Z）。`
+        );
+      } else if (kind === 'hv45') {
+        window.alert(
+          `已將 ${r.replacedCount} 條 |Δx|≠|Δy| 之斜邊改為兩段路徑，每段僅水平、垂直或 45°（枚舉「先斜後正」與「先正後斜」；若該邊已為單段 45° 則略過）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則「先直後橫」偏好。`
+        );
       } else {
         window.alert(
-          kind === 'nz'
-            ? `已將 ${r.replacedCount} 條非水平／垂直邊改為 N／Z 形（三段：先豎─橫─豎或先橫─豎─橫，內點轉角枚舉；不試 L）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時先直後橫偏好（N 優先於 Z）。`
-            : `已將 ${r.replacedCount} 條非水平／垂直邊改為正交 L（兩段；不試 N／Z）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則「先直後橫」偏好。`
+          `已將 ${r.replacedCount} 條非水平／垂直邊改為正交 L（兩段；不試 N／Z）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則「先直後橫」偏好。`
         );
       }
     } catch (err) {
@@ -6598,7 +6613,7 @@
     vhDrawLShapeStepHint.value = `找到 ${firstList.length} 個 L，但沒有可 flip：${lastNoFlip?.reason || '無可行 flip'}`;
   };
 
-  /** 一鍵連跑：全部 L flip → 斜邊改 L → 斜邊改 N／Z；不使用 window.alert，結果寫於下方摘要 */
+  /** 一鍵連跑：全部 L flip → 斜邊改 L → 斜邊改 N／Z → 斜邊改 H／V／45°；不使用 window.alert，結果寫於下方摘要 */
   async function onOrthogonalVhDrawTripleBatchClick(lyr) {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
@@ -6627,7 +6642,13 @@
         externalExecuting: true,
       });
       const m3 = vhDrawDiagonalRouteStepHint.value || '—';
-      vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3}`;
+      lyr2 = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) || lyr2;
+      await onOrthogonalVhDrawDiagonalToLClick(lyr2, 'hv45', {
+        silent: true,
+        externalExecuting: true,
+      });
+      const m4 = vhDrawDiagonalRouteStepHint.value || '—';
+      vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3} ④ 斜→H／V／45°：${m4}`;
     } catch (e) {
       console.error(e);
       vhDrawTripleBatchHint.value = '批次中斷：發生錯誤（詳見控制台）。';
@@ -9949,7 +9970,7 @@
             :disabled="isExecuting || layer.isLoading"
             @click="onOrthogonalVhDrawTripleBatchClick(layer)"
           >
-            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z
+            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z → 斜邊→H／V／45°
           </button>
           <div
             v-if="vhDrawTripleBatchHint"
@@ -10084,6 +10105,46 @@
               一鍵全路網：非 H／V 邊 → 僅 N／Z（三正交段）
             </button>
           </div>
+
+          <div class="my-title-xs-gray pb-2">斜向邊 → H／V／45°</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            不試 L、不試 N／Z。僅處理 <strong>|Δx|≠|Δy|</strong> 之斜邊：改為<strong>兩段</strong>，每段僅水平、垂直或 45°（|Δx|=|Δy|）；枚舉「先斜後正」與「先正後斜」兩條極短路徑。若該邊已是單段 45° 則略過。約束同 L／N／Z（交叉／共線重疊／壓紅藍／轉角與他線頂點共格）。
+          </div>
+          <div class="d-grid gap-2 mb-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive"
+              @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'hv45')"
+            >
+              下一步：下一條路線（H／V／45°；該線可換之斜邊清完後換下一條，循環）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              :class="
+                vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind === 'hv45'
+                  ? 'my-btn-orange'
+                  : 'my-btn-blue'
+              "
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                (vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind !== 'hv45')
+              "
+              @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer, 'hv45')"
+            >
+              {{ vhDrawDiagonalAutoButtonLabel('hv45') }}
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
+              @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'hv45')"
+            >
+              一鍵全路網：|Δx|≠|Δy| 斜邊 → H／V／45°（兩段）
+            </button>
+          </div>
           <div
             v-if="vhDrawDiagonalRouteStepHint"
             class="text-muted my-font-size-xs mb-2"
@@ -10094,7 +10155,7 @@
           <div class="text-muted my-font-size-xs" style="line-height: 1.45">
             <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含
             <code class="small">mapDrawnRoutes</code>
-            之物件。兩區塊共用同一條路線序號與提示列；自動執行僅能擇一（L 或 N／Z）運行。
+            之物件。各區塊共用同一條路線序號與提示列；斜向替換之自動執行僅能擇一（L、N／Z、H／V／45°）運行。
           </div>
         </div>
 
