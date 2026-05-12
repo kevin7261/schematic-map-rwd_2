@@ -9914,22 +9914,6 @@
           v-if="layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID"
           class="pb-3 mb-3 border-bottom"
         >
-          <div class="my-title-xs-gray pb-2">一鍵批次（不跳視窗）</div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
-            :disabled="isExecuting || layer.isLoading"
-            @click="onOrthogonalVhDrawTripleBatchClick(layer)"
-          >
-            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z
-          </button>
-          <div
-            v-if="vhDrawTripleBatchHint"
-            class="text-muted my-font-size-xs mb-3"
-            style="line-height: 1.45"
-          >
-            {{ vhDrawTripleBatchHint }}
-          </div>
           <div class="my-title-xs-gray pb-2">本機 JSON（路段匯出）</div>
           <button
             type="button"
@@ -9955,6 +9939,22 @@
           >
             改為鏡像「先直後橫」層 dataJson
           </button>
+          <div class="my-title-xs-gray pb-2">一鍵批次（不跳視窗）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
+            :disabled="isExecuting || layer.isLoading"
+            @click="onOrthogonalVhDrawTripleBatchClick(layer)"
+          >
+            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z
+          </button>
+          <div
+            v-if="vhDrawTripleBatchHint"
+            class="text-muted my-font-size-xs mb-3"
+            style="line-height: 1.45"
+          >
+            {{ vhDrawTripleBatchHint }}
+          </div>
           <div class="my-title-xs-gray pb-2">正交 L 形標示</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
             轉折格在<strong>完整路網</strong>（含斜線）上須<strong>僅兩條邊</strong>，且皆為水平／垂直並垂直（不可有第三線或斜線接在轉角）。兩臂沿

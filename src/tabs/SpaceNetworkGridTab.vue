@@ -5177,6 +5177,97 @@
         return [last[0], last[1]];
       };
 
+      /** 與 `layoutMidStationCountFromJsonRow` 對齊：弧長分段黑點 k 對應第 k 筆中端站 JSON */
+      const layoutMidStationsAlignedWithArc = (r) => {
+        const mids = (Array.isArray(r?.segment?.stations) ? r.segment.stations : []).filter(
+          (m) => m && typeof m === 'object',
+        );
+        if (!mids.length) return [];
+        const nc = mids.filter((m) => m.node_type !== 'connect');
+        return nc.length > 0 ? nc : mids;
+      };
+
+      /** 中段黑點：與本站點圓 hover 同源（版面 JSON：`stationEndpointTooltipHtmlFromProps`） */
+      const showLayoutVHDrawMidStationTooltip = (event, stationPropBag, gx, gy) => {
+        const gxLbl = formatAxisTickLabelMaxTwoDecimals(
+          Number.isFinite(Number(gx)) ? Number(gx) : gx,
+          xAxisLabelsAsFloat,
+        );
+        const gyLbl = formatAxisTickLabelMaxTwoDecimals(
+          Number.isFinite(Number(gy)) ? Number(gy) : gy,
+          yAxisLabelsAsFloat,
+        );
+        const gridCoordLine = `<strong>網格座標</strong> (${escapeLayoutTooltipHtml(gxLbl)}, ${escapeLayoutTooltipHtml(gyLbl)})<br>`;
+        if (uniformGridRouteFamilyTab) {
+          const jlStation = dataStore.findLayerById(layerTab);
+          const jrStation =
+            layoutUniformGridTooltipJr ??
+            mapDrawnExportRowsFromJsonDrawRoot(jlStation?.jsonData, jlStation?.dataJson);
+          const props = stationPropBag && typeof stationPropBag === 'object' ? stationPropBag : {};
+          const tags = props.tags || {};
+          const sidTip = String(props.station_id ?? tags.station_id ?? '').trim();
+          const hasRnl =
+            (Array.isArray(props.route_name_list) && props.route_name_list.length > 0) ||
+            (Array.isArray(tags.route_name_list) && tags.route_name_list.length > 0);
+          let propBagForStation = props;
+          if (Array.isArray(jrStation) && jrStation.length > 0 && sidTip && !hasRnl) {
+            const nameSet = new Set();
+            const idMatches = (n) =>
+              String(n?.station_id ?? n?.tags?.station_id ?? '').trim() === sidTip;
+            for (const rowJr of jrStation) {
+              const sm = rowJr?.segment;
+              if (!sm) continue;
+              const hitsMid = Array.isArray(sm.stations) && sm.stations.some(idMatches);
+              if (idMatches(sm.start) || idMatches(sm.end) || hitsMid) {
+                const nm = String(rowJr.routeName ?? '').trim();
+                if (nm) nameSet.add(nm);
+              }
+            }
+            if (nameSet.size > 0) {
+              propBagForStation = { ...props, route_name_list: [...nameSet] };
+            }
+          }
+          const lonTip = Number.isFinite(segmentNodeLon(props)) ? segmentNodeLon(props) : gx;
+          const latTip = Number.isFinite(segmentNodeLat(props)) ? segmentNodeLat(props) : gy;
+          const tagMerged = getGeoJsonFeatureTagProps({ properties: props });
+          const typeForTooltip = normalizeRouteSegmentEndpointType(
+            props.type ?? tags.type ?? tagMerged.type ?? 'normal',
+          );
+          tooltip
+            .html(
+              gridCoordLine +
+                stationEndpointTooltipHtmlFromProps(
+                  propBagForStation,
+                  typeForTooltip,
+                  lonTip,
+                  latTip,
+                ),
+            )
+            .style('opacity', 1)
+            .style('left', `${event.pageX + 10}px`)
+            .style('top', `${event.pageY - 10}px`);
+          return;
+        }
+        const props = stationPropBag && typeof stationPropBag === 'object' ? stationPropBag : {};
+        const tags = props.tags || {};
+        const tagMergedFb = getGeoJsonFeatureTagProps({ properties: props });
+        tooltip
+          .html(
+            gridCoordLine +
+              stationEndpointTooltipHtmlFromProps(
+                props,
+                normalizeRouteSegmentEndpointType(
+                  props.type ?? tags.type ?? tagMergedFb.type ?? 'normal',
+                ),
+                gx,
+                gy,
+              ),
+          )
+          .style('opacity', 1)
+          .style('left', `${event.pageX + 10}px`)
+          .style('top', `${event.pageY - 10}px`);
+      };
+
       const layoutStaG = zoomGroup.append('g').attr('class', 'layout-vh-draw-line-stations-pt');
       const layoutLineFeatCount = routeFeatures.filter(
         (f) => f?.geometry?.type === 'LineString',
@@ -5198,23 +5289,38 @@
         layoutLineFeatIdx += 1;
         const nSta = row ? layoutMidStationCountFromJsonRow(row) : 0;
         if (nSta <= 0) continue;
+        const midsArc = layoutMidStationsAlignedWithArc(row);
         const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
         let totalPx = 0;
         for (let i = 0; i < pix.length - 1; i++) totalPx += distPxSeg(pix[i], pix[i + 1]);
         if (!(totalPx > 0)) continue;
+        const dotRadius = 2.5;
         for (let k = 1; k <= nSta; k++) {
           const target = (k * totalPx) / (nSta + 1);
           const gxy = gridXYAtPixelDistanceAlong(gridPts, target);
           if (!gxy) continue;
+          const sta = midsArc[k - 1] ?? {};
           layoutStaG
             .append('circle')
             .attr('cx', xScale(gxy[0]))
             .attr('cy', yScale(gxy[1]))
-            .attr('r', 1.5)
+            .attr('r', dotRadius)
             .attr('fill', '#000000')
             .attr('stroke', '#000000')
             .attr('stroke-width', 1)
-            .style('pointer-events', 'none');
+            .style('cursor', 'pointer')
+            .style('pointer-events', 'all')
+            .on('mouseover', function (event) {
+              d3.select(this).attr('r', 5).attr('stroke-width', 2);
+              showLayoutVHDrawMidStationTooltip(event, sta, gxy[0], gxy[1]);
+            })
+            .on('mousemove', function (event) {
+              tooltip.style('left', `${event.pageX + 10}px`).style('top', `${event.pageY - 10}px`);
+            })
+            .on('mouseout', function () {
+              d3.select(this).attr('r', dotRadius).attr('stroke-width', 1);
+              tooltip.style('opacity', 0);
+            });
         }
       }
     }
