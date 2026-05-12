@@ -132,7 +132,7 @@
       if (!src) continue;
       out = mergeSegmentStationsFromPriorExportRows(
         out,
-        mapDrawnExportRowsFromJsonDrawRoot(src.jsonData, src.dataJson),
+        mapDrawnExportRowsFromJsonDrawRoot(src.jsonData, src.dataJson)
       );
       out = mergeSegmentStationsFromPriorExportRows(out, src.processedJsonData);
     }
@@ -161,7 +161,7 @@
       if (!src) continue;
       out = mergeSegmentStationsFromPriorExportRows(
         out,
-        mapDrawnExportRowsFromJsonDrawRoot(src.jsonData, src.dataJson),
+        mapDrawnExportRowsFromJsonDrawRoot(src.jsonData, src.dataJson)
       );
       out = mergeSegmentStationsFromPriorExportRows(out, src.processedJsonData);
     }
@@ -219,7 +219,12 @@
    * `layout_network_grid_from_vh_draw`：與圖上中段黑點同源（弧長均分），
    * 紀錄每顆插補點 `{ gx, gy, fi, si }`；並保留整數線上「單一正交邊段」集中度供除錯或它用。
    */
-  function buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(dataStore, routeFeatures, xScale, yScale) {
+  function buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(
+    dataStore,
+    routeFeatures,
+    xScale,
+    yScale
+  ) {
     const drawLayer = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
     const exportRowsForSta = buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer);
     const eps = 1e-3;
@@ -310,7 +315,7 @@
 
     const dotsForBandMax = [];
     const layoutLineFeatCount = routeFeatures.filter(
-      (f) => f?.geometry?.type === 'LineString',
+      (f) => f?.geometry?.type === 'LineString'
     ).length;
     let layoutLineFeatIdx = 0;
 
@@ -321,11 +326,7 @@
       if (!Array.isArray(coords) || coords.length < 2) continue;
       const gridPts = coords.map((c) => [Number(c[0]), Number(c[1])]);
       let row = layoutFindRowForLineGrid(gridPts, exportRowsForSta);
-      if (
-        !row &&
-        exportRowsForSta.length > 0 &&
-        layoutLineFeatCount === exportRowsForSta.length
-      ) {
+      if (!row && exportRowsForSta.length > 0 && layoutLineFeatCount === exportRowsForSta.length) {
         row = exportRowsForSta[layoutLineFeatIdx] ?? null;
       }
       layoutLineFeatIdx += 1;
@@ -4275,7 +4276,7 @@
           .attr('font-size', '9px')
           .attr('font-weight', '600')
           .attr('fill', '#1565C0')
-          .text(`垂直 max ${xv}`);
+          .text(String(xv));
       }
     }
 
@@ -4327,7 +4328,7 @@
           .attr('font-size', '9px')
           .attr('font-weight', '600')
           .attr('fill', '#1565C0')
-          .text(`水平 max ${yv}`);
+          .text(String(yv));
       }
     }
 
@@ -4704,14 +4705,17 @@
                   segMatch = hitsNm.length === 1 ? (hitsNm[0]?.segment ?? null) : null;
                 }
                 if (segMatch) {
-                  const jrFile = mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson) ?? [];
+                  const jrFile =
+                    mapDrawnExportRowsFromJsonDrawRoot(jl?.jsonData, jl?.dataJson) ?? [];
                   const stationHoverPool = [
                     ...jrFile,
-                    ...(Array.isArray(layoutUniformGridTooltipJr) ? layoutUniformGridTooltipJr : []),
+                    ...(Array.isArray(layoutUniformGridTooltipJr)
+                      ? layoutUniformGridTooltipJr
+                      : []),
                   ];
                   const segForTip = enrichExportRowStationsFromPool(
                     { segment: segMatch, routeName: rnm },
-                    stationHoverPool,
+                    stationHoverPool
                   ).segment;
                   tooltipContent += tooltipHtmlSegmentStationsOrderedVerbose(segForTip);
                 }
@@ -5180,7 +5184,7 @@
       /** 與 `layoutMidStationCountFromJsonRow` 對齊：弧長分段黑點 k 對應第 k 筆中端站 JSON */
       const layoutMidStationsAlignedWithArc = (r) => {
         const mids = (Array.isArray(r?.segment?.stations) ? r.segment.stations : []).filter(
-          (m) => m && typeof m === 'object',
+          (m) => m && typeof m === 'object'
         );
         if (!mids.length) return [];
         const nc = mids.filter((m) => m.node_type !== 'connect');
@@ -5191,11 +5195,11 @@
       const showLayoutVHDrawMidStationTooltip = (event, stationPropBag, gx, gy) => {
         const gxLbl = formatAxisTickLabelMaxTwoDecimals(
           Number.isFinite(Number(gx)) ? Number(gx) : gx,
-          xAxisLabelsAsFloat,
+          xAxisLabelsAsFloat
         );
         const gyLbl = formatAxisTickLabelMaxTwoDecimals(
           Number.isFinite(Number(gy)) ? Number(gy) : gy,
-          yAxisLabelsAsFloat,
+          yAxisLabelsAsFloat
         );
         const gridCoordLine = `<strong>網格座標</strong> (${escapeLayoutTooltipHtml(gxLbl)}, ${escapeLayoutTooltipHtml(gyLbl)})<br>`;
         if (uniformGridRouteFamilyTab) {
@@ -5231,7 +5235,7 @@
           const latTip = Number.isFinite(segmentNodeLat(props)) ? segmentNodeLat(props) : gy;
           const tagMerged = getGeoJsonFeatureTagProps({ properties: props });
           const typeForTooltip = normalizeRouteSegmentEndpointType(
-            props.type ?? tags.type ?? tagMerged.type ?? 'normal',
+            props.type ?? tags.type ?? tagMerged.type ?? 'normal'
           );
           tooltip
             .html(
@@ -5240,8 +5244,8 @@
                   propBagForStation,
                   typeForTooltip,
                   lonTip,
-                  latTip,
-                ),
+                  latTip
+                )
             )
             .style('opacity', 1)
             .style('left', `${event.pageX + 10}px`)
@@ -5257,11 +5261,11 @@
               stationEndpointTooltipHtmlFromProps(
                 props,
                 normalizeRouteSegmentEndpointType(
-                  props.type ?? tags.type ?? tagMergedFb.type ?? 'normal',
+                  props.type ?? tags.type ?? tagMergedFb.type ?? 'normal'
                 ),
                 gx,
-                gy,
-              ),
+                gy
+              )
           )
           .style('opacity', 1)
           .style('left', `${event.pageX + 10}px`)
@@ -5270,7 +5274,7 @@
 
       const layoutStaG = zoomGroup.append('g').attr('class', 'layout-vh-draw-line-stations-pt');
       const layoutLineFeatCount = routeFeatures.filter(
-        (f) => f?.geometry?.type === 'LineString',
+        (f) => f?.geometry?.type === 'LineString'
       ).length;
       let layoutLineFeatIdx = 0;
       for (const rf of routeFeatures) {
