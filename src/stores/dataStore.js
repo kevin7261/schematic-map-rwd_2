@@ -652,7 +652,7 @@ export const useDataStore = defineStore(
             layoutVhDrawShowTrafficWeights: true,
             /** 交通流量 CSV 載入後，找不到相鄰紅／藍／黑點者列於此 */
             layoutVhDrawTrafficMissing: [],
-            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+            upperViewTabs: ['space-layout-grid-viewer', 'layout-grid-viewer', 'json-viewer'],
           },
         ],
       },
@@ -708,7 +708,7 @@ export const useDataStore = defineStore(
             layoutVhDrawTrafficData: null,
             layoutVhDrawShowTrafficWeights: true,
             layoutVhDrawTrafficMissing: [],
-            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+            upperViewTabs: ['space-layout-grid-viewer', 'layout-grid-viewer', 'json-viewer'],
           },
           {
             /** 檢視用：深拷 `layout_network_grid_from_vh_draw_2` 之繪製快照（資料與版面_2 層不共用參照） */

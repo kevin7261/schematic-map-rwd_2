@@ -576,6 +576,13 @@
       type: Boolean,
       default: false,
     },
+    /**
+     * layout-grid-viewer：**繪區內像素**刻度與淺線（非整數網格座標）；不依細格細分線／區間「黑點 max」標籤。
+     */
+    layoutVhDrawPixelAxes: {
+      type: Boolean,
+      default: false,
+    },
   });
 
   const dataStore = useDataStore();
@@ -715,7 +722,8 @@
     const hasSpaceLayoutGridViewerTab =
       Array.isArray(layer.upperViewTabs) &&
       (layer.upperViewTabs.includes('space-layout-grid-viewer') ||
-        layer.upperViewTabs.includes('canvas-layout-grid-viewer'));
+        layer.upperViewTabs.includes('canvas-layout-grid-viewer') ||
+        layer.upperViewTabs.includes('layout-grid-viewer'));
 
     // 如果有數據，返回 dashboardData（如果存在）或一個標記物件
     return hasData || hasSpaceNetworkGridTab || hasSpaceLayoutGridViewerTab
@@ -960,7 +968,8 @@
             Array.isArray(targetLayer.upperViewTabs) &&
             (targetLayer.upperViewTabs.includes('space-network-grid') ||
               targetLayer.upperViewTabs.includes('space-layout-grid-viewer') ||
-              targetLayer.upperViewTabs.includes('canvas-layout-grid-viewer'));
+              targetLayer.upperViewTabs.includes('canvas-layout-grid-viewer') ||
+              targetLayer.upperViewTabs.includes('layout-grid-viewer'));
           if (mayShowEmptySpaceNetwork) {
             gridData.value = null;
             nodeData.value = null;
@@ -2472,6 +2481,9 @@
    */
   const drawMap = () => {
     const layerTab = spaceGridDataLayerTabId.value;
+    /** layout-grid-viewer：`layout_network_grid_from_vh_draw`（／_2）繪區以 **px** 為軸刻度，不套用整數網格底色／細格 M。 */
+    const layoutVhDrawPixelAxisMode =
+      props.layoutVhDrawPixelAxes === true && isLayoutNetworkGridFromVhDrawLayerId(layerTab);
     const uniformGridRouteFamilyTab = isSpaceLayoutUniformGridViewerLayerId(layerTab);
     const activeTabLayer = dataStore.findLayerById(layerTab);
     const layoutUniformGridTooltipJr = uniformGridRouteFamilyTab
@@ -2485,10 +2497,11 @@
     const dimensions = getDimensions();
 
     // 添加適當的邊距（增加底部和左側邊距以容納刻度標籤）
-    /** layout_network_grid_from_vh_draw／讀版面路網·dataJson：軸上座標下加一行「刻度間黑點max」；左側為欄區間標籤留寬（後者為獨立深拷快照・繪製邏輯同） */
-    const margin =
-      isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
-      isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
+    /** layout_network_grid_from_vh_draw／讀版面路網·dataJson：軸上座標下加一行「刻度間黑點max」；左側為欄區間標籤留寬（後者為獨立深拷快照・繪製邏輯同）；像素刻度檢視僅標一般軸標、不留該區。 */
+    const margin = layoutVhDrawPixelAxisMode
+      ? { top: 20, right: 20, bottom: 40, left: 50 }
+      : isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
+          isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
         ? { top: 20, right: 20, bottom: 52, left: 72 }
         : { top: 20, right: 20, bottom: 40, left: 50 };
     let width = dimensions.width - margin.left - margin.right;
@@ -3927,6 +3940,17 @@
       yTicks.push(...layoutUniformTickOverride.yTicks);
       xAxisLabelsAsFloat = layoutUniformTickOverride.xLabelsAsFloat;
       yAxisLabelsAsFloat = layoutUniformTickOverride.yLabelsAsFloat;
+    } else if (
+      layoutVhDrawPixelAxisMode &&
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width > 0 &&
+      height > 0
+    ) {
+      const sx = Math.max(1, niceTickStepMultipleOf5(width, 11));
+      const sy = Math.max(1, niceTickStepMultipleOf5(height, 11));
+      xTicks.push(...buildTicksInRange(0, width, sx));
+      yTicks.push(...buildTicksInRange(0, height, sy));
     } else if (useSchematicCellCenterGrid) {
       for (let tx = Math.ceil(xMin / tickXStep) * tickXStep; tx <= xMax; tx += tickXStep) {
         xTicks.push(tx);
@@ -3954,9 +3978,10 @@
       layoutUniformTickOverride?.skipDefaultBackgroundGrid
     );
 
-    /** layout_network_grid_from_vh_draw／讀版面路網·dataJson：與細格整數座標同源之全域 M（各 col／row 開區間黑點數之極大） */
+    /** layout_network_grid_from_vh_draw／讀版面路網·dataJson：與細格整數座標同源之全域 M（各 col／row 開區間黑點數之極大）；像素軸檢視不套用。 */
     let layoutVhDrawSubdivM = 0;
     if (
+      !layoutVhDrawPixelAxisMode &&
       (isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
         isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)) &&
       activeTabLayer?.geojsonData?.type === 'FeatureCollection' &&
@@ -3976,6 +4001,12 @@
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
+    /** 軸刻度：一般為資料域 xScale(tick)；layout-grid-viewer 為繪區內像素 offset（0≈左／上緣）。 */
+    const svgXFromAxisTick = (tick) =>
+      layoutVhDrawPixelAxisMode ? margin.left + Number(tick) : xScale(Number(tick));
+    const svgYFromAxisTick = (tick) =>
+      layoutVhDrawPixelAxisMode ? margin.top + Number(tick) : yScale(Number(tick));
+
     const appendLayoutVhDrawInnerSubgridLines = () => {
       if (layoutVhDrawSubdivM <= 0) return;
       const vhIn = layoutVHGridStrokeInner;
@@ -3986,7 +4017,7 @@
         if (![xa, xb].every(Number.isFinite) || Math.abs(xb - xa) < 1e-12) continue;
         for (let j = 1; j <= layoutVhDrawSubdivM; j++) {
           const gx = xa + (xb - xa) * (j / (layoutVhDrawSubdivM + 1));
-          const xPos = xScale(gx);
+          const xPos = svgXFromAxisTick(gx);
           innerG
             .append('line')
             .attr('x1', xPos)
@@ -4004,7 +4035,7 @@
         if (![ya, yb].every(Number.isFinite) || Math.abs(yb - ya) < 1e-12) continue;
         for (let j = 1; j <= layoutVhDrawSubdivM; j++) {
           const gy = ya + (yb - ya) * (j / (layoutVhDrawSubdivM + 1));
-          const yPos = yScale(gy);
+          const yPos = svgYFromAxisTick(gy);
           innerG
             .append('line')
             .attr('x1', margin.left)
@@ -4023,7 +4054,7 @@
         if (dataStore.showGrid) {
           appendLayoutVhDrawInnerSubgridLines();
           xTicks.forEach((tick) => {
-            const xPos = xScale(tick);
+            const xPos = svgXFromAxisTick(tick);
             const vh = layoutVHGridStroke;
             gridGroup
               .append('line')
@@ -4036,7 +4067,7 @@
               .attr('opacity', vh.opacity);
           });
           yTicks.forEach((tick) => {
-            const yPos = yScale(tick);
+            const yPos = svgYFromAxisTick(tick);
             const vh = layoutVHGridStroke;
             gridGroup
               .append('line')
@@ -4052,7 +4083,7 @@
       } else {
         appendLayoutVhDrawInnerSubgridLines();
         xTicks.forEach((tick) => {
-          const xPos = xScale(tick);
+          const xPos = svgXFromAxisTick(tick);
           const vh = layoutVHGridStroke;
           gridGroup
             .append('line')
@@ -4065,7 +4096,7 @@
             .attr('opacity', vh.opacity);
         });
         yTicks.forEach((tick) => {
-          const yPos = yScale(tick);
+          const yPos = svgYFromAxisTick(tick);
           const vh = layoutVHGridStroke;
           gridGroup
             .append('line')
@@ -4127,8 +4158,9 @@
     }
 
     const layoutLayerForFineGrid =
-      isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
-      isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
+      !layoutVhDrawPixelAxisMode &&
+      (isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
+        isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab))
         ? dataStore.findLayerById(layerTab)
         : null;
     const coarseFcLayout = layoutLayerForFineGrid?.geojsonData;
@@ -4176,7 +4208,7 @@
 
     // X軸刻度（taipei_g：標籤在格線座標 tick，與路線／站點一致）
     xTicks.forEach((tick) => {
-      const xPos = xScale(tick);
+      const xPos = svgXFromAxisTick(tick);
 
       // 繪製刻度線（在底部邊界外）
       axisGroup
@@ -4189,7 +4221,9 @@
         .attr('stroke-width', 1);
 
       // 繪製刻度標籤（layout_network_grid_from_vh_draw：列／垂直線之黑點區間標註繪於相鄰刻度之間）
-      const xTickLabel = formatAxisTickLabelMaxTwoDecimals(tick, xAxisLabelsAsFloat);
+      const xTickLabel = layoutVhDrawPixelAxisMode
+        ? String(Math.round(Number(tick)))
+        : formatAxisTickLabelMaxTwoDecimals(tick, xAxisLabelsAsFloat);
       axisGroup
         .append('text')
         .attr('x', xPos)
@@ -4202,7 +4236,7 @@
 
     // Y軸刻度
     yTicks.forEach((tick) => {
-      const yPos = yScale(tick);
+      const yPos = svgYFromAxisTick(tick);
 
       // 繪製刻度線（在左側邊界外）
       axisGroup
@@ -4215,7 +4249,9 @@
         .attr('stroke-width', 1);
 
       // 繪製刻度標籤（layout_network_grid_from_vh_draw：欄／水平線之黑點區間標註繪於相鄰刻度之間）
-      const yTickLabel = formatAxisTickLabelMaxTwoDecimals(tick, yAxisLabelsAsFloat);
+      const yTickLabel = layoutVhDrawPixelAxisMode
+        ? String(Math.round(Number(tick)))
+        : formatAxisTickLabelMaxTwoDecimals(tick, yAxisLabelsAsFloat);
       axisGroup
         .append('text')
         .attr('x', margin.left - 8)
@@ -5120,13 +5156,15 @@
 <strong>end</strong> ${endNm || '(—)'}<br>`;
       };
 
-      /** 粗格＋插入細網：與 `applyLayoutVhDrawFineGridToFeatureCollection` 相同之整數軸 (Fx,Fy)。 */
+      /** 粗格＋插入細網：與 `applyLayoutVhDrawFineGridToFeatureCollection` 相同之整數軸 (Fx,Fy)。像素軸檢視不依插入細網對齊。 */
       const layoutMidDotsFineSubgridSpec =
-        !layoutFineGridSpec &&
-        coarseFcLayout?.type === 'FeatureCollection' &&
-        Array.isArray(coarseFcLayout.features)
-          ? computeLayoutVhDrawFineGridSpec(dataStore, coarseFcLayout)
-          : null;
+        layoutVhDrawPixelAxisMode
+          ? null
+          : !layoutFineGridSpec &&
+              coarseFcLayout?.type === 'FeatureCollection' &&
+              Array.isArray(coarseFcLayout.features)
+            ? computeLayoutVhDrawFineGridSpec(dataStore, coarseFcLayout)
+            : null;
 
       const layoutMidDotTooltipGridLinesHtml = (gx, gy) => {
         const ngx = Number(gx);
@@ -5440,7 +5478,7 @@
         layoutRouteFi += 1;
       }
 
-      if (layoutBlackMaxXTicks.length >= 2) {
+      if (layoutBlackMaxXTicks.length >= 2 && !layoutVhDrawPixelAxisMode) {
         for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
           const t0 = layoutBlackMaxXTicks[xi];
           const t1 = layoutBlackMaxXTicks[xi + 1];
@@ -5461,7 +5499,7 @@
         }
       }
 
-      if (layoutBlackMaxYTicks.length >= 2) {
+      if (layoutBlackMaxYTicks.length >= 2 && !layoutVhDrawPixelAxisMode) {
         const yBandLabelX = margin.left - 46;
         for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
           const t0 = layoutBlackMaxYTicks[yi];
