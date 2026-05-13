@@ -50,6 +50,8 @@ export {
   computeLayoutVhDrawFineGridSpec,
   applyLayoutVhDrawFineGridToFeatureCollection,
   gridXYAtGridDistanceAlongLineString,
+  integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString,
+  snapSegmentInteriorToIntegerLattice,
 } from './layoutVhDrawFineIntegerGrid.js';
 export {
   lineStringFeatureCollectionFromSpaceNetwork,

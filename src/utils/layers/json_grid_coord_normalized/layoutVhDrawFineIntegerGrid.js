@@ -1,6 +1,7 @@
 /**
  * layout_network_grid_from_vh_draw：依邊緣區間黑點 max 之全域極大值 M，將粗格座標放大為整數細格 (m+1) 倍並四捨五入，
- * 供軸刻度與線頂點檢視（資料層 geojson 仍為粗格，僅檢視變換）。中段黑點沿弧長插值繪製時保留插值座標，維持落在線段上。
+ * 供軸刻度與線頂點檢視（資料層 geojson 仍為粗格，僅檢視變換）。
+ * 套用細格後，中段黑點仍依格座標弧長均分，但座標須落在該邊上的 **整數細格交叉點**（正交由整數線段內插；對角／斜向由 gcd 步進之列舉格點，取弧長最接近者）。
  */
 
 import {
@@ -80,10 +81,15 @@ export function maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(dotRows, t0, t1) {
   return m;
 }
 
-export function gridXYAtGridDistanceAlongLineString(gridPts, targetDist) {
-  const hit = gridXYAndSegAtGridDistanceAlong(gridPts, targetDist);
-  if (!hit) return null;
-  return [hit.gx, hit.gy];
+function gcdNonNegative(a, b) {
+  let x = Math.abs(Math.round(a));
+  let y = Math.abs(Math.round(b));
+  while (y > 0) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x;
 }
 
 function gridXYAndSegAtGridDistanceAlong(gridPts, targetDist) {
@@ -119,6 +125,123 @@ function gridXYAndSegAtGridDistanceAlong(gridPts, targetDist) {
   }
   const last = gridPts[gridPts.length - 1];
   return { gx: last[0], gy: last[1], segIndex: gridPts.length - 2 };
+}
+
+export function gridXYAtGridDistanceAlongLineString(gridPts, targetDist) {
+  const hit = gridXYAndSegAtGridDistanceAlong(gridPts, targetDist);
+  if (!hit) return null;
+  return [hit.gx, hit.gy];
+}
+
+/**
+ * 與 {@link gridXYAtGridDistanceAlongLineString} 相同弧長目標，但座標對齊至該邊開區間內之 **整數格線交叉點**
+ * （正交由線段約束取整數；對角／斜線取 gcd 格點中弧長最接近者）。
+ * 若該邊段內無任何允許之中段格點（例如 gcd=1），回傳 null。
+ *
+ * @param {[number,number][]} gridPts
+ * @param {number} targetDist
+ * @param {number} [eps=1e-3]
+ * @returns {[number,number]|null}
+ */
+export function integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString(
+  gridPts,
+  targetDist,
+  eps = 1e-3
+) {
+  const hit = gridXYAndSegAtGridDistanceAlong(gridPts, targetDist);
+  if (!hit) return null;
+  const g0 = gridPts[hit.segIndex];
+  const g1 = gridPts[hit.segIndex + 1];
+  if (!g0 || !g1) return null;
+  return snapSegmentInteriorToIntegerLattice(
+    g0[0],
+    g0[1],
+    g1[0],
+    g1[1],
+    hit.gx,
+    hit.gy,
+    eps
+  );
+}
+
+/**
+ * 弧長插值點 (rawGx,rawGy) 為參考，回傳同邊開區間內之 **整數格點**，且須為粗／細格細分化後仍可落在線段上的格子（對角為 gcd 內插）。
+ *
+ * @param {number} ax
+ * @param {number} ay
+ * @param {number} bx
+ * @param {number} by
+ * @param {number} rawGx
+ * @param {number} rawGy
+ * @param {number} eps
+ * @returns {[number,number]|null}
+ */
+export function snapSegmentInteriorToIntegerLattice(ax, ay, bx, by, rawGx, rawGy, eps = 1e-3) {
+  if (![ax, ay, bx, by, rawGx, rawGy].every(Number.isFinite)) return null;
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (Math.abs(dx) < eps && Math.abs(dy) < eps) {
+    return [Math.round(ax), Math.round(ay)];
+  }
+  if (Math.abs(dx) < eps && Math.abs(dy) >= eps) {
+    const x = Math.round(ax);
+    const lo = Math.min(ay, by);
+    const hi = Math.max(ay, by);
+    const loI = Math.ceil(lo + eps);
+    const hiI = Math.floor(hi - eps);
+    if (loI > hiI) return null;
+    const y = Math.max(loI, Math.min(hiI, Math.round(rawGy)));
+    return [x, y];
+  }
+  if (Math.abs(dy) < eps && Math.abs(dx) >= eps) {
+    const y = Math.round(ay);
+    const lo = Math.min(ax, bx);
+    const hi = Math.max(ax, bx);
+    const loI = Math.ceil(lo + eps);
+    const hiI = Math.floor(hi - eps);
+    if (loI > hiI) return null;
+    const x = Math.max(loI, Math.min(hiI, Math.round(rawGx)));
+    return [x, y];
+  }
+
+  const ax0 = Math.round(ax);
+  const ay0 = Math.round(ay);
+  const bx0 = Math.round(bx);
+  const by0 = Math.round(by);
+  const rdx = bx0 - ax0;
+  const rdy = by0 - ay0;
+  const gstep = gcdNonNegative(rdx, rdy);
+  if (!(gstep > 1)) return null;
+
+  const sx = rdx / gstep;
+  const sy = rdy / gstep;
+  const stepLen = Math.hypot(sx, sy);
+  if (!(stepLen > 0)) return null;
+
+  const wx = bx - ax;
+  const wy = by - ay;
+  const vv = wx * wx + wy * wy;
+  const distAlong =
+    vv > 1e-24
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            ((rawGx - ax) * wx + (rawGy - ay) * wy) / vv
+          )
+        ) * Math.sqrt(vv)
+      : 0;
+
+  let bestK = 1;
+  let bestErr = Infinity;
+  for (let k = 1; k <= gstep - 1; k++) {
+    const err = Math.abs(k * stepLen - distAlong);
+    if (err < bestErr) {
+      bestErr = err;
+      bestK = k;
+    }
+  }
+  return [ax0 + sx * bestK, ay0 + sy * bestK];
 }
 
 /**

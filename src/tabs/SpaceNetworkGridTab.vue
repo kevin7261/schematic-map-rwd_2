@@ -110,7 +110,7 @@
     buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine,
     applyLayoutVhDrawFineGridToFeatureCollection,
     featureCollectionGridBounds,
-    gridXYAtGridDistanceAlongLineString,
+    integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -5025,8 +5025,36 @@
         return nc.length > 0 ? nc : mids;
       };
 
+      /** layout_network_grid_from_vh_draw：中段黑點段落抬頭（路線名／起迄站） */
+      const layoutVhDrawRouteSegmentHoverHeadHtml = (exportRow) => {
+        const r = exportRow && typeof exportRow === 'object' ? exportRow : null;
+        if (!isLayoutNetworkGridFromVhDrawLayerId(layerTab) || !r) return '';
+        const seg = r.segment;
+        if (!seg || typeof seg !== 'object') return '';
+        const routeNm = escapeLayoutTooltipHtml(
+          String(r.routeName ?? r.route_name ?? r.name ?? '').trim()
+        );
+        const nodeDisplay = (node) => {
+          if (!node || typeof node !== 'object') return '';
+          const tags = node.tags && typeof node.tags === 'object' ? node.tags : {};
+          const nameish = (
+            node.station_name ??
+            tags.station_name ??
+            tags.name ??
+            ''
+          ).trim();
+          if (nameish) return nameish;
+          return String(node.station_id ?? tags.station_id ?? '').trim();
+        };
+        const startNm = escapeLayoutTooltipHtml(nodeDisplay(seg.start));
+        const endNm = escapeLayoutTooltipHtml(nodeDisplay(seg.end));
+        return `<strong>route_name</strong> ${routeNm || '(—)'}<br>
+<strong>start</strong> ${startNm || '(—)'}<br>
+<strong>end</strong> ${endNm || '(—)'}<br>`;
+      };
+
       /** 中段黑點：與本站點圓 hover 同源（版面 JSON：`stationEndpointTooltipHtmlFromProps`） */
-      const showLayoutVHDrawMidStationTooltip = (event, stationPropBag, gx, gy) => {
+      const showLayoutVHDrawMidStationTooltip = (event, stationPropBag, gx, gy, segmentExportRow) => {
         const gxLbl = formatAxisTickLabelMaxTwoDecimals(
           Number.isFinite(Number(gx)) ? Number(gx) : gx,
           xAxisLabelsAsFloat
@@ -5036,6 +5064,7 @@
           yAxisLabelsAsFloat
         );
         const gridCoordLine = `<strong>網格座標</strong> (${escapeLayoutTooltipHtml(gxLbl)}, ${escapeLayoutTooltipHtml(gyLbl)})<br>`;
+        const routeSegmentHead = layoutVhDrawRouteSegmentHoverHeadHtml(segmentExportRow);
         if (uniformGridRouteFamilyTab) {
           const jlStation = dataStore.findLayerById(layerTab);
           const jrStation =
@@ -5073,7 +5102,8 @@
           );
           tooltip
             .html(
-              gridCoordLine +
+              routeSegmentHead +
+                gridCoordLine +
                 stationEndpointTooltipHtmlFromProps(
                   propBagForStation,
                   typeForTooltip,
@@ -5091,7 +5121,8 @@
         const tagMergedFb = getGeoJsonFeatureTagProps({ properties: props });
         tooltip
           .html(
-            gridCoordLine +
+            routeSegmentHead +
+              gridCoordLine +
               stationEndpointTooltipHtmlFromProps(
                 props,
                 normalizeRouteSegmentEndpointType(
@@ -5148,10 +5179,12 @@
           let gxy;
           if (layoutFineGridSpec) {
             const targetG = (k * totalGrid) / (nSta + 1);
-            const raw = gridXYAtGridDistanceAlongLineString(gridPts, targetG);
-            if (!raw) continue;
-            // 黑點須落在折線上：弧長插值後不可四捨五入（斜／對角段會離線）
-            gxy = [raw[0], raw[1]];
+            const lattice = integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString(
+              gridPts,
+              targetG
+            );
+            if (!lattice) continue;
+            gxy = lattice;
           } else {
             const target = (k * totalPx) / (nSta + 1);
             gxy = gridXYAtPixelDistanceAlong(gridPts, target);
@@ -5170,7 +5203,7 @@
             .style('pointer-events', 'all')
             .on('mouseover', function (event) {
               d3.select(this).attr('r', 5).attr('stroke-width', 2);
-              showLayoutVHDrawMidStationTooltip(event, sta, gxy[0], gxy[1]);
+              showLayoutVHDrawMidStationTooltip(event, sta, gxy[0], gxy[1], row);
             })
             .on('mousemove', function (event) {
               tooltip.style('left', `${event.pageX + 10}px`).style('top', `${event.pageY - 10}px`);
