@@ -6998,6 +6998,45 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
+  /**
+   * 1–9 整數抽樣：機率與反等比級數 1/r^k 成正比（公比 r>1 → k 愈小愈容易出現）。
+   * @param {number} [ratio=2]
+   * @returns {number}
+   */
+  const sampleLayoutTrafficWeight1to9InverseGeometric = (ratio = 2) => {
+    const r = Math.max(1.0001, Number(ratio));
+    const weights = [];
+    let sum = 0;
+    for (let k = 1; k <= 9; k++) {
+      const w = 1 / r ** k;
+      weights.push(w);
+      sum += w;
+    }
+    let u = Math.random() * sum;
+    for (let i = 0; i < weights.length; i++) {
+      u -= weights[i];
+      if (u <= 0) return i + 1;
+    }
+    return 9;
+  };
+
+  /** layout_network_grid_from_vh_draw：已載入之 CSV 每一筆 weight 改為 1–9 隨機（反等比機率） */
+  const onLayoutNetworkRandomizeTrafficWeightsClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    const rows = lyr.layoutVhDrawTrafficData;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      window.alert('請先載入 CSV。');
+      return;
+    }
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue;
+      row.weight = sampleLayoutTrafficWeight1to9InverseGeometric(2);
+    }
+    lyr.layoutVhDrawTrafficMissing = [];
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
   const onJsonGridFromCoordPruneEmptyGridLinesClick = async () => {
     if (isExecuting.value) return;
     const follow = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
@@ -10180,7 +10219,8 @@
           <div class="my-title-xs-gray pb-2">路段交通流量（CSV）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
             來源：<code class="small">{{ layer.csvFileName_traffic }}</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
-            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
+            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。「全部隨機 weight」將現有每一筆改為 1–9，機率∝<code class="small">1/2<sup>k</sup></code>（k
+            為數值，數字愈小愈常出現）。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
           </div>
           <div class="d-flex align-items-center justify-content-between mb-2">
             <div class="my-content-sm-black">顯示 weight 標籤</div>
@@ -10203,6 +10243,14 @@
               @click="onLayoutNetworkLoadTrafficCsvClick(layer)"
             >
               載入 mrt_link_volume_undirected.csv
+            </button>
+            <button
+              v-if="layer.layoutVhDrawTrafficData?.length"
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+              @click="onLayoutNetworkRandomizeTrafficWeightsClick(layer)"
+            >
+              全部隨機 weight（1–9，反等比機率）
             </button>
             <button
               v-if="layer.layoutVhDrawTrafficData"
