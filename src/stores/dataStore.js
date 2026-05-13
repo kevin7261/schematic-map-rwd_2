@@ -703,7 +703,7 @@ export const useDataStore = defineStore(
             layoutVhDrawTrafficData: null,
             layoutVhDrawShowTrafficWeights: true,
             layoutVhDrawTrafficMissing: [],
-            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+            upperViewTabs: ['canvas-layout-grid-viewer', 'json-viewer'],
           },
         ],
       },

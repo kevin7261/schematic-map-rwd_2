@@ -568,6 +568,14 @@
       type: String,
       default: '',
     },
+    /**
+     * canvas-layout-grid-viewer：繪區取容器可繪寬高之 min（短邊），格元正方形並置中（與測試3 square 邏輯一致）。
+     * 不影響未掛此 prop 之 space-layout-grid-viewer／space-network-grid。
+     */
+    squarePlotByShorterSide: {
+      type: Boolean,
+      default: false,
+    },
   });
 
   const dataStore = useDataStore();
@@ -706,7 +714,8 @@
       Array.isArray(layer.upperViewTabs) && layer.upperViewTabs.includes('space-network-grid');
     const hasSpaceLayoutGridViewerTab =
       Array.isArray(layer.upperViewTabs) &&
-      layer.upperViewTabs.includes('space-layout-grid-viewer');
+      (layer.upperViewTabs.includes('space-layout-grid-viewer') ||
+        layer.upperViewTabs.includes('canvas-layout-grid-viewer'));
 
     // 如果有數據，返回 dashboardData（如果存在）或一個標記物件
     return hasData || hasSpaceNetworkGridTab || hasSpaceLayoutGridViewerTab
@@ -950,7 +959,8 @@
           const mayShowEmptySpaceNetwork =
             Array.isArray(targetLayer.upperViewTabs) &&
             (targetLayer.upperViewTabs.includes('space-network-grid') ||
-              targetLayer.upperViewTabs.includes('space-layout-grid-viewer'));
+              targetLayer.upperViewTabs.includes('space-layout-grid-viewer') ||
+              targetLayer.upperViewTabs.includes('canvas-layout-grid-viewer'));
           if (mayShowEmptySpaceNetwork) {
             gridData.value = null;
             nodeData.value = null;
@@ -2481,8 +2491,13 @@
       isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
         ? { top: 20, right: 20, bottom: 52, left: 72 }
         : { top: 20, right: 20, bottom: 40, left: 50 };
-    const width = dimensions.width - margin.left - margin.right;
-    const height = dimensions.height - margin.top - margin.bottom;
+    let width = dimensions.width - margin.left - margin.right;
+    let height = dimensions.height - margin.top - margin.bottom;
+    if (props.squarePlotByShorterSide) {
+      const side = Math.min(width, height);
+      width = side;
+      height = side;
+    }
 
     // 檢查是否已存在 SVG，如果存在且尺寸相同則不需要重繪
     const containerId = getContainerId();
@@ -3506,6 +3521,24 @@
       yScale = ys.scale;
       taipeiFMinCellWFrac = xs.minCellWFrac;
       taipeiFMinCellHFrac = ys.minCellHFrac;
+    } else if (props.squarePlotByShorterSide) {
+      const spanX = xMax - xMin;
+      const spanY = yMax - yMin;
+      const sx = spanX > 0 ? spanX : 1;
+      const sy = spanY > 0 ? spanY : 1;
+      const cellSize = Math.min(width / sx, height / sy);
+      const gridW = sx * cellSize;
+      const gridH = sy * cellSize;
+      const gridLeft = margin.left + (width - gridW) / 2;
+      const gridTop = margin.top + (height - gridH) / 2;
+      xScale = d3
+        .scaleLinear()
+        .domain([xMin, xMax])
+        .range([gridLeft, gridLeft + gridW]);
+      yScale = d3
+        .scaleLinear()
+        .domain([yMax, yMin])
+        .range([gridTop, gridTop + gridH]);
     } else if (
       isTaipeiTest3BcdeLayerTab(layerTab) &&
       dataStore.findLayerById(layerTab)?.squareGridCellsTaipeiTest3 === true
@@ -3576,14 +3609,18 @@
     }
 
     /** 等分網格座標 → 像素（滑鼠縮放時用於焦點欄／列索引，避免與權重比例尺循環） */
-    const xPickLinear = d3
-      .scaleLinear()
-      .domain([xMin, xMax])
-      .range([margin.left, margin.left + width]);
-    const yPickLinear = d3
-      .scaleLinear()
-      .domain([yMax, yMin])
-      .range([margin.top, margin.top + height]);
+    const xPickLinear = props.squarePlotByShorterSide
+      ? d3.scaleLinear().domain([xMin, xMax]).range(xScale.range())
+      : d3
+          .scaleLinear()
+          .domain([xMin, xMax])
+          .range([margin.left, margin.left + width]);
+    const yPickLinear = props.squarePlotByShorterSide
+      ? d3.scaleLinear().domain([yMax, yMin]).range(yScale.range())
+      : d3
+          .scaleLinear()
+          .domain([yMax, yMin])
+          .range([margin.top, margin.top + height]);
 
     /** 疊加與縮減數字相同時：避免誤以為未執行 b→c／縮減 */
     const eventToNetworkXY = (event) => {

@@ -84,6 +84,7 @@ export const ICONS = {
   // 網格和網絡相關圖標
   project_diagram: { zh: '網絡圖', en: 'Network Diagram', icon: '<i class="fas fa-project-diagram"></i>' },
   th: { zh: '網格', en: 'Grid', icon: '<i class="fas fa-th"></i>' },
+  th_large: { zh: '網格（大）', en: 'Grid large', icon: '<i class="fas fa-th-large"></i>' },
   file_code: { zh: '代碼文件', en: 'Code File', icon: '<i class="fas fa-file-code"></i>' },
 };
 
