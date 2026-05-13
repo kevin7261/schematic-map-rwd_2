@@ -27,9 +27,25 @@ export const LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID = 'layout_network_grid_fr
 export const LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID =
   'layout_network_grid_read_layout_data_json';
 
+/**
+ * 版面網絡網格_2：與 {@link LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID} 同功能，獨立圖層狀態／persist。
+ * layerId：`layout_network_grid_from_vh_draw_2`
+ */
+export const LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2 = 'layout_network_grid_from_vh_draw_2';
+
+/**
+ * 版面網絡網格_2：讀取快照層；深拷來自 `layout_network_grid_from_vh_draw_2`。
+ * layerId：`layout_network_grid_read_layout_data_json_2`
+ */
+export const LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2 =
+  'layout_network_grid_read_layout_data_json_2';
+
 /** @param {string|undefined|null} layerId */
 export function isLayoutNetworkGridReadLayoutDataJsonLayerId(layerId) {
-  return layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID;
+  return (
+    layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID ||
+    layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2
+  );
 }
 
 /** @param {string|undefined|null} layerId */
@@ -39,7 +55,10 @@ export function isOrthogonalVhDataJsonDrawMirrorLayerId(layerId) {
 
 /** @param {string|undefined|null} layerId */
 export function isLayoutNetworkGridFromVhDrawLayerId(layerId) {
-  return layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID;
+  return (
+    layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+    layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
+  );
 }
 
 /** 先直後橫·繪製層與其版面網絡複本（示意網格／orthoBundle 等同一套繪製邏輯） */
@@ -71,7 +90,8 @@ export function isCoordNormalizedDataJsonMirrorFollowonLayerId(layerId) {
     layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
     isLineOrthogonalTowardCenterLayerId(layerId) ||
     isOrthogonalVhDataJsonDrawMirrorLayerId(layerId) ||
-    isLayoutNetworkGridFromVhDrawLayerId(layerId)
+    isLayoutNetworkGridFromVhDrawLayerId(layerId) ||
+    isLayoutNetworkGridReadLayoutDataJsonLayerId(layerId)
   );
 }
 

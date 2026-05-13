@@ -43,13 +43,18 @@
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
     LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
     LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID,
+    LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2,
+    LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
     refreshLayoutNetworkGridFromVhDrawIfVisible,
+    refreshLayoutNetworkGridFromVhDrawIfVisible2,
     mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer,
+    mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2,
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw,
+    syncLayoutNetworkGridRoutesDataJsonFromVhDraw2,
     applyLayoutTrafficCsvToVhDrawLayerRoots,
     buildSyntheticTrafficRowsFromVhDrawLayer,
     replaceDiagonalEdgesWithLOrtho,
@@ -5649,6 +5654,10 @@
         dataStore.findLayerById.bind(dataStore),
         dataStore.saveLayerState.bind(dataStore)
       );
+      refreshLayoutNetworkGridFromVhDrawIfVisible2(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
       return;
     }
     for (const oid of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
@@ -6967,9 +6976,34 @@
     }
   };
 
+  /** 版面網絡網格_2：與 {@link persistLayoutVhDrawGridRoutesDataJsonSnapshot} 同流程，綁定 `layout_network_grid_from_vh_draw_2`。 */
+  const persistLayoutVhDrawGridRoutesDataJsonSnapshot2 = () => {
+    syncLayoutNetworkGridRoutesDataJsonFromVhDraw2((id) => dataStore.findLayerById(id));
+    const lay = dataStore.findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2);
+    if (lay) {
+      dataStore.saveLayerState(
+        lay.layerId,
+        jsonGridFromCoordNormalizedPersistPayload(lay, { omitLoadingFlags: true })
+      );
+    }
+    const readLyr = dataStore.findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2);
+    if (readLyr) {
+      mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2(
+        (id) => dataStore.findLayerById(id),
+        dataStore.saveLayerState,
+        readLyr
+      );
+    }
+  };
+
+  const isLayoutNetworkGridFromVhDrawControlLayer = (lyr) =>
+    lyr &&
+    (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+      lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2);
+
   /** layout_network_grid_from_vh_draw：載入交通流量 CSV */
   const onLayoutNetworkLoadTrafficCsvClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    if (!isLayoutNetworkGridFromVhDrawControlLayer(lyr)) return;
     try {
       const rel = String(lyr.csvFileName_traffic ?? '').trim();
       if (!rel || rel.includes('..')) throw new Error('無效的 csvFileName_traffic');
@@ -7011,7 +7045,11 @@
           processedJsonData: vhDraw.processedJsonData,
         });
       }
-      persistLayoutVhDrawGridRoutesDataJsonSnapshot();
+      if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
+        persistLayoutVhDrawGridRoutesDataJsonSnapshot2();
+      } else {
+        persistLayoutVhDrawGridRoutesDataJsonSnapshot();
+      }
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
     } catch (err) {
@@ -7022,7 +7060,7 @@
 
   /** layout_network_grid_from_vh_draw：清除交通流量 CSV */
   const onLayoutNetworkClearTrafficCsvClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    if (!isLayoutNetworkGridFromVhDrawControlLayer(lyr)) return;
     lyr.layoutVhDrawTrafficData = null;
     lyr.layoutVhDrawTrafficMissing = [];
     applyLayoutTrafficCsvToVhDrawLayerRoots(
@@ -7038,14 +7076,18 @@
         processedJsonData: vhDrawClear.processedJsonData,
       });
     }
-    persistLayoutVhDrawGridRoutesDataJsonSnapshot();
+    if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
+      persistLayoutVhDrawGridRoutesDataJsonSnapshot2();
+    } else {
+      persistLayoutVhDrawGridRoutesDataJsonSnapshot();
+    }
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
   /** layout_network_grid_from_vh_draw：顯示／隱藏交通 weight 標籤 */
   const onLayoutVhDrawShowTrafficWeightsChange = async (lyr, checked) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    if (!isLayoutNetworkGridFromVhDrawControlLayer(lyr)) return;
     lyr.layoutVhDrawShowTrafficWeights = checked;
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
@@ -7075,7 +7117,7 @@
 
   /** layout_network_grid_from_vh_draw：全部隨機 weight（無 CSV 時自 VH 路段建表；有 CSV 則重抽各筆） */
   const onLayoutNetworkRandomizeTrafficWeightsClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    if (!isLayoutNetworkGridFromVhDrawControlLayer(lyr)) return;
     const vhDraw = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
     if (!vhDraw) {
       window.alert('找不到 VH 繪製層（orthogonal_toward_center_vh_draw）。');
@@ -7116,7 +7158,11 @@
         processedJsonData: vhDrawRand.processedJsonData,
       });
     }
-    persistLayoutVhDrawGridRoutesDataJsonSnapshot();
+    if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
+      persistLayoutVhDrawGridRoutesDataJsonSnapshot2();
+    } else {
+      persistLayoutVhDrawGridRoutesDataJsonSnapshot();
+    }
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
@@ -10297,7 +10343,10 @@
 
         <!-- layout_network_grid_from_vh_draw：交通流量 CSV -->
         <div
-          v-if="layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID"
+          v-if="
+            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
+          "
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">路段交通流量（CSV）</div>
