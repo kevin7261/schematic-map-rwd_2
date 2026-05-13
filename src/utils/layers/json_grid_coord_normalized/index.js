@@ -51,6 +51,7 @@ export {
   applyLayoutVhDrawFineGridToFeatureCollection,
   gridXYAtGridDistanceAlongLineString,
   integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString,
+  integerLatticeBlackDotAtPixelArcLengthAlongLineString,
   snapSegmentInteriorToIntegerLattice,
 } from './layoutVhDrawFineIntegerGrid.js';
 export {

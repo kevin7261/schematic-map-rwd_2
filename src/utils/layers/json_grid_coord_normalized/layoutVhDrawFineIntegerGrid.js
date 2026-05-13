@@ -1,7 +1,7 @@
 /**
  * layout_network_grid_from_vh_draw：依邊緣區間黑點 max 之全域極大值 M，將粗格座標放大為整數細格 (m+1) 倍並四捨五入，
  * 供軸刻度與線頂點檢視（資料層 geojson 仍為粗格，僅檢視變換）。
- * 套用細格後，中段黑點仍依格座標弧長均分，但座標須落在該邊上的 **整數細格交叉點**（正交由整數線段內插；對角／斜向由 gcd 步進之列舉格點，取弧長最接近者）。
+ * 套用細格後：中段黑點先依 **沿路徑的像素長度（pt／畫面上的弧長）** 按比例定位（與未套用細格時相同），再將該內插格座標 **對齊到整數格線交叉點**（見 `integerLatticeBlackDotAtPixelArcLengthAlongLineString`）。
  */
 
 import {
@@ -127,6 +127,49 @@ function gridXYAndSegAtGridDistanceAlong(gridPts, targetDist) {
   return { gx: last[0], gy: last[1], segIndex: gridPts.length - 2 };
 }
 
+/**
+ * 沿路徑之 **像素** 歐氏長度累積至 targetDist，回傳該處以格座標線性內插之 (gx,gy) 與所在邊 index（與僅畫線時之弧長比例一致）。
+ *
+ * @param {[number,number][]} gridPts
+ * @param {number} targetDist
+ * @param {(gx: number, gy: number) => [number, number]} gridToPx
+ */
+function gridXYAndSegAtPixelDistanceAlong(gridPts, targetDist, gridToPx) {
+  if (!gridPts || gridPts.length < 2 || typeof gridToPx !== 'function') return null;
+  const lens = [];
+  let total = 0;
+  for (let i = 0; i < gridPts.length - 1; i++) {
+    const g0 = gridPts[i];
+    const g1 = gridPts[i + 1];
+    const p0 = gridToPx(g0[0], g0[1]);
+    const p1 = gridToPx(g1[0], g1[1]);
+    const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+    lens.push(L);
+    total += L;
+  }
+  if (!(total > 0) || !Number.isFinite(targetDist) || targetDist <= 0) {
+    return { gx: gridPts[0][0], gy: gridPts[0][1], segIndex: 0 };
+  }
+  const d = Math.min(targetDist, total);
+  let acc = 0;
+  for (let i = 0; i < lens.length; i++) {
+    const L = lens[i];
+    if (acc + L >= d) {
+      const t = L > 0 ? (d - acc) / L : 0;
+      const g0 = gridPts[i];
+      const g1 = gridPts[i + 1];
+      return {
+        gx: g0[0] + t * (g1[0] - g0[0]),
+        gy: g0[1] + t * (g1[1] - g0[1]),
+        segIndex: i,
+      };
+    }
+    acc += L;
+  }
+  const last = gridPts[gridPts.length - 1];
+  return { gx: last[0], gy: last[1], segIndex: gridPts.length - 2 };
+}
+
 export function gridXYAtGridDistanceAlongLineString(gridPts, targetDist) {
   const hit = gridXYAndSegAtGridDistanceAlong(gridPts, targetDist);
   if (!hit) return null;
@@ -149,6 +192,36 @@ export function integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString(
   eps = 1e-3
 ) {
   const hit = gridXYAndSegAtGridDistanceAlong(gridPts, targetDist);
+  if (!hit) return null;
+  const g0 = gridPts[hit.segIndex];
+  const g1 = gridPts[hit.segIndex + 1];
+  if (!g0 || !g1) return null;
+  return snapSegmentInteriorToIntegerLattice(
+    g0[0],
+    g0[1],
+    g1[0],
+    g1[1],
+    hit.gx,
+    hit.gy,
+    eps
+  );
+}
+
+/**
+ * 沿路徑 **像素弧長** 定位（與僅視覺按比例之中段相同），再以格線整數對齊至合法網格交叉點。
+ *
+ * @param {[number,number][]} gridPts
+ * @param {number} targetPx
+ * @param {(gx: number, gy: number) => [number, number]} gridToPx
+ * @param {number} [eps=1e-3]
+ */
+export function integerLatticeBlackDotAtPixelArcLengthAlongLineString(
+  gridPts,
+  targetPx,
+  gridToPx,
+  eps = 1e-3
+) {
+  const hit = gridXYAndSegAtPixelDistanceAlong(gridPts, targetPx, gridToPx);
   if (!hit) return null;
   const g0 = gridPts[hit.segIndex];
   const g1 = gridPts[hit.segIndex + 1];

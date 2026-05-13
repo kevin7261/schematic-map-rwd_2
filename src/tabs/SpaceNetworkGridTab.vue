@@ -110,7 +110,7 @@
     buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine,
     applyLayoutVhDrawFineGridToFeatureCollection,
     featureCollectionGridBounds,
-    integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString,
+    integerLatticeBlackDotAtPixelArcLengthAlongLineString,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -5170,7 +5170,7 @@
           );
         }
         if (layoutFineGridSpec) {
-          if (!(totalGrid > 0)) continue;
+          if (!(totalGrid > 0) || !(totalPx > 0)) continue;
         } else if (!(totalPx > 0)) {
           continue;
         }
@@ -5178,10 +5178,11 @@
         for (let k = 1; k <= nSta; k++) {
           let gxy;
           if (layoutFineGridSpec) {
-            const targetG = (k * totalGrid) / (nSta + 1);
-            const lattice = integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString(
+            const targetPx = (k * totalPx) / (nSta + 1);
+            const lattice = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
               gridPts,
-              targetG
+              targetPx,
+              (gx, gy) => [xScale(gx), yScale(gy)]
             );
             if (!lattice) continue;
             gxy = lattice;
