@@ -3894,16 +3894,76 @@
       layoutUniformTickOverride?.skipDefaultBackgroundGrid
     );
 
+    /** layout_network_grid_from_vh_draw：與細格整數座標同源之全域 M（各 col／row 開區間黑點數之極大） */
+    let layoutVhDrawSubdivM = 0;
+    if (
+      isLayoutNetworkGridFromVhDrawLayerId(layerTab) &&
+      activeTabLayer?.geojsonData?.type === 'FeatureCollection' &&
+      Array.isArray(activeTabLayer.geojsonData.features)
+    ) {
+      const subdivSpec = computeLayoutVhDrawFineGridSpec(dataStore, activeTabLayer.geojsonData);
+      if (subdivSpec && Number.isFinite(subdivSpec.m)) {
+        layoutVhDrawSubdivM = Math.max(0, Math.floor(subdivSpec.m));
+      }
+    }
+
     /** 固定淺灰背景格線（layout_network 不再套深灰強調線） */
     const layoutVHGridStroke = { stroke: '#E0E0E0', strokeW: 0.5, opacity: 0.6 };
+    /** M>0：粗格區間內等分細線（對應細格每單元 (M+1) 份） */
+    const layoutVHGridStrokeInner = { stroke: '#ECECEC', strokeW: 0.35, opacity: 0.5 };
+
 
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
+    const appendLayoutVhDrawInnerSubgridLines = () => {
+      if (layoutVhDrawSubdivM <= 0) return;
+      const vhIn = layoutVHGridStrokeInner;
+      const innerG = gridGroup.append('g').attr('class', 'layout-vh-draw-grid-inner');
+      for (let i = 0; i < xTicks.length - 1; i++) {
+        const xa = Number(xTicks[i]);
+        const xb = Number(xTicks[i + 1]);
+        if (![xa, xb].every(Number.isFinite) || Math.abs(xb - xa) < 1e-12) continue;
+        for (let j = 1; j <= layoutVhDrawSubdivM; j++) {
+          const gx = xa + (xb - xa) * (j / (layoutVhDrawSubdivM + 1));
+          const xPos = xScale(gx);
+          innerG
+            .append('line')
+            .attr('x1', xPos)
+            .attr('y1', margin.top)
+            .attr('x2', xPos)
+            .attr('y2', margin.top + height)
+            .attr('stroke', vhIn.stroke)
+            .attr('stroke-width', vhIn.strokeW)
+            .attr('opacity', vhIn.opacity);
+        }
+      }
+      for (let i = 0; i < yTicks.length - 1; i++) {
+        const ya = Number(yTicks[i]);
+        const yb = Number(yTicks[i + 1]);
+        if (![ya, yb].every(Number.isFinite) || Math.abs(yb - ya) < 1e-12) continue;
+        for (let j = 1; j <= layoutVhDrawSubdivM; j++) {
+          const gy = ya + (yb - ya) * (j / (layoutVhDrawSubdivM + 1));
+          const yPos = yScale(gy);
+          innerG
+            .append('line')
+            .attr('x1', margin.left)
+            .attr('y1', yPos)
+            .attr('x2', margin.left + width)
+            .attr('y2', yPos)
+            .attr('stroke', vhIn.stroke)
+            .attr('stroke-width', vhIn.strokeW)
+            .attr('opacity', vhIn.opacity);
+        }
+      }
+    };
+
     if (!skipDefaultLightBackgroundGrid) {
       if (useSchematicCellCenterGrid) {
         if (dataStore.showGrid) {
+          appendLayoutVhDrawInnerSubgridLines();
           xTicks.forEach((tick) => {
+
             const xPos = xScale(tick);
             const vh = layoutVHGridStroke;
             gridGroup
@@ -3931,6 +3991,7 @@
           });
         }
       } else {
+        appendLayoutVhDrawInnerSubgridLines();
         xTicks.forEach((tick) => {
           const xPos = xScale(tick);
           const vh = layoutVHGridStroke;
@@ -5203,7 +5264,11 @@
             if (!gxy) continue;
             dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
           }
-          if (dotSegIndex >= 0 && Number.isFinite(Number(gxy[0])) && Number.isFinite(Number(gxy[1]))) {
+          if (
+            dotSegIndex >= 0 &&
+            Number.isFinite(Number(gxy[0])) &&
+            Number.isFinite(Number(gxy[1]))
+          ) {
             layoutDotsForBandMaxRealtime.push({
               gx: Number(gxy[0]),
               gy: Number(gxy[1]),
