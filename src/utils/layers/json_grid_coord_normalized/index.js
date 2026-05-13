@@ -52,6 +52,8 @@ export {
   gridXYAtGridDistanceAlongLineString,
   integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString,
   integerLatticeBlackDotAtPixelArcLengthAlongLineString,
+  layoutVhDrawInteriorTurnVertexIndices,
+  computeLayoutVhDrawFineBlackDotsTurnRbRedistribute,
   snapSegmentInteriorToIntegerLattice,
 } from './layoutVhDrawFineIntegerGrid.js';
 export {

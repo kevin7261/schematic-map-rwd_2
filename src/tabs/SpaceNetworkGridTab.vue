@@ -111,6 +111,7 @@
     applyLayoutVhDrawFineGridToFeatureCollection,
     featureCollectionGridBounds,
     integerLatticeBlackDotAtPixelArcLengthAlongLineString,
+    computeLayoutVhDrawFineBlackDotsTurnRbRedistribute,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -4011,6 +4012,9 @@
       Number.isFinite(layoutLayerForFineGrid.layoutVhDrawFineGrid.y0)
         ? layoutLayerForFineGrid.layoutVhDrawFineGrid
         : null;
+    /** Control 區「中段黑點（細格加值）」開關：與細格並用 */
+    const layoutFineGridTurnRbMidDots =
+      !!layoutFineGridSpec && !!layoutLayerForFineGrid?.layoutVhDrawFineGridTurnRbMidDots;
     const coarseFcLayout = layoutLayerForFineGrid?.geojsonData;
     const routeFeaturesForLayoutBlackMax =
       layoutFineGridSpec &&
@@ -4934,7 +4938,9 @@
       }
     }
 
-    // layout_network_grid_from_vh_draw：JSON segment.stations 中段車站沿折線以視圖像素弧長均分（每次 drawMap／縮放重算），黑點
+    // layout_network_grid_from_vh_draw：JSON segment.stations 中段車站；
+    // — 細格：**像素弧長** 對齊錨區（轉折吸附、紅藍車站為錨後區間均分）再整數格點；
+    // — 非細格：僅沿路徑視圖像素弧長插值。
     if (isLayoutNetworkGridFromVhDrawLayerId(layerTab)) {
       const drawLayer = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
       const exportRowsForSta = buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer);
@@ -5137,6 +5143,21 @@
           .style('top', `${event.pageY - 10}px`);
       };
 
+      /** 細格：紅（connect）／藍線（line）座標若在該線段格誤差內可作為區間錨（與轉折共用）。 */
+      const rbAnchorGxGyForFineLayout =
+        layoutFineGridTurnRbMidDots && stationFeatures?.length > 0
+          ? stationFeatures
+              .filter((pf) => {
+                if (!pf?.geometry || pf.geometry.type !== 'Point') return false;
+                const nt = pf.nodeType || pf.properties?.nodeType || 'line';
+                return nt === 'connect' || nt === 'line';
+              })
+              .map((pf) => {
+                const c = pf.geometry.coordinates;
+                return { gx: Number(c[0]), gy: Number(c[1]) };
+              })
+          : [];
+
       const layoutStaG = zoomGroup.append('g').attr('class', 'layout-vh-draw-line-stations-pt');
       const layoutLineFeatCount = routeFeatures.filter(
         (f) => f?.geometry?.type === 'LineString'
@@ -5174,18 +5195,28 @@
         } else if (!(totalPx > 0)) {
           continue;
         }
+        const redisFine = layoutFineGridTurnRbMidDots
+          ? computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
+              gridPts,
+              nSta,
+              (gx, gy) => [xScale(gx), yScale(gy)],
+              { rbStationsGxGy: rbAnchorGxGyForFineLayout }
+            )
+          : null;
         const dotRadius = 2.5;
         for (let k = 1; k <= nSta; k++) {
           let gxy;
           if (layoutFineGridSpec) {
-            const targetPx = (k * totalPx) / (nSta + 1);
-            const lattice = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
-              gridPts,
-              targetPx,
-              (gx, gy) => [xScale(gx), yScale(gy)]
-            );
-            if (!lattice) continue;
-            gxy = lattice;
+            gxy = redisFine?.[k - 1] ?? null;
+            if (!gxy) {
+              const targetPx = (k * totalPx) / (nSta + 1);
+              gxy = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
+                gridPts,
+                targetPx,
+                (gx, gy) => [xScale(gx), yScale(gy)]
+              );
+            }
+            if (!gxy) continue;
           } else {
             const target = (k * totalPx) / (nSta + 1);
             gxy = gridXYAtPixelDistanceAlong(gridPts, target);

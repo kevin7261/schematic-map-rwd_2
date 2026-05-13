@@ -641,6 +641,8 @@ export const useDataStore = defineStore(
             layoutUniformGridGeoJson: null,
             layoutUniformGridMeta: null,
             layoutVhDrawFineGrid: null,
+            /** 細格中段黑點：轉折吸附＋紅／藍錨區間像素弧長均分（僅在已套用細格時有效） */
+            layoutVhDrawFineGridTurnRbMidDots: false,
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],

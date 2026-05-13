@@ -6205,6 +6205,29 @@
     if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     lyr.layoutVhDrawFineGrid = null;
+    lyr.layoutVhDrawFineGridTurnRbMidDots = false;
+    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  const onLayoutNetworkEnableFineGridTurnRbMidDotsClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    if (!lyr.layoutVhDrawFineGrid) {
+      window.alert('請先「套用細格」後再開啟此功能。');
+      return;
+    }
+    lyr.layoutVhDrawFineGridTurnRbMidDots = true;
+    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
+  const onLayoutNetworkDisableFineGridTurnRbMidDotsClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    lyr.layoutVhDrawFineGridTurnRbMidDots = false;
     await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
@@ -10190,6 +10213,33 @@
             @click="onLayoutNetworkClearFineIntegerGridClick(layer)"
           >
             還原粗格檢視
+          </button>
+          <div class="my-title-xs-gray pt-3 pb-1">中段黑點（細格加值）</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            須已套用細格。開啟後：最接近轉折之中段黑點移至轉折整數格；其餘在「轉折／紅·藍站（在線上）」錨之間依<strong>像素弧長</strong>均分並整數對齊。
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            :disabled="
+              isExecuting ||
+              layer.isLoading ||
+              !layer.layoutVhDrawFineGrid ||
+              layer.layoutVhDrawFineGridTurnRbMidDots
+            "
+            @click="onLayoutNetworkEnableFineGridTurnRbMidDotsClick(layer)"
+          >
+            開啟：轉折／錨區中段重分配
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary mb-2"
+            :disabled="
+              isExecuting || layer.isLoading || !layer.layoutVhDrawFineGridTurnRbMidDots
+            "
+            @click="onLayoutNetworkDisableFineGridTurnRbMidDotsClick(layer)"
+          >
+            關閉：還原僅沿路徑細格對齊
           </button>
         </div>
 

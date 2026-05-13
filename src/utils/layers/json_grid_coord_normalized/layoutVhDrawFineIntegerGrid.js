@@ -1,7 +1,7 @@
 /**
  * layout_network_grid_from_vh_draw：依邊緣區間黑點 max 之全域極大值 M，將粗格座標放大為整數細格 (m+1) 倍並四捨五入，
  * 供軸刻度與線頂點檢視（資料層 geojson 仍為粗格，僅檢視變換）。
- * 套用細格後：中段黑點先依 **沿路徑的像素長度（pt／畫面上的弧長）** 按比例定位（與未套用細格時相同），再將該內插格座標 **對齊到整數格線交叉點**（見 `integerLatticeBlackDotAtPixelArcLengthAlongLineString`）。
+ * 套用細格後：中段黑點可先 **對齊轉折並依錨區均分**，再以整數頂／邊對齊；亦支援僅沿路徑像素弧長之對齊（見 `computeLayoutVhDrawFineBlackDotsTurnRbRedistribute`）。
  */
 
 import {
@@ -315,6 +315,267 @@ export function snapSegmentInteriorToIntegerLattice(ax, ay, bx, by, rawGx, rawGy
     }
   }
   return [ax0 + sx * bestK, ay0 + sy * bestK];
+}
+
+function cumPxAtVertices(gridPts, gridToPx) {
+  const n = gridPts.length;
+  const cum = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const p0 = gridToPx(gridPts[i - 1][0], gridPts[i - 1][1]);
+    const p1 = gridToPx(gridPts[i][0], gridPts[i][1]);
+    cum[i] = cum[i - 1] + Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+  }
+  return cum;
+}
+
+/**
+ * Polyline interior vertices whose 進出邊向量不共線視為「轉折點」（先直後橫網格轉折）。
+ * @returns {number[]} 頂點索引集合（不包含 0 與末端）
+ */
+export function layoutVhDrawInteriorTurnVertexIndices(gridPts, epsGeom = 1e-10) {
+  const out = [];
+  if (!Array.isArray(gridPts) || gridPts.length < 3) return out;
+  for (let i = 1; i < gridPts.length - 1; i++) {
+    const ax = gridPts[i][0] - gridPts[i - 1][0];
+    const ay = gridPts[i][1] - gridPts[i - 1][1];
+    const bx = gridPts[i + 1][0] - gridPts[i][0];
+    const by = gridPts[i + 1][1] - gridPts[i][1];
+    const lenA = Math.hypot(ax, ay);
+    const lenB = Math.hypot(bx, by);
+    if (lenA <= epsGeom || lenB <= epsGeom) continue;
+    const cross = ax * by - ay * bx;
+    if (Math.abs(cross) > epsGeom * Math.min(lenA, lenB)) {
+      out.push(i);
+    }
+  }
+  return out;
+}
+
+function uniqSortArcs(pxVals, uniqTolPx) {
+  const s = [...pxVals].sort((a, b) => a - b);
+  if (s.length === 0) return [0];
+  const out = [s[0]];
+  let last = s[0];
+  for (let z = 1; z < s.length; z++) {
+    const v = s[z];
+    if (Math.abs(v - last) > uniqTolPx) {
+      out.push(v);
+      last = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * 格平面距離對折線之垂足，與對應 **沿路徑像素弧長**（與細格中段 pixel 度量一致）。
+ * @returns {{ arcPx: number, distGridSq: number }}
+ */
+function arcPxClosestGridFootAlongPolyline(gridPts, gx, gy, gridToPx) {
+  let bestDg2 = Infinity;
+  /** @type {number} */
+  let bestArc = NaN;
+  let cumSegStart = 0;
+  for (let i = 0; i < gridPts.length - 1; i++) {
+    const ax = Number(gridPts[i][0]);
+    const ay = Number(gridPts[i][1]);
+    const bx = Number(gridPts[i + 1][0]);
+    const by = Number(gridPts[i + 1][1]);
+    const wx = bx - ax;
+    const wy = by - ay;
+    const vv = wx * wx + wy * wy;
+    const tt =
+      vv > 1e-24 ? Math.min(1, Math.max(0, ((gx - ax) * wx + (gy - ay) * wy) / vv)) : 0;
+    const fx = ax + tt * wx;
+    const fy = ay + tt * wy;
+    const dg2 = (gx - fx) * (gx - fx) + (gy - fy) * (gy - fy);
+    const p0 = gridToPx(ax, ay);
+    const p1 = gridToPx(bx, by);
+    const segLenPx = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+    const arcPx = cumSegStart + tt * segLenPx;
+    cumSegStart += segLenPx;
+    if (dg2 < bestDg2 && Number.isFinite(arcPx)) {
+      bestDg2 = dg2;
+      bestArc = arcPx;
+    }
+  }
+  return { arcPx: bestArc, distGridSq: bestDg2 };
+}
+
+/** Greedy：每轉折頂至多配一個黑點索引 k，每個 k 至多對一轉折頂（全體最小 |理想弧長 − 轉折弧長| 優先）。 */
+function greedyAssignKsToTurnVertices(turnVis, cumPx, nSta, totalPx) {
+  const cand = [];
+  const seen = Array.isArray(turnVis)
+    ? turnVis.filter(Number.isFinite).sort((a, b) => a - b)
+    : [];
+  for (const vi of seen) {
+    const arcPx = cumPx[vi];
+    if (!Number.isFinite(arcPx)) continue;
+    for (let k = 1; k <= nSta; k++) {
+      const ideal = (k * totalPx) / (nSta + 1);
+      cand.push({ k, vi, d: Math.abs(ideal - arcPx) });
+    }
+  }
+  cand.sort((a, b) => a.d - b.d || a.k - b.k || a.vi - b.vi);
+  /** @type {Record<number, number>} */
+  const kToVi = {};
+  /** @type {Set<number>} */
+  const viUsed = new Set();
+  /** @type {Set<number>} */
+  const kUsed = new Set();
+  for (const c of cand) {
+    if (kUsed.has(c.k) || viUsed.has(c.vi)) continue;
+    kUsed.add(c.k);
+    viUsed.add(c.vi);
+    kToVi[c.k] = c.vi;
+  }
+  return kToVi;
+}
+
+/**
+ * 細格中段黑點：① 對每個轉折頂以 **弧長最接近** 指派一個黑點到該整數頂格；② 其餘在相鄰錨（起／末、轉折、沿路線投影且在格誤差內之紅／藍車站）之間沿 **像素弧長** 均分，並整數對齊。
+ *
+ * @param {{ rbStationsGxGy?: Array<{ gx: number; gy: number }>, latticeEpsGrid?: number, coordMatchEpsGrid?: number, uniqArcPxTol?: number }} [opt]
+ * @returns {( [number, number] | null )[]} 長度 `nSta`：第 index 對應 k=index+1
+ */
+export function computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
+  gridPts,
+  nSta,
+  gridToPx,
+  opt = {}
+) {
+  /** @type {( [number, number] | null )[]} */
+  const out = Array.from({ length: Math.max(0, nSta) }, () => null);
+  const latticeEps = Number.isFinite(opt.latticeEpsGrid) ? opt.latticeEpsGrid : 1e-3;
+  const epsCoord =
+    typeof opt.coordMatchEpsGrid === 'number' && Number.isFinite(opt.coordMatchEpsGrid)
+      ? opt.coordMatchEpsGrid
+      : 1e-2;
+  const uniqTol =
+    typeof opt.uniqArcPxTol === 'number' && Number.isFinite(opt.uniqArcPxTol)
+      ? opt.uniqArcPxTol
+      : 1e-4;
+  const rbList = Array.isArray(opt.rbStationsGxGy) ? opt.rbStationsGxGy : [];
+
+  if (!Array.isArray(gridPts) || gridPts.length < 2 || nSta <= 0 || typeof gridToPx !== 'function')
+    return out;
+
+  const cumPx = cumPxAtVertices(gridPts, gridToPx);
+  const totalPx = cumPx[cumPx.length - 1];
+  if (!(totalPx > 0)) return out;
+
+  const turns = layoutVhDrawInteriorTurnVertexIndices(gridPts);
+  const kToTurnVi = greedyAssignKsToTurnVertices(turns, cumPx, nSta, totalPx);
+  const usedK = new Set();
+
+  for (const [ks, vi] of Object.entries(kToTurnVi)) {
+    const k = Number(ks);
+    if (!Number.isFinite(k) || k < 1 || k > nSta || typeof vi !== 'number') continue;
+    out[k - 1] = [Math.round(gridPts[vi][0]), Math.round(gridPts[vi][1])];
+    usedK.add(k);
+  }
+
+  const anchorSet = new Set();
+  anchorSet.add(0);
+  anchorSet.add(totalPx);
+  for (const vi of turns) {
+    anchorSet.add(cumPx[vi]);
+  }
+  for (const rb of rbList) {
+    const gx = Number(rb.gx);
+    const gy = Number(rb.gy);
+    const foot = arcPxClosestGridFootAlongPolyline(gridPts, gx, gy, gridToPx);
+    if (
+      foot &&
+      foot.distGridSq <= epsCoord * epsCoord &&
+      Number.isFinite(foot.arcPx)
+    ) {
+      anchorSet.add(foot.arcPx);
+    }
+  }
+  const ua = uniqSortArcs([...anchorSet], uniqTol);
+
+  /** @type {number[][]} */
+  const bucket = ua.length > 1 ? Array.from({ length: ua.length - 1 }, () => []) : [];
+
+  const relGap = Math.max(1e-9, totalPx * 1e-12);
+  for (let kk = 1; kk <= nSta; kk++) {
+    if (usedK.has(kk)) continue;
+    const ideal = (kk * totalPx) / (nSta + 1);
+    let slot = -1;
+    if (bucket.length === 1) slot = 0;
+    else {
+      for (let j = 0; j < ua.length - 1; j++) {
+        const L = ua[j];
+        const R = ua[j + 1];
+        if (ideal > L + relGap && ideal < R - relGap) {
+          slot = j;
+          break;
+        }
+      }
+    }
+    if (slot >= 0) bucket[slot].push(kk);
+    else {
+      /** 數值落在錨上等邊界：塞入最接近之有效區間（含單區間備援） */
+      let bestGap = Infinity;
+      let bestJ = 0;
+      for (let j = 0; j < ua.length - 1; j++) {
+        const L = ua[j];
+        const R = ua[j + 1];
+        const mid = 0.5 * (L + R);
+        const g = Math.abs(ideal - mid);
+        if (R - L > relGap && g < bestGap) {
+          bestGap = g;
+          bestJ = j;
+        }
+      }
+      bucket[bestJ].push(kk);
+    }
+  }
+
+  for (let j = 0; j < bucket.length; j++) {
+    const ks = bucket[j];
+    if (!ks || ks.length === 0) continue;
+    ks.sort((a, b) => a - b);
+    const L = ua[j];
+    const R = ua[j + 1];
+    const spanPx = R - L;
+    if (!(spanPx > relGap)) continue;
+    const m = ks.length;
+    for (let t = 0; t < m; t++) {
+      const k = ks[t];
+      const frac = (t + 1) / (m + 1);
+      let pxTar = L + frac * spanPx;
+      pxTar = Math.min(totalPx - relGap * 100, Math.max(relGap * 100, pxTar));
+      let snapped = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
+        gridPts,
+        pxTar,
+        gridToPx,
+        latticeEps
+      );
+      if (!snapped) {
+        const hit = gridXYAndSegAtPixelDistanceAlong(gridPts, pxTar, gridToPx);
+        if (hit) {
+          const g0 = gridPts[hit.segIndex];
+          const g1 = gridPts[hit.segIndex + 1];
+          if (g0 && g1) {
+            snapped = snapSegmentInteriorToIntegerLattice(
+              g0[0],
+              g0[1],
+              g1[0],
+              g1[1],
+              hit.gx,
+              hit.gy,
+              latticeEps
+            );
+          }
+          if (!snapped) snapped = [Math.round(hit.gx), Math.round(hit.gy)];
+        }
+      }
+      out[k - 1] = snapped;
+    }
+  }
+
+  return out;
 }
 
 /**
