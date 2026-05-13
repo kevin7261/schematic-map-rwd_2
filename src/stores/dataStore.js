@@ -643,8 +643,12 @@ export const useDataStore = defineStore(
             layoutVhDrawFineGrid: null,
             /** 細格中段黑點：轉折吸附＋紅／藍錨區間像素弧長均分（僅在已套用細格時有效） */
             layoutVhDrawFineGridTurnRbMidDots: false,
-            /** 交通流量 CSV 資料（taipei_city/mrt_link_volume_undirected.csv），載入後為 Array<{a,b,weight}> */
+            /** public/data 底下之相對路徑（須配合 vue.config.js publicPath／process.env.BASE_URL） */
+            csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
+            /** 交通流量 CSV 資料，載入後為 Array<{a,b,weight}> */
             layoutVhDrawTrafficData: null,
+            /** 交通流量 CSV 載入後，找不到相鄰紅／藍／黑點者列於此 */
+            layoutVhDrawTrafficMissing: [],
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],

@@ -5203,6 +5203,38 @@
         return bestIdx;
       };
 
+      const layoutTrafficStationName = (node) => {
+        if (!node || typeof node !== 'object') return '';
+        const tags = node.tags && typeof node.tags === 'object' ? node.tags : {};
+        return String(node.station_name ?? tags.station_name ?? tags.name ?? '').trim();
+      };
+      const layoutTrafficKey = (a, b) =>
+        [String(a).trim(), String(b).trim()].sort().join('\x00');
+      const layoutTrafficEdges = [];
+      const layoutTrafficEdgeKeys = new Set();
+      const addLayoutTrafficEdges = (orderedPoints) => {
+        if (!Array.isArray(orderedPoints) || orderedPoints.length < 2) return;
+        for (let i = 0; i < orderedPoints.length - 1; i++) {
+          const a = orderedPoints[i];
+          const b = orderedPoints[i + 1];
+          if (!a?.name || !b?.name || !Array.isArray(a.gxy) || !Array.isArray(b.gxy)) continue;
+          const key = layoutTrafficKey(a.name, b.name);
+          const px0 = xScale(a.gxy[0]);
+          const py0 = yScale(a.gxy[1]);
+          const px1 = xScale(b.gxy[0]);
+          const py1 = yScale(b.gxy[1]);
+          if (![px0, py0, px1, py1].every(Number.isFinite)) continue;
+          layoutTrafficEdgeKeys.add(key);
+          layoutTrafficEdges.push({
+            key,
+            a: a.name,
+            b: b.name,
+            x: (px0 + px1) / 2,
+            y: (py0 + py1) / 2,
+          });
+        }
+      };
+
       const layoutStaG = zoomGroup.append('g').attr('class', 'layout-vh-draw-line-stations-pt');
       const layoutDotsForBandMaxRealtime = [];
       const layoutLineFeatCount = routeFeatures.filter(
@@ -5224,8 +5256,12 @@
           row = exportRowsForSta[layoutLineFeatIdx] ?? null;
         }
         layoutLineFeatIdx += 1;
+        const trafficOrderedPoints = [];
+        const trafficSeg = row?.segment;
+        const trafficStartName = layoutTrafficStationName(trafficSeg?.start);
+        const trafficEndName = layoutTrafficStationName(trafficSeg?.end);
+        if (trafficStartName) trafficOrderedPoints.push({ name: trafficStartName, gxy: gridPts[0] });
         const nSta = row ? layoutMidStationCountFromJsonRow(row) : 0;
-        if (nSta <= 0) continue;
         const midsArc = layoutMidStationsAlignedWithArc(row);
         const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
         let totalPx = 0;
@@ -5237,13 +5273,11 @@
             gridPts[i + 1][1] - gridPts[i][1]
           );
         }
-        if (layoutFineGridSpec) {
-          if (!(totalGrid > 0) || !(totalPx > 0)) continue;
-        } else if (!(totalPx > 0)) {
-          continue;
-        }
+        const canDrawMidDots = layoutFineGridSpec
+          ? totalGrid > 0 && totalPx > 0
+          : totalPx > 0;
         const dotRadius = 2.5;
-        for (let k = 1; k <= nSta; k++) {
+        if (canDrawMidDots) for (let k = 1; k <= nSta; k++) {
           let gxy;
           const targetPx = (k * totalPx) / (nSta + 1);
           if (layoutFineGridSpec) {
@@ -5306,6 +5340,8 @@
             });
           }
           const sta = midsArc[k - 1] ?? {};
+          const trafficMidName = layoutTrafficStationName(sta);
+          if (trafficMidName) trafficOrderedPoints.push({ name: trafficMidName, gxy });
           layoutStaG
             .append('circle')
             .attr('cx', xScale(gxy[0]))
@@ -5328,6 +5364,10 @@
               tooltip.style('opacity', 0);
             });
         }
+        if (trafficEndName) {
+          trafficOrderedPoints.push({ name: trafficEndName, gxy: gridPts[gridPts.length - 1] });
+        }
+        addLayoutTrafficEdges(trafficOrderedPoints);
         layoutRouteFi += 1;
       }
 
@@ -5375,80 +5415,35 @@
         }
       }
 
-      // ── 交通流量標注：在每條路段折線像素弧長中點顯示總人次（無對應則顯示 0） ──
-      const trafficRawData = dataStore.findLayerById(layerTab)?.layoutVhDrawTrafficData;
+      // ── 交通流量標注：CSV 對應紅／藍／黑點之間的相鄰邊；無 CSV 對應邊顯示 0 ──
+      const trafficLayer = dataStore.findLayerById(layerTab);
+      const trafficRawData = trafficLayer?.layoutVhDrawTrafficData;
       if (Array.isArray(trafficRawData) && trafficRawData.length > 0) {
-        const mkTrafficKey = (a, b) => [String(a).trim(), String(b).trim()].sort().join('\x00');
         const trafficMap = new Map();
+        const missingTrafficRows = [];
         for (const row of trafficRawData) {
-          trafficMap.set(mkTrafficKey(row.a, row.b), row.weight);
+          const k = layoutTrafficKey(row.a, row.b);
+          trafficMap.set(k, row.weight);
+          if (!layoutTrafficEdgeKeys.has(k)) {
+            missingTrafficRows.push({
+              a: row.a,
+              b: row.b,
+              weight: row.weight,
+              reason: '找不到相鄰紅/藍/黑點',
+            });
+          }
         }
+        const prevMissing = JSON.stringify(trafficLayer.layoutVhDrawTrafficMissing ?? []);
+        const nextMissing = JSON.stringify(missingTrafficRows);
+        if (prevMissing !== nextMissing) trafficLayer.layoutVhDrawTrafficMissing = missingTrafficRows;
 
         const trafficG = zoomGroup.append('g').attr('class', 'layout-vh-draw-traffic-labels');
-        let lineFeatIdxT = 0;
-        const lineFeatCountT = routeFeatures.filter(
-          (f) => f?.geometry?.type === 'LineString' && !(f.properties?.layoutUniformStationGrid)
-        ).length;
-
-        for (const rf of routeFeatures) {
-          if (!rf?.geometry || rf.geometry.type !== 'LineString') continue;
-          if (rf.properties?.layoutUniformStationGrid) continue;
-
-          const rawCoords = rf.geometry.coordinates;
-          if (!Array.isArray(rawCoords) || rawCoords.length < 2) {
-            lineFeatIdxT += 1;
-            continue;
-          }
-          const gridPts = rawCoords.map((c) => [Number(c[0]), Number(c[1])]);
-
-          // 找對應 export row 取站名
-          let matchRow = layoutFindRowForLineGrid(gridPts, exportRowsForSta);
-          if (!matchRow && lineFeatCountT === exportRowsForSta.length) {
-            matchRow = exportRowsForSta[lineFeatIdxT] ?? null;
-          }
-          lineFeatIdxT += 1;
-
-          const seg = matchRow?.segment;
-          const nodeDisplay = (node) => {
-            if (!node || typeof node !== 'object') return '';
-            const t = node.tags && typeof node.tags === 'object' ? node.tags : {};
-            return String(node.station_name ?? t.station_name ?? t.name ?? '').trim();
-          };
-          const nameA = nodeDisplay(seg?.start);
-          const nameB = nodeDisplay(seg?.end);
-
-          const weight =
-            nameA && nameB ? (trafficMap.get(mkTrafficKey(nameA, nameB)) ?? 0) : 0;
-
-          // 以像素弧長求中點
-          const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
-          let totalLen = 0;
-          for (let i = 0; i < pix.length - 1; i++) {
-            totalLen += Math.hypot(pix[i + 1][0] - pix[i][0], pix[i + 1][1] - pix[i][1]);
-          }
-          const midTarget = totalLen / 2;
-          let midPt = pix[Math.floor(pix.length / 2)];
-          let acc = 0;
-          for (let i = 0; i < pix.length - 1; i++) {
-            const segLen = Math.hypot(
-              pix[i + 1][0] - pix[i][0],
-              pix[i + 1][1] - pix[i][1]
-            );
-            if (acc + segLen >= midTarget) {
-              const t = segLen > 0 ? (midTarget - acc) / segLen : 0;
-              midPt = [
-                pix[i][0] + t * (pix[i + 1][0] - pix[i][0]),
-                pix[i][1] + t * (pix[i + 1][1] - pix[i][1]),
-              ];
-              break;
-            }
-            acc += segLen;
-          }
-
+        for (const edge of layoutTrafficEdges) {
+          const weight = trafficMap.get(edge.key) ?? 0;
           trafficG
             .append('text')
-            .attr('x', midPt[0])
-            .attr('y', midPt[1])
+            .attr('x', edge.x)
+            .attr('y', edge.y)
             .attr('text-anchor', 'middle')
             .attr('dominant-baseline', 'middle')
             .attr('font-size', '8px')
@@ -5460,6 +5455,8 @@
             .style('pointer-events', 'none')
             .text(String(weight));
         }
+      } else if (trafficLayer?.layoutVhDrawTrafficMissing?.length) {
+        trafficLayer.layoutVhDrawTrafficMissing = [];
       }
     }
 

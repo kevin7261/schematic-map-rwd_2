@@ -6946,7 +6946,11 @@
   const onLayoutNetworkLoadTrafficCsvClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
     try {
-      const resp = await fetch('/data/taipei_city/mrt_link_volume_undirected.csv');
+      const rel = String(lyr.csvFileName_traffic ?? '').trim();
+      if (!rel || rel.includes('..')) throw new Error('無效的 csvFileName_traffic');
+      const base = process.env.BASE_URL ?? '/';
+      const csvUrl = `${base.endsWith('/') ? base : `${base}/`}data/${rel}`;
+      const resp = await fetch(csvUrl);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const text = await resp.text();
       const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -6968,6 +6972,7 @@
         data.push({ a, b, weight: w });
       }
       lyr.layoutVhDrawTrafficData = data;
+      lyr.layoutVhDrawTrafficMissing = [];
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
     } catch (err) {
@@ -6980,6 +6985,7 @@
   const onLayoutNetworkClearTrafficCsvClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
     lyr.layoutVhDrawTrafficData = null;
+    lyr.layoutVhDrawTrafficMissing = [];
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
@@ -10165,8 +10171,8 @@
         >
           <div class="my-title-xs-gray pb-2">路段交通流量（CSV）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            來源：<code class="small">taipei_city/mrt_link_volume_undirected.csv</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
-            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。
+            來源：<code class="small">{{ layer.csvFileName_traffic }}</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
+            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
           </div>
           <div class="d-grid gap-2">
             <button
@@ -10184,6 +10190,34 @@
             >
               清除交通流量資料（{{ layer.layoutVhDrawTrafficData.length }} 筆）
             </button>
+          </div>
+          <div
+            v-if="layer.layoutVhDrawTrafficData && layer.layoutVhDrawTrafficMissing?.length"
+            class="alert alert-warning my-font-size-xs mt-2 mb-0 py-2"
+            style="line-height: 1.45"
+          >
+            <div class="fw-bold mb-1">
+              CSV 找不到相鄰紅／藍／黑點：{{ layer.layoutVhDrawTrafficMissing.length }} 筆
+            </div>
+            <div
+              class="overflow-auto"
+              style="max-height: 120px"
+            >
+              <div
+                v-for="(it, idx) in layer.layoutVhDrawTrafficMissing"
+                :key="'traffic-missing-' + idx"
+                class="text-break"
+              >
+                #{{ idx + 1 }} {{ it.a }} - {{ it.b }}：{{ it.weight }}
+                <span class="text-muted">({{ it.reason }})</span>
+              </div>
+            </div>
+          </div>
+          <div
+            v-else-if="layer.layoutVhDrawTrafficData"
+            class="text-success my-font-size-xs mt-2"
+          >
+            CSV 所有 weight 皆已找到相鄰點。
           </div>
         </div>
 
