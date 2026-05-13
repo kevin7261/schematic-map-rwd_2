@@ -2,8 +2,7 @@
  * 衍生圖層：`point_orthogonal` 自「座標正規化」複製 dataJson／jsonData；
  * 「站點與路線往中心聚集」兩種線網層優先自 `point_orthogonal` 複製；若尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
  * `orthogonal_toward_center_vh_draw` 僅鏡像 `orthogonal_toward_center_vh` 之 dataJson／geojson 供繪製；
- * `layout_network_grid_from_vh_draw` 自繪製層複製 **dataOSM**（並解析為 geojson 供網格檢視）；
- * `layout_network_grid_read_layout_data_json`：**深拷來自 `layout_network_grid_from_vh_draw`** 之繪製快照（**不共用來源物件參照**，含 **`dataJson` 路線陣列**、`geojsonData`、`dataOSM`、細格與交通欄位）。
+ * `layout_network_grid_from_vh_draw` 自繪製層複製 **dataOSM**（並解析為 geojson 供網格檢視）。
  */
 
 import {
@@ -26,7 +25,6 @@ import {
   LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
   LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
   LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
-  LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID,
   LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2,
   LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
@@ -265,52 +263,7 @@ export function syncLayoutNetworkGridRoutesDataJsonFromVhDraw2(findLayerById, la
     Array.isArray(rows) && rows.length > 0 ? JSON.parse(JSON.stringify(rows)) : null;
 }
 
-/**
- * `layout_network_grid_read_layout_data_json`：**自版面路網層深拷繪製用快照**
- * （`dataJson`／`jsonData`／`geojsonData`／`dataOSM`／細格／交通等；**物件與版面層不共用參照**）。
- *
- * @param {(id:string)=>*|null} findLayerById
- * @param {object|null} [readerLayer] — 若傳入則寫入該物件
- */
-export function syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson(
-  findLayerById,
-  readerLayer = null
-) {
-  const src = findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID);
-  const target =
-    readerLayer?.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID
-      ? readerLayer
-      : findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID);
-  if (!src || !target || src.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
-
-  const jsonCloneOrNull = (v) =>
-    v == null ? null : JSON.parse(JSON.stringify(v));
-
-  target.jsonData = jsonCloneOrNull(src.jsonData);
-  target.dataJson = jsonCloneOrNull(src.dataJson);
-  target.geojsonData = jsonCloneOrNull(src.geojsonData);
-  target.dataOSM =
-    src.dataOSM != null && String(src.dataOSM).trim() !== ''
-      ? String(src.dataOSM)
-      : null;
-
-  target.layoutVhDrawFineGrid = jsonCloneOrNull(src.layoutVhDrawFineGrid);
-  target.layoutVhDrawFineGridTurnRbMidDots = !!src.layoutVhDrawFineGridTurnRbMidDots;
-
-  target.csvFileName_traffic = src.csvFileName_traffic ?? null;
-  target.layoutVhDrawTrafficData = jsonCloneOrNull(src.layoutVhDrawTrafficData);
-  target.layoutVhDrawTrafficMissing = Array.isArray(src.layoutVhDrawTrafficMissing)
-    ? JSON.parse(JSON.stringify(src.layoutVhDrawTrafficMissing))
-    : [];
-  target.layoutVhDrawShowTrafficWeights = src.layoutVhDrawShowTrafficWeights !== false;
-
-  target.layoutUniformGridGeoJson = jsonCloneOrNull(src.layoutUniformGridGeoJson);
-  target.layoutUniformGridMeta = jsonCloneOrNull(src.layoutUniformGridMeta);
-
-  target.isLoaded = !!src.isLoaded;
-}
-
-/** `layout_network_grid_read_layout_data_json_2`：深拷自 `layout_network_grid_from_vh_draw_2`（與 {@link syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson} 平行）。 */
+/** `layout_network_grid_read_layout_data_json_2`：深拷自 `layout_network_grid_from_vh_draw_2`。 */
 export function syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson2(
   findLayerById,
   readerLayer = null
@@ -350,27 +303,8 @@ export function syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson2(
 }
 
 /**
- * 重設管線並 persist 「讀 dataJson」圖層。
+ * 重設管線並 persist 「讀 dataJson」圖層（版面網絡網格_2）。
  */
-export function mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer(
-  findLayerById,
-  saveLayerState,
-  readerLayer = null
-) {
-  const layer =
-    readerLayer?.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID
-      ? readerLayer
-      : findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID);
-  if (!layer || layer.layerId !== LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID) return;
-  resetJsonGridFromCoordNormalizedPipelineFields(layer);
-  syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson(findLayerById, layer);
-  saveLayerState(
-    layer.layerId,
-    jsonGridFromCoordNormalizedPersistPayload(layer, { omitLoadingFlags: true })
-  );
-}
-
-/** 重設管線並 persist 「讀 dataJson」圖層（版面網絡網格_2）。 */
 export function mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2(
   findLayerById,
   saveLayerState,
@@ -389,17 +323,7 @@ export function mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2(
   );
 }
 
-/** 自版面路網層深拷並 persist「讀 dataJson」層（不論該層是否可見，避免再次開啟時為過期快照）。 */
-export function refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible(
-  findLayerById,
-  saveLayerState
-) {
-  const r = findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID);
-  if (!r) return;
-  mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer(findLayerById, saveLayerState, r);
-}
-
-/** 版面網絡網格_2 讀取層快照 refresh（平行於 {@link refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible}）。 */
+/** `layout_network_grid_read_layout_data_json_2`：若該層存在則深拷並 persist（不論可見與否，避免再次開啟時為過期快照）。 */
 export function refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible2(
   findLayerById,
   saveLayerState
@@ -459,10 +383,7 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
       : [];
     payload.layoutVhDrawShowTrafficWeights = layer.layoutVhDrawShowTrafficWeights !== false;
   }
-  if (
-    layer.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID ||
-    layer.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2
-  ) {
+  if (layer.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2) {
     payload.csvFileName_traffic = layer.csvFileName_traffic ?? null;
     payload.layoutVhDrawTrafficData = layer.layoutVhDrawTrafficData ?? null;
     payload.layoutVhDrawTrafficMissing = Array.isArray(layer.layoutVhDrawTrafficMissing)
@@ -508,9 +429,6 @@ export function mirrorResetAndPersistJsonGridFromCoordNormalized(
     refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
     refreshLayoutNetworkGridFromVhDrawIfVisible2(findLayerById, saveLayerState);
   }
-  if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) {
-    refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible(findLayerById, saveLayerState);
-  }
   if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
     refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible2(findLayerById, saveLayerState);
   }
@@ -528,9 +446,6 @@ export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerS
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
     refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
     refreshLayoutNetworkGridFromVhDrawIfVisible2(findLayerById, saveLayerState);
-  }
-  if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) {
-    refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible(findLayerById, saveLayerState);
   }
   if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
     refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible2(findLayerById, saveLayerState);

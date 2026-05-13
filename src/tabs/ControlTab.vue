@@ -42,7 +42,6 @@
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
     LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
-    LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID,
     LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2,
     LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
@@ -51,7 +50,6 @@
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
     refreshLayoutNetworkGridFromVhDrawIfVisible,
     refreshLayoutNetworkGridFromVhDrawIfVisible2,
-    mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer,
     mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2,
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw,
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw2,
@@ -6964,14 +6962,6 @@
       dataStore.saveLayerState(
         lay.layerId,
         jsonGridFromCoordNormalizedPersistPayload(lay, { omitLoadingFlags: true })
-      );
-    }
-    const readLyr = dataStore.findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID);
-    if (readLyr) {
-      mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer(
-        (id) => dataStore.findLayerById(id),
-        dataStore.saveLayerState,
-        readLyr
       );
     }
   };

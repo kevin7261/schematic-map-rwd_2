@@ -168,7 +168,6 @@ import {
 import {
   mirrorResetAndPersistJsonGridFromCoordNormalized,
   reloadJsonGridFromCoordNormalizedLayer,
-  mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer,
   mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2,
 } from '../utils/layers/json_grid_coord_normalized/mirrorFromCoordNormalizedLayer.js';
 import {
@@ -654,57 +653,6 @@ export const useDataStore = defineStore(
             /** 交通流量 CSV 載入後，找不到相鄰紅／藍／黑點者列於此 */
             layoutVhDrawTrafficMissing: [],
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
-          },
-          {
-            /** 檢視用：深拷 `layout_network_grid_from_vh_draw` 之繪製快照（含 **`dataJson`、geojson、dataOSM、細格、交通**｜資料與版面層不共用參照） */
-            layerId: 'layout_network_grid_read_layout_data_json',
-            layerName: '路網網格（讀版面路網·dataJson）',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'teal',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: true,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            osmFileName: null,
-            jsonFileName: null,
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            jsonGridFromCoordSuggestTargetGrid: null,
-            squareGridCellsTaipeiTest3: false,
-            dataOSM: null,
-            dataGeojson: null,
-            dataJson: null,
-            layoutUniformGridGeoJson: null,
-            layoutUniformGridMeta: null,
-            layoutVhDrawFineGrid: null,
-            layoutVhDrawFineGridTurnRbMidDots: false,
-            csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
-            layoutVhDrawTrafficData: null,
-            layoutVhDrawShowTrafficWeights: true,
-            layoutVhDrawTrafficMissing: [],
-            upperViewTabs: ['canvas-layout-grid-viewer', 'json-viewer'],
           },
         ],
       },
@@ -2536,14 +2484,6 @@ export const useDataStore = defineStore(
         } else {
           mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
         }
-      }
-
-      if (layer.visible && layer.layerId === 'layout_network_grid_read_layout_data_json') {
-        mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer(
-          findLayerById,
-          saveLayerState,
-          layer
-        );
       }
 
       if (layer.visible && layer.layerId === 'layout_network_grid_read_layout_data_json_2') {

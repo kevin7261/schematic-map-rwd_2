@@ -21,13 +21,6 @@ export const LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID = 'orthogonal_towar
 export const LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID = 'layout_network_grid_from_vh_draw';
 
 /**
- * 僅檢視：深拷 **`layout_network_grid_from_vh_draw`** 之 **dataJson**／**jsonData**（與 Upper json-viewer 同源之匯出列）。
- * layerId：`layout_network_grid_read_layout_data_json`
- */
-export const LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID =
-  'layout_network_grid_read_layout_data_json';
-
-/**
  * 版面網絡網格_2：與 {@link LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID} 同功能，獨立圖層狀態／persist。
  * layerId：`layout_network_grid_from_vh_draw_2`
  */
@@ -42,10 +35,7 @@ export const LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2 =
 
 /** @param {string|undefined|null} layerId */
 export function isLayoutNetworkGridReadLayoutDataJsonLayerId(layerId) {
-  return (
-    layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID ||
-    layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2
-  );
+  return layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2;
 }
 
 /** @param {string|undefined|null} layerId */
