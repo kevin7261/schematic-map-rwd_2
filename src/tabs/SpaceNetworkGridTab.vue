@@ -5150,7 +5150,8 @@
             const targetG = (k * totalGrid) / (nSta + 1);
             const raw = gridXYAtGridDistanceAlongLineString(gridPts, targetG);
             if (!raw) continue;
-            gxy = [Math.round(raw[0]), Math.round(raw[1])];
+            // 黑點須落在折線上：弧長插值後不可四捨五入（斜／對角段會離線）
+            gxy = [raw[0], raw[1]];
           } else {
             const target = (k * totalPx) / (nSta + 1);
             gxy = gridXYAtPixelDistanceAlong(gridPts, target);
