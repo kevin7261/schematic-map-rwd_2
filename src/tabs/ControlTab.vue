@@ -6990,6 +6990,14 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
+  /** layout_network_grid_from_vh_draw：顯示／隱藏交通 weight 標籤 */
+  const onLayoutVhDrawShowTrafficWeightsChange = async (lyr, checked) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    lyr.layoutVhDrawShowTrafficWeights = checked;
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
   const onJsonGridFromCoordPruneEmptyGridLinesClick = async () => {
     if (isExecuting.value) return;
     const follow = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
@@ -10173,6 +10181,20 @@
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
             來源：<code class="small">{{ layer.csvFileName_traffic }}</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
             <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示 weight 標籤</div>
+            <div class="layer-toggle flex-shrink-0" @click.stop>
+              <input
+                type="checkbox"
+                :id="'switch-layout-vh-draw-traffic-weights-' + layer.layerId"
+                :checked="layer.layoutVhDrawShowTrafficWeights !== false"
+                @change="
+                  onLayoutVhDrawShowTrafficWeightsChange(layer, $event.target.checked)
+                "
+              />
+              <label :for="'switch-layout-vh-draw-traffic-weights-' + layer.layerId"></label>
+            </div>
           </div>
           <div class="d-grid gap-2">
             <button

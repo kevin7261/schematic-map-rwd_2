@@ -647,6 +647,8 @@ export const useDataStore = defineStore(
             csvFileName_traffic: 'taipei_city/mrt_link_volume_undirected.csv',
             /** 交通流量 CSV 資料，載入後為 Array<{a,b,weight}> */
             layoutVhDrawTrafficData: null,
+            /** 是否在地圖上顯示交通 weight 標籤（相鄰紅／藍／黑點中點） */
+            layoutVhDrawShowTrafficWeights: true,
             /** 交通流量 CSV 載入後，找不到相鄰紅／藍／黑點者列於此 */
             layoutVhDrawTrafficMissing: [],
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],

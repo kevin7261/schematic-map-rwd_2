@@ -5437,23 +5437,27 @@
         const nextMissing = JSON.stringify(missingTrafficRows);
         if (prevMissing !== nextMissing) trafficLayer.layoutVhDrawTrafficMissing = missingTrafficRows;
 
-        const trafficG = zoomGroup.append('g').attr('class', 'layout-vh-draw-traffic-labels');
-        for (const edge of layoutTrafficEdges) {
-          const weight = trafficMap.get(edge.key) ?? 0;
-          trafficG
-            .append('text')
-            .attr('x', edge.x)
-            .attr('y', edge.y)
-            .attr('text-anchor', 'middle')
-            .attr('dominant-baseline', 'middle')
-            .attr('font-size', '8px')
-            .attr('font-weight', '600')
-            .attr('fill', '#6a1b9a')
-            .attr('stroke', '#ffffff')
-            .attr('stroke-width', 0.5)
-            .attr('paint-order', 'stroke')
-            .style('pointer-events', 'none')
-            .text(String(weight));
+        /** 未定義視為開啟（相容舊圖層 state） */
+        const showTrafficW = trafficLayer?.layoutVhDrawShowTrafficWeights !== false;
+        if (showTrafficW) {
+          const trafficG = zoomGroup.append('g').attr('class', 'layout-vh-draw-traffic-labels');
+          for (const edge of layoutTrafficEdges) {
+            const weight = trafficMap.get(edge.key) ?? 0;
+            trafficG
+              .append('text')
+              .attr('x', edge.x)
+              .attr('y', edge.y)
+              .attr('text-anchor', 'middle')
+              .attr('dominant-baseline', 'middle')
+              .attr('font-size', '8px')
+              .attr('font-weight', '600')
+              .attr('fill', '#6a1b9a')
+              .attr('stroke', '#ffffff')
+              .attr('stroke-width', 0.5)
+              .attr('paint-order', 'stroke')
+              .style('pointer-events', 'none')
+              .text(String(weight));
+          }
         }
       } else if (trafficLayer?.layoutVhDrawTrafficMissing?.length) {
         trafficLayer.layoutVhDrawTrafficMissing = [];
