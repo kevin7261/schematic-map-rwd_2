@@ -20,6 +20,18 @@ export const LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID = 'orthogonal_towar
  */
 export const LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID = 'layout_network_grid_from_vh_draw';
 
+/**
+ * 僅檢視：深拷 **`layout_network_grid_from_vh_draw`** 之 **dataJson**／**jsonData**（與 Upper json-viewer 同源之匯出列）。
+ * layerId：`layout_network_grid_read_layout_data_json`
+ */
+export const LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID =
+  'layout_network_grid_read_layout_data_json';
+
+/** @param {string|undefined|null} layerId */
+export function isLayoutNetworkGridReadLayoutDataJsonLayerId(layerId) {
+  return layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID;
+}
+
 /** @param {string|undefined|null} layerId */
 export function isOrthogonalVhDataJsonDrawMirrorLayerId(layerId) {
   return layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID;
@@ -32,7 +44,11 @@ export function isLayoutNetworkGridFromVhDrawLayerId(layerId) {
 
 /** 先直後橫·繪製層與其版面網絡複本（示意網格／orthoBundle 等同一套繪製邏輯） */
 export function isSpaceGridVhDrawFamilyLayerId(layerId) {
-  return isOrthogonalVhDataJsonDrawMirrorLayerId(layerId) || isLayoutNetworkGridFromVhDrawLayerId(layerId);
+  return (
+    isOrthogonalVhDataJsonDrawMirrorLayerId(layerId) ||
+    isLayoutNetworkGridFromVhDrawLayerId(layerId) ||
+    isLayoutNetworkGridReadLayoutDataJsonLayerId(layerId)
+  );
 }
 
 /** 僅檢視：列出「座標正規化」dataJson 路網之 connect 紅／藍點（與父層同資料來源） */

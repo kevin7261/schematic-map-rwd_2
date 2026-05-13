@@ -3,7 +3,7 @@
  * 「站點與路線往中心聚集」兩種線網層優先自 `point_orthogonal` 複製；若尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
  * `orthogonal_toward_center_vh_draw` 僅鏡像 `orthogonal_toward_center_vh` 之 dataJson／geojson 供繪製；
  * `layout_network_grid_from_vh_draw` 自繪製層複製 **dataOSM**（並解析為 geojson 供網格檢視）；
- * **`dataJson` 為與 Upper json-viewer 一致之路線匯出快照**（同源 `buildVhDrawStationRowsForLayoutMap`，含 `traffic_weight`）。
+ * `layout_network_grid_read_layout_data_json`：**深拷來自 `layout_network_grid_from_vh_draw`** 之繪製快照（**不共用來源物件參照**，含 **`dataJson` 路線陣列**、`geojsonData`、`dataOSM`、細格與交通欄位）。
  */
 
 import {
@@ -26,6 +26,7 @@ import {
   LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
   LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
   LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
+  LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
 } from './layerIds.js';
 import { buildVhDrawStationRowsForLayoutMap } from './layoutVhDrawFineIntegerGrid.js';
@@ -212,6 +213,82 @@ export function syncLayoutNetworkGridRoutesDataJsonFromVhDraw(findLayerById, lay
 }
 
 /**
+ * `layout_network_grid_read_layout_data_json`：**自版面路網層深拷繪製用快照**
+ * （`dataJson`／`jsonData`／`geojsonData`／`dataOSM`／細格／交通等；**物件與版面層不共用參照**）。
+ *
+ * @param {(id:string)=>*|null} findLayerById
+ * @param {object|null} [readerLayer] — 若傳入則寫入該物件
+ */
+export function syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson(
+  findLayerById,
+  readerLayer = null
+) {
+  const src = findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID);
+  const target =
+    readerLayer?.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID
+      ? readerLayer
+      : findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID);
+  if (!src || !target || src.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+
+  const jsonCloneOrNull = (v) =>
+    v == null ? null : JSON.parse(JSON.stringify(v));
+
+  target.jsonData = jsonCloneOrNull(src.jsonData);
+  target.dataJson = jsonCloneOrNull(src.dataJson);
+  target.geojsonData = jsonCloneOrNull(src.geojsonData);
+  target.dataOSM =
+    src.dataOSM != null && String(src.dataOSM).trim() !== ''
+      ? String(src.dataOSM)
+      : null;
+
+  target.layoutVhDrawFineGrid = jsonCloneOrNull(src.layoutVhDrawFineGrid);
+  target.layoutVhDrawFineGridTurnRbMidDots = !!src.layoutVhDrawFineGridTurnRbMidDots;
+
+  target.csvFileName_traffic = src.csvFileName_traffic ?? null;
+  target.layoutVhDrawTrafficData = jsonCloneOrNull(src.layoutVhDrawTrafficData);
+  target.layoutVhDrawTrafficMissing = Array.isArray(src.layoutVhDrawTrafficMissing)
+    ? JSON.parse(JSON.stringify(src.layoutVhDrawTrafficMissing))
+    : [];
+  target.layoutVhDrawShowTrafficWeights = src.layoutVhDrawShowTrafficWeights !== false;
+
+  target.layoutUniformGridGeoJson = jsonCloneOrNull(src.layoutUniformGridGeoJson);
+  target.layoutUniformGridMeta = jsonCloneOrNull(src.layoutUniformGridMeta);
+
+  target.isLoaded = !!src.isLoaded;
+}
+
+/**
+ * 重設管線並 persist 「讀 dataJson」圖層。
+ */
+export function mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer(
+  findLayerById,
+  saveLayerState,
+  readerLayer = null
+) {
+  const layer =
+    readerLayer?.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID
+      ? readerLayer
+      : findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID);
+  if (!layer || layer.layerId !== LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID) return;
+  resetJsonGridFromCoordNormalizedPipelineFields(layer);
+  syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson(findLayerById, layer);
+  saveLayerState(
+    layer.layerId,
+    jsonGridFromCoordNormalizedPersistPayload(layer, { omitLoadingFlags: true })
+  );
+}
+
+/** 自版面路網層深拷並 persist「讀 dataJson」層（不論該層是否可見，避免再次開啟時為過期快照）。 */
+export function refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible(
+  findLayerById,
+  saveLayerState
+) {
+  const r = findLayerById(LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID);
+  if (!r) return;
+  mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer(findLayerById, saveLayerState, r);
+}
+
+/**
  * Pinia persist：開啟／reload 與 dataStore.toggle 共用。
  * @param {{ omitLoadingFlags?: boolean }} [opts]
  */
@@ -258,6 +335,14 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
       : [];
     payload.layoutVhDrawShowTrafficWeights = layer.layoutVhDrawShowTrafficWeights !== false;
   }
+  if (layer.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID) {
+    payload.csvFileName_traffic = layer.csvFileName_traffic ?? null;
+    payload.layoutVhDrawTrafficData = layer.layoutVhDrawTrafficData ?? null;
+    payload.layoutVhDrawTrafficMissing = Array.isArray(layer.layoutVhDrawTrafficMissing)
+      ? layer.layoutVhDrawTrafficMissing
+      : [];
+    payload.layoutVhDrawShowTrafficWeights = layer.layoutVhDrawShowTrafficWeights !== false;
+  }
   if (!omitLoadingFlags) {
     payload.isLoading = layer.isLoading;
   }
@@ -288,6 +373,9 @@ export function mirrorResetAndPersistJsonGridFromCoordNormalized(
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
     refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
   }
+  if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) {
+    refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible(findLayerById, saveLayerState);
+  }
 }
 
 export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer) {
@@ -302,11 +390,11 @@ export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerS
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
     refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
   }
+  if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) {
+    refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible(findLayerById, saveLayerState);
+  }
 }
 
-/**
- * OSM 管線同步至座標正規化後，若本衍生圖層為開啟狀態則跟進複製父層 dataJson。
- */
 export function syncJsonGridFromCoordNormalizedMirrorFromParent(findLayerById, saveLayerState) {
   const follow = findLayerById(JSON_GRID_FROM_COORD_NORMALIZED_LAYER_ID);
   if (follow?.visible) {

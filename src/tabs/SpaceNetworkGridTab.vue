@@ -103,6 +103,7 @@
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
     isLineOrthogonalTowardCenterLayerId,
     isLayoutNetworkGridFromVhDrawLayerId,
+    isLayoutNetworkGridReadLayoutDataJsonLayerId,
     isSpaceGridVhDrawFamilyLayerId,
     LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY,
     buildVhDrawStationRowsForLayoutMap,
@@ -805,7 +806,11 @@
     if (!base) return null;
     /** @type {{ type:'FeatureCollection', features: unknown[] }} */
     let out = base;
-    if (isLayoutNetworkGridFromVhDrawLayerId(layer.layerId) && layer.layoutVhDrawFineGrid) {
+    if (
+      (isLayoutNetworkGridFromVhDrawLayerId(layer.layerId) ||
+        isLayoutNetworkGridReadLayoutDataJsonLayerId(layer.layerId)) &&
+      layer.layoutVhDrawFineGrid
+    ) {
       const spec = computeLayoutVhDrawFineGridSpec(dataStore, base);
       if (spec) {
         out = JSON.parse(JSON.stringify(base));
@@ -2470,10 +2475,12 @@
     const dimensions = getDimensions();
 
     // 添加適當的邊距（增加底部和左側邊距以容納刻度標籤）
-    /** layout_network_grid_from_vh_draw：軸上座標下加一行「刻度間黑點max」；左側為欄區間標籤留寬 */
-    const margin = isLayoutNetworkGridFromVhDrawLayerId(layerTab)
-      ? { top: 20, right: 20, bottom: 52, left: 72 }
-      : { top: 20, right: 20, bottom: 40, left: 50 };
+    /** layout_network_grid_from_vh_draw／讀版面路網·dataJson：軸上座標下加一行「刻度間黑點max」；左側為欄區間標籤留寬（後者為獨立深拷快照・繪製邏輯同） */
+    const margin =
+      isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
+      isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
+        ? { top: 20, right: 20, bottom: 52, left: 72 }
+        : { top: 20, right: 20, bottom: 40, left: 50 };
     const width = dimensions.width - margin.left - margin.right;
     const height = dimensions.height - margin.top - margin.bottom;
 
@@ -3910,10 +3917,11 @@
       layoutUniformTickOverride?.skipDefaultBackgroundGrid
     );
 
-    /** layout_network_grid_from_vh_draw：與細格整數座標同源之全域 M（各 col／row 開區間黑點數之極大） */
+    /** layout_network_grid_from_vh_draw／讀版面路網·dataJson：與細格整數座標同源之全域 M（各 col／row 開區間黑點數之極大） */
     let layoutVhDrawSubdivM = 0;
     if (
-      isLayoutNetworkGridFromVhDrawLayerId(layerTab) &&
+      (isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
+        isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)) &&
       activeTabLayer?.geojsonData?.type === 'FeatureCollection' &&
       Array.isArray(activeTabLayer.geojsonData.features)
     ) {
@@ -4081,9 +4089,11 @@
       }
     }
 
-    const layoutLayerForFineGrid = isLayoutNetworkGridFromVhDrawLayerId(layerTab)
-      ? dataStore.findLayerById(layerTab)
-      : null;
+    const layoutLayerForFineGrid =
+      isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
+      isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
+        ? dataStore.findLayerById(layerTab)
+        : null;
     const coarseFcLayout = layoutLayerForFineGrid?.geojsonData;
     /** 細格啟用後，M／原點皆以目前 geojson 即時重算（不依 persist 的快照） */
     const layoutFineGridSpec =
@@ -4952,7 +4962,10 @@
     // — 沿折線 **像素弧長** 均分（與站數 n 對應），resize 時重算弧長；不再優先吸至轉折。
     // — 粗格視圖：對齊至背景插入之 (M+1) 細分網格整數格點（與 computeLayoutVhDrawFineGridSpec 同源）。
     // — 已套用細格座標視圖：對齊至細格整數網線。
-    if (isLayoutNetworkGridFromVhDrawLayerId(layerTab)) {
+    if (
+      isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
+      isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
+    ) {
       const drawLayer = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
       const exportRowsForSta = buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer);
       const layoutEpXY = (ep) => {
@@ -5045,7 +5058,12 @@
       /** layout_network_grid_from_vh_draw：中段黑點段落抬頭（路線名／起迄站） */
       const layoutVhDrawRouteSegmentHoverHeadHtml = (exportRow) => {
         const r = exportRow && typeof exportRow === 'object' ? exportRow : null;
-        if (!isLayoutNetworkGridFromVhDrawLayerId(layerTab) || !r) return '';
+        if (
+          (!isLayoutNetworkGridFromVhDrawLayerId(layerTab) &&
+            !isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)) ||
+          !r
+        )
+          return '';
         const seg = r.segment;
         if (!seg || typeof seg !== 'object') return '';
         const routeNm = escapeLayoutTooltipHtml(
