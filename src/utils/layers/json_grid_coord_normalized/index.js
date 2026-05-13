@@ -42,6 +42,15 @@ export {
 } from './mirrorFromCoordNormalizedLayer.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
 export {
+  LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY,
+  layoutTrafficStationDisplayName,
+  layoutTrafficUndirectedPairKey,
+  clearTrafficWeightsFromExportRows,
+  applyCsvTrafficWeightsToExportRows,
+  applyLayoutTrafficCsvToVhDrawLayerRoots,
+  buildSyntheticTrafficRowsFromVhDrawLayer,
+} from './layoutTrafficWeightsSync.js';
+export {
   buildVhDrawStationRowsForLayoutMap,
   maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
   maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,

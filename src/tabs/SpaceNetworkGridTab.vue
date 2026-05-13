@@ -104,6 +104,7 @@
     isLineOrthogonalTowardCenterLayerId,
     isLayoutNetworkGridFromVhDrawLayerId,
     isSpaceGridVhDrawFamilyLayerId,
+    LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY,
     buildVhDrawStationRowsForLayoutMap,
     maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
     maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,
@@ -173,7 +174,15 @@
       const snm = escapeLayoutTooltipHtml(
         node.station_name ?? node.tags?.station_name ?? node.tags?.name ?? ''
       );
-      html += `<strong>#${idx + 1}</strong> station_id ${sid} · station_name ${snm}<br>`;
+      const twRaw =
+        idx === ordered.length - 1
+          ? undefined
+          : node[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY] ?? node.tags?.[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY];
+      const twTxt =
+        twRaw !== undefined && twRaw !== null && Number.isFinite(Number(twRaw))
+          ? ` · traffic_weight（連至沿路下一站）${escapeLayoutTooltipHtml(String(Number(twRaw)))}`
+          : '';
+      html += `<strong>#${idx + 1}</strong> station_id ${sid} · station_name ${snm}${twTxt}<br>`;
     });
     return html;
   };
@@ -233,13 +242,18 @@
       ? escapeLayoutTooltipHtml(JSON.stringify(rnl))
       : escapeLayoutTooltipHtml(String(rnl ?? '[]'));
     const cn = p.connect_number ?? tags.connect_number ?? '';
+    const twRaw = p[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY] ?? tags[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY];
+    const twLine =
+      twRaw !== undefined && twRaw !== null && Number.isFinite(Number(twRaw))
+        ? `<br><strong>traffic_weight</strong> （連至沿路下一站）${escapeLayoutTooltipHtml(String(Number(twRaw)))}`
+        : '';
     return `<strong>station_id</strong> ${sid}<br>
 <strong>station_name</strong> ${snm}<br>
 <strong>route_name_list</strong> ${rnlStr}<br>
 <strong>type</strong> <code style="color:#c2185b">${escapeLayoutTooltipHtml(endpointType)}</code><br>
 <strong>connect_number</strong> ${escapeLayoutTooltipHtml(cn)}<br>
 <strong>lon</strong> ${escapeLayoutTooltipHtml(lonVal)}<br>
-<strong>lat</strong> ${escapeLayoutTooltipHtml(latVal)}`;
+<strong>lat</strong> ${escapeLayoutTooltipHtml(latVal)}${twLine}`;
   };
 
   /**

@@ -47,6 +47,8 @@
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
     refreshLayoutNetworkGridFromVhDrawIfVisible,
+    applyLayoutTrafficCsvToVhDrawLayerRoots,
+    buildSyntheticTrafficRowsFromVhDrawLayer,
     replaceDiagonalEdgesWithLOrtho,
     replaceDiagonalsInRouteUntilClear,
     peekDiagonalReplaceNextUnitArmHighlightBundle,
@@ -6973,6 +6975,19 @@
       }
       lyr.layoutVhDrawTrafficData = data;
       lyr.layoutVhDrawTrafficMissing = [];
+      applyLayoutTrafficCsvToVhDrawLayerRoots(
+        dataStore,
+        LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+        data
+      );
+      const vhDraw = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+      if (vhDraw) {
+        dataStore.saveLayerState(vhDraw.layerId, {
+          jsonData: vhDraw.jsonData,
+          dataJson: vhDraw.dataJson,
+          processedJsonData: vhDraw.processedJsonData,
+        });
+      }
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
     } catch (err) {
@@ -6986,6 +7001,19 @@
     if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
     lyr.layoutVhDrawTrafficData = null;
     lyr.layoutVhDrawTrafficMissing = [];
+    applyLayoutTrafficCsvToVhDrawLayerRoots(
+      dataStore,
+      LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+      null
+    );
+    const vhDrawClear = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+    if (vhDrawClear) {
+      dataStore.saveLayerState(vhDrawClear.layerId, {
+        jsonData: vhDrawClear.jsonData,
+        dataJson: vhDrawClear.dataJson,
+        processedJsonData: vhDrawClear.processedJsonData,
+      });
+    }
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
@@ -7020,19 +7048,49 @@
     return 9;
   };
 
-  /** layout_network_grid_from_vh_draw：已載入之 CSV 每一筆 weight 改為 1–9 隨機（反等比機率） */
+  /** layout_network_grid_from_vh_draw：全部隨機 weight（無 CSV 時自 VH 路段建表；有 CSV 則重抽各筆） */
   const onLayoutNetworkRandomizeTrafficWeightsClick = async (lyr) => {
     if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
-    const rows = lyr.layoutVhDrawTrafficData;
-    if (!Array.isArray(rows) || rows.length === 0) {
-      window.alert('請先載入 CSV。');
+    const vhDraw = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+    if (!vhDraw) {
+      window.alert('找不到 VH 繪製層（orthogonal_toward_center_vh_draw）。');
       return;
     }
-    for (const row of rows) {
-      if (!row || typeof row !== 'object') continue;
-      row.weight = sampleLayoutTrafficWeight1to9InverseGeometric(2);
+
+    let dataRows = lyr.layoutVhDrawTrafficData;
+    if (!Array.isArray(dataRows) || dataRows.length === 0) {
+      const synthetic = buildSyntheticTrafficRowsFromVhDrawLayer(vhDraw, () =>
+        sampleLayoutTrafficWeight1to9InverseGeometric(2)
+      );
+      if (!synthetic.length) {
+        window.alert(
+          '尚無具站名的相鄰路段可產生 weight。請確認 VH 繪製層已有路網與站名，或改用載入 CSV。'
+        );
+        return;
+      }
+      lyr.layoutVhDrawTrafficData = synthetic;
+      dataRows = synthetic;
+    } else {
+      for (const row of dataRows) {
+        if (!row || typeof row !== 'object') continue;
+        row.weight = sampleLayoutTrafficWeight1to9InverseGeometric(2);
+      }
     }
+
     lyr.layoutVhDrawTrafficMissing = [];
+    applyLayoutTrafficCsvToVhDrawLayerRoots(
+      dataStore,
+      LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+      lyr.layoutVhDrawTrafficData
+    );
+    const vhDrawRand = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+    if (vhDrawRand) {
+      dataStore.saveLayerState(vhDrawRand.layerId, {
+        jsonData: vhDrawRand.jsonData,
+        dataJson: vhDrawRand.dataJson,
+        processedJsonData: vhDrawRand.processedJsonData,
+      });
+    }
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
@@ -10219,8 +10277,7 @@
           <div class="my-title-xs-gray pb-2">路段交通流量（CSV）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
             來源：<code class="small">{{ layer.csvFileName_traffic }}</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
-            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。「全部隨機 weight」將現有每一筆改為 1–9，機率∝<code class="small">1/2<sup>k</sup></code>（k
-            為數值，數字愈小愈常出現）。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
+            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。「全部隨機 weight」無須 CSV：會依 VH 繪製層路段自動建立站對並抽 1–9（機率∝<code class="small">1/2<sup>k</sup></code>）；若已載入 CSV 則僅重抽各筆 weight。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
           </div>
           <div class="d-flex align-items-center justify-content-between mb-2">
             <div class="my-content-sm-black">顯示 weight 標籤</div>
@@ -10245,7 +10302,6 @@
               載入 mrt_link_volume_undirected.csv
             </button>
             <button
-              v-if="layer.layoutVhDrawTrafficData?.length"
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
               @click="onLayoutNetworkRandomizeTrafficWeightsClick(layer)"
