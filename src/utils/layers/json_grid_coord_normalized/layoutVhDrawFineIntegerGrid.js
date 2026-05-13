@@ -1017,6 +1017,7 @@ export function featureCollectionGridBounds(fc) {
 
 /**
  * 取邊緣區間藍字之 **全域** 極大值 M，以及粗格原點 (x0,y0)=floor bbox。
+ * 插入／細格視覺：**M≥1 且為偶數時自動 +1**，使插入網格分割數對應之 M 為單數（resize／繪製與資料細格並用）。
  * @returns {{ m: number, x0: number, y0: number } | null}
  */
 export function computeLayoutVhDrawFineGridSpec(dataStore, coarseFc) {
@@ -1058,7 +1059,9 @@ export function computeLayoutVhDrawFineGridSpec(dataStore, coarseFc) {
       maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(dotsForBandMax, yTicks[i], yTicks[i + 1])
     );
   }
-  return { m: M, x0, y0 };
+  let mOut = Math.max(0, Math.floor(M));
+  if (mOut > 0 && mOut % 2 === 0) mOut += 1;
+  return { m: mOut, x0, y0 };
 }
 
 function mapPair(coord, spec) {
