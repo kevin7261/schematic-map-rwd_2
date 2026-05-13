@@ -107,9 +107,9 @@
     buildVhDrawStationRowsForLayoutMap,
     maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
     maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,
-    buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine,
     applyLayoutVhDrawFineGridToFeatureCollection,
     featureCollectionGridBounds,
+    computeLayoutVhDrawFineGridSpec,
     integerLatticeBlackDotAtPixelArcLengthAlongLineString,
     computeLayoutVhDrawFineBlackDotsTurnRbRedistribute,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
@@ -789,15 +789,12 @@
     if (!base) return null;
     /** @type {{ type:'FeatureCollection', features: unknown[] }} */
     let out = base;
-    if (
-      isLayoutNetworkGridFromVhDrawLayerId(layer.layerId) &&
-      layer.layoutVhDrawFineGrid &&
-      Number.isFinite(layer.layoutVhDrawFineGrid.m) &&
-      Number.isFinite(layer.layoutVhDrawFineGrid.x0) &&
-      Number.isFinite(layer.layoutVhDrawFineGrid.y0)
-    ) {
-      out = JSON.parse(JSON.stringify(base));
-      applyLayoutVhDrawFineGridToFeatureCollection(out, layer.layoutVhDrawFineGrid);
+    if (isLayoutNetworkGridFromVhDrawLayerId(layer.layerId) && layer.layoutVhDrawFineGrid) {
+      const spec = computeLayoutVhDrawFineGridSpec(dataStore, base);
+      if (spec) {
+        out = JSON.parse(JSON.stringify(base));
+        applyLayoutVhDrawFineGridToFeatureCollection(out, spec);
+      }
     }
     const ug = layer.layoutUniformGridGeoJson;
     if (
@@ -2438,75 +2435,6 @@
   let scheduleTaipeiFDrawForMouseZoom = () => {};
 
   /**
-   * layout_network_grid_from_vh_draw 背景強調：整數 **col**＝垂直格線（x）、**row**＝水平格線（y）。
-   * 含：① 任一正交路网邊落於該 x（垂直線段）／該 y（水平線段）；② 任一紅／藍 station Point 之格座標所在 col 與 row。
-   */
-  function computeLayoutNetworkGridOccupiedColsRows(routeFeatures, stationFeatures, eps = 1e-3) {
-    /** @type {Set<number>} */
-    const cols = new Set();
-    /** @type {Set<number>} */
-    const rows = new Set();
-    const ingestSeg = (xa, ya, xbx, yb) => {
-      const ax = Number(xa);
-      const ay = Number(ya);
-      const bx = Number(xbx);
-      const by = Number(yb);
-      if (
-        ![ax, ay, bx, by].every(Number.isFinite) ||
-        (Math.abs(ax - bx) < eps && Math.abs(ay - by) < eps)
-      )
-        return;
-      if (Math.abs(ax - bx) < eps && Math.abs(ay - by) >= eps) cols.add(Math.round(ax));
-      else if (Math.abs(ay - by) < eps && Math.abs(ax - bx) >= eps) rows.add(Math.round(ay));
-    };
-    const walkLineCoords = (arr) => {
-      if (!Array.isArray(arr) || arr.length < 2) return;
-      for (let i = 0; i < arr.length - 1; i++) {
-        const c0 = arr[i];
-        const c1 = arr[i + 1];
-        if (
-          Array.isArray(c0) &&
-          Array.isArray(c1) &&
-          c0.length >= 2 &&
-          c1.length >= 2 &&
-          typeof c0[0] === 'number' &&
-          typeof c1[0] === 'number'
-        ) {
-          ingestSeg(c0[0], c0[1], c1[0], c1[1]);
-        }
-      }
-    };
-    if (Array.isArray(routeFeatures)) {
-      for (const f of routeFeatures) {
-        const g = f?.geometry;
-        if (!g) continue;
-        if (g.type === 'LineString' && Array.isArray(g.coordinates)) {
-          walkLineCoords(g.coordinates);
-        } else if (g.type === 'MultiLineString' && Array.isArray(g.coordinates)) {
-          for (const line of g.coordinates) walkLineCoords(line);
-        }
-      }
-    }
-    if (Array.isArray(stationFeatures)) {
-      for (const pf of stationFeatures) {
-        if (!pf?.geometry || pf.geometry.type !== 'Point') continue;
-        const nt = pf.nodeType || pf.properties?.nodeType || 'line';
-        if (nt !== 'connect' && nt !== 'line') continue;
-        const c = pf.geometry.coordinates;
-        if (!Array.isArray(c) || c.length < 2) continue;
-        const props = pf.properties || {};
-        const tags = props.tags || {};
-        const gx = Number(props.x_grid ?? tags.x_grid ?? c[0]);
-        const gy = Number(props.y_grid ?? tags.y_grid ?? c[1]);
-        if (![gx, gy].every(Number.isFinite)) continue;
-        cols.add(Math.round(gx));
-        rows.add(Math.round(gy));
-      }
-    }
-    return { cols, rows };
-  }
-
-  /**
    * 🗺️ 繪製地圖 (Draw Map)
    * 使用 D3.js 繪製 GeoJSON 地圖數據或 Normalize Segments（站點和路線）
    * 背景強制為白色
@@ -3966,16 +3894,8 @@
       layoutUniformTickOverride?.skipDefaultBackgroundGrid
     );
 
-    const layoutVhDrawGridOcc =
-      isLayoutNetworkGridFromVhDrawLayerId(layerTab) && !skipDefaultLightBackgroundGrid
-        ? computeLayoutNetworkGridOccupiedColsRows(routeFeatures, stationFeatures)
-        : null;
-    /** 被路网／端點佔用之 col／row（layout_network）：較深色格線 */
-    const layoutVHGridStrokeVH = (isOccupied) => ({
-      stroke: isOccupied ? '#616161' : '#E0E0E0',
-      strokeW: isOccupied ? 1 : 0.5,
-      opacity: isOccupied ? 0.88 : 0.6,
-    });
+    /** 固定淺灰背景格線（layout_network 不再套深灰強調線） */
+    const layoutVHGridStroke = { stroke: '#E0E0E0', strokeW: 0.5, opacity: 0.6 };
 
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
@@ -3985,9 +3905,7 @@
         if (dataStore.showGrid) {
           xTicks.forEach((tick) => {
             const xPos = xScale(tick);
-            const vh = layoutVHGridStrokeVH(
-              layoutVhDrawGridOcc?.cols?.has(Number(tick)) ?? false
-            );
+            const vh = layoutVHGridStroke;
             gridGroup
               .append('line')
               .attr('x1', xPos)
@@ -4000,9 +3918,7 @@
           });
           yTicks.forEach((tick) => {
             const yPos = yScale(tick);
-            const vh = layoutVHGridStrokeVH(
-              layoutVhDrawGridOcc?.rows?.has(Number(tick)) ?? false
-            );
+            const vh = layoutVHGridStroke;
             gridGroup
               .append('line')
               .attr('x1', margin.left)
@@ -4017,9 +3933,7 @@
       } else {
         xTicks.forEach((tick) => {
           const xPos = xScale(tick);
-          const vh = layoutVHGridStrokeVH(
-            layoutVhDrawGridOcc?.cols?.has(Number(tick)) ?? false
-          );
+          const vh = layoutVHGridStroke;
           gridGroup
             .append('line')
             .attr('x1', xPos)
@@ -4032,9 +3946,7 @@
         });
         yTicks.forEach((tick) => {
           const yPos = yScale(tick);
-          const vh = layoutVHGridStrokeVH(
-            layoutVhDrawGridOcc?.rows?.has(Number(tick)) ?? false
-          );
+          const vh = layoutVHGridStroke;
           gridGroup
             .append('line')
             .attr('x1', margin.left)
@@ -4097,26 +4009,17 @@
     const layoutLayerForFineGrid = isLayoutNetworkGridFromVhDrawLayerId(layerTab)
       ? dataStore.findLayerById(layerTab)
       : null;
+    const coarseFcLayout = layoutLayerForFineGrid?.geojsonData;
+    /** 細格啟用後，M／原點皆以目前 geojson 即時重算（不依 persist 的快照） */
     const layoutFineGridSpec =
       layoutLayerForFineGrid?.layoutVhDrawFineGrid &&
-      Number.isFinite(layoutLayerForFineGrid.layoutVhDrawFineGrid.m) &&
-      Number.isFinite(layoutLayerForFineGrid.layoutVhDrawFineGrid.x0) &&
-      Number.isFinite(layoutLayerForFineGrid.layoutVhDrawFineGrid.y0)
-        ? layoutLayerForFineGrid.layoutVhDrawFineGrid
+      coarseFcLayout?.type === 'FeatureCollection' &&
+      Array.isArray(coarseFcLayout.features)
+        ? computeLayoutVhDrawFineGridSpec(dataStore, coarseFcLayout)
         : null;
     /** Control 區「中段黑點（細格加值）」開關：與細格並用 */
     const layoutFineGridTurnRbMidDots =
       !!layoutFineGridSpec && !!layoutLayerForFineGrid?.layoutVhDrawFineGridTurnRbMidDots;
-    const coarseFcLayout = layoutLayerForFineGrid?.geojsonData;
-    const routeFeaturesForLayoutBlackMax =
-      layoutFineGridSpec &&
-      coarseFcLayout?.type === 'FeatureCollection' &&
-      Array.isArray(coarseFcLayout.features)
-        ? coarseFcLayout.features.filter(
-            (f) => f?.geometry?.type === 'LineString' || f?.geometry?.type === 'MultiLineString'
-          )
-        : routeFeatures;
-
     let layoutBlackMaxXTicks = xTicks;
     let layoutBlackMaxYTicks = yTicks;
     if (
@@ -4141,10 +4044,6 @@
         for (let y = y0c; y <= y1c; y++) layoutBlackMaxYTicks.push(y);
       }
     }
-
-    const layoutVhDrawOrthoBlackMax = isLayoutNetworkGridFromVhDrawLayerId(layerTab)
-      ? buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(dataStore, routeFeaturesForLayoutBlackMax)
-      : null;
 
     const layoutFineGridMapX = layoutFineGridSpec
       ? (gx) => Math.round((Number(gx) - layoutFineGridSpec.x0) * (layoutFineGridSpec.m + 1))
@@ -4182,31 +4081,6 @@
         .text(xTickLabel);
     });
 
-    if (layoutVhDrawOrthoBlackMax && layoutBlackMaxXTicks.length >= 2) {
-      for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
-        const t0 = layoutBlackMaxXTicks[xi];
-        const t1 = layoutBlackMaxXTicks[xi + 1];
-        const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(
-          layoutVhDrawOrthoBlackMax.dotsForBandMax ?? [],
-          t0,
-          t1
-        );
-        const fx0 = layoutFineGridMapX ? layoutFineGridMapX(t0) : t0;
-        const fx1 = layoutFineGridMapX ? layoutFineGridMapX(t1) : t1;
-        const cx = (xScale(fx0) + xScale(fx1)) / 2;
-        axisGroup
-          .append('text')
-          .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
-          .attr('x', cx)
-          .attr('y', margin.top + height + 28)
-          .attr('text-anchor', 'middle')
-          .attr('font-size', '9px')
-          .attr('font-weight', '600')
-          .attr('fill', '#1565C0')
-          .text(String(xv));
-      }
-    }
-
     // Y軸刻度
     yTicks.forEach((tick) => {
       const yPos = yScale(tick);
@@ -4233,33 +4107,6 @@
         .attr('fill', '#666666')
         .text(yTickLabel);
     });
-
-    if (layoutVhDrawOrthoBlackMax && layoutBlackMaxYTicks.length >= 2) {
-      const yBandLabelX = margin.left - 46;
-      for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
-        const t0 = layoutBlackMaxYTicks[yi];
-        const t1 = layoutBlackMaxYTicks[yi + 1];
-        const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(
-          layoutVhDrawOrthoBlackMax.dotsForBandMax ?? [],
-          t0,
-          t1
-        );
-        const fy0 = layoutFineGridMapY ? layoutFineGridMapY(t0) : t0;
-        const fy1 = layoutFineGridMapY ? layoutFineGridMapY(t1) : t1;
-        const cy = (yScale(fy0) + yScale(fy1)) / 2;
-        axisGroup
-          .append('text')
-          .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
-          .attr('x', yBandLabelX)
-          .attr('y', cy)
-          .attr('text-anchor', 'end')
-          .attr('dominant-baseline', 'middle')
-          .attr('font-size', '9px')
-          .attr('font-weight', '600')
-          .attr('fill', '#1565C0')
-          .text(String(yv));
-      }
-    }
 
     // 創建線條生成器
     const lineGenerator = d3
@@ -5250,11 +5097,45 @@
               })
           : [];
 
+      const nearestSegIndexOnGridPolyline = (gridPts, gx, gy) => {
+        if (!Array.isArray(gridPts) || gridPts.length < 2) return -1;
+        const px = Number(gx);
+        const py = Number(gy);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return -1;
+        let bestIdx = -1;
+        let bestDistSq = Infinity;
+        for (let i = 0; i < gridPts.length - 1; i++) {
+          const a = gridPts[i];
+          const b = gridPts[i + 1];
+          if (!Array.isArray(a) || !Array.isArray(b)) continue;
+          const ax = Number(a[0]);
+          const ay = Number(a[1]);
+          const bx = Number(b[0]);
+          const by = Number(b[1]);
+          if (![ax, ay, bx, by].every(Number.isFinite)) continue;
+          const dx = bx - ax;
+          const dy = by - ay;
+          const lenSq = dx * dx + dy * dy;
+          if (!(lenSq > 0)) continue;
+          const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+          const hx = ax + t * dx;
+          const hy = ay + t * dy;
+          const dSq = (px - hx) * (px - hx) + (py - hy) * (py - hy);
+          if (dSq < bestDistSq) {
+            bestDistSq = dSq;
+            bestIdx = i;
+          }
+        }
+        return bestIdx;
+      };
+
       const layoutStaG = zoomGroup.append('g').attr('class', 'layout-vh-draw-line-stations-pt');
+      const layoutDotsForBandMaxRealtime = [];
       const layoutLineFeatCount = routeFeatures.filter(
         (f) => f?.geometry?.type === 'LineString'
       ).length;
       let layoutLineFeatIdx = 0;
+      let layoutRouteFi = 0;
       for (const rf of routeFeatures) {
         if (!rf?.geometry || rf.geometry.type !== 'LineString') continue;
         const coords = rf.geometry.coordinates;
@@ -5298,8 +5179,12 @@
         const dotRadius = 2.5;
         for (let k = 1; k <= nSta; k++) {
           let gxy;
+          let dotSegIndex = -1;
           if (layoutFineGridSpec) {
             gxy = redisFine?.[k - 1] ?? null;
+            if (gxy) {
+              dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
+            }
             if (!gxy) {
               const targetPx = (k * totalPx) / (nSta + 1);
               gxy = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
@@ -5307,12 +5192,24 @@
                 targetPx,
                 (gx, gy) => [xScale(gx), yScale(gy)]
               );
+              if (gxy) {
+                dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
+              }
             }
             if (!gxy) continue;
           } else {
             const target = (k * totalPx) / (nSta + 1);
             gxy = gridXYAtPixelDistanceAlong(gridPts, target);
             if (!gxy) continue;
+            dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
+          }
+          if (dotSegIndex >= 0 && Number.isFinite(Number(gxy[0])) && Number.isFinite(Number(gxy[1]))) {
+            layoutDotsForBandMaxRealtime.push({
+              gx: Number(gxy[0]),
+              gy: Number(gxy[1]),
+              fi: layoutRouteFi,
+              si: dotSegIndex,
+            });
           }
           const sta = midsArc[k - 1] ?? {};
           layoutStaG
@@ -5336,6 +5233,51 @@
               d3.select(this).attr('r', dotRadius).attr('stroke-width', 1);
               tooltip.style('opacity', 0);
             });
+        }
+        layoutRouteFi += 1;
+      }
+
+      if (layoutBlackMaxXTicks.length >= 2) {
+        for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
+          const t0 = layoutBlackMaxXTicks[xi];
+          const t1 = layoutBlackMaxXTicks[xi + 1];
+          const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(layoutDotsForBandMaxRealtime, t0, t1);
+          const fx0 = layoutFineGridMapX ? layoutFineGridMapX(t0) : t0;
+          const fx1 = layoutFineGridMapX ? layoutFineGridMapX(t1) : t1;
+          const cx = (xScale(fx0) + xScale(fx1)) / 2;
+          axisGroup
+            .append('text')
+            .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
+            .attr('x', cx)
+            .attr('y', margin.top + height + 28)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', '9px')
+            .attr('font-weight', '600')
+            .attr('fill', '#1565C0')
+            .text(String(xv));
+        }
+      }
+
+      if (layoutBlackMaxYTicks.length >= 2) {
+        const yBandLabelX = margin.left - 46;
+        for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
+          const t0 = layoutBlackMaxYTicks[yi];
+          const t1 = layoutBlackMaxYTicks[yi + 1];
+          const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(layoutDotsForBandMaxRealtime, t0, t1);
+          const fy0 = layoutFineGridMapY ? layoutFineGridMapY(t0) : t0;
+          const fy1 = layoutFineGridMapY ? layoutFineGridMapY(t1) : t1;
+          const cy = (yScale(fy0) + yScale(fy1)) / 2;
+          axisGroup
+            .append('text')
+            .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
+            .attr('x', yBandLabelX)
+            .attr('y', cy)
+            .attr('text-anchor', 'end')
+            .attr('dominant-baseline', 'middle')
+            .attr('font-size', '9px')
+            .attr('font-weight', '600')
+            .attr('fill', '#1565C0')
+            .text(String(yv));
         }
       }
     }

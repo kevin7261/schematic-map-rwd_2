@@ -97,10 +97,7 @@ function gridXYAndSegAtGridDistanceAlong(gridPts, targetDist) {
   const lens = [];
   let total = 0;
   for (let i = 0; i < gridPts.length - 1; i++) {
-    const L = Math.hypot(
-      gridPts[i + 1][0] - gridPts[i][0],
-      gridPts[i + 1][1] - gridPts[i][1]
-    );
+    const L = Math.hypot(gridPts[i + 1][0] - gridPts[i][0], gridPts[i + 1][1] - gridPts[i][1]);
     lens.push(L);
     total += L;
   }
@@ -196,15 +193,7 @@ export function integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString(
   const g0 = gridPts[hit.segIndex];
   const g1 = gridPts[hit.segIndex + 1];
   if (!g0 || !g1) return null;
-  return snapSegmentInteriorToIntegerLattice(
-    g0[0],
-    g0[1],
-    g1[0],
-    g1[1],
-    hit.gx,
-    hit.gy,
-    eps
-  );
+  return snapSegmentInteriorToIntegerLattice(g0[0], g0[1], g1[0], g1[1], hit.gx, hit.gy, eps);
 }
 
 /**
@@ -226,15 +215,7 @@ export function integerLatticeBlackDotAtPixelArcLengthAlongLineString(
   const g0 = gridPts[hit.segIndex];
   const g1 = gridPts[hit.segIndex + 1];
   if (!g0 || !g1) return null;
-  return snapSegmentInteriorToIntegerLattice(
-    g0[0],
-    g0[1],
-    g1[0],
-    g1[1],
-    hit.gx,
-    hit.gy,
-    eps
-  );
+  return snapSegmentInteriorToIntegerLattice(g0[0], g0[1], g1[0], g1[1], hit.gx, hit.gy, eps);
 }
 
 /**
@@ -296,13 +277,7 @@ export function snapSegmentInteriorToIntegerLattice(ax, ay, bx, by, rawGx, rawGy
   const vv = wx * wx + wy * wy;
   const distAlong =
     vv > 1e-24
-      ? Math.min(
-          1,
-          Math.max(
-            0,
-            ((rawGx - ax) * wx + (rawGy - ay) * wy) / vv
-          )
-        ) * Math.sqrt(vv)
+      ? Math.min(1, Math.max(0, ((rawGx - ax) * wx + (rawGy - ay) * wy) / vv)) * Math.sqrt(vv)
       : 0;
 
   let bestK = 1;
@@ -383,8 +358,7 @@ function arcPxClosestGridFootAlongPolyline(gridPts, gx, gy, gridToPx) {
     const wx = bx - ax;
     const wy = by - ay;
     const vv = wx * wx + wy * wy;
-    const tt =
-      vv > 1e-24 ? Math.min(1, Math.max(0, ((gx - ax) * wx + (gy - ay) * wy) / vv)) : 0;
+    const tt = vv > 1e-24 ? Math.min(1, Math.max(0, ((gx - ax) * wx + (gy - ay) * wy) / vv)) : 0;
     const fx = ax + tt * wx;
     const fy = ay + tt * wy;
     const dg2 = (gx - fx) * (gx - fx) + (gy - fy) * (gy - fy);
@@ -404,9 +378,7 @@ function arcPxClosestGridFootAlongPolyline(gridPts, gx, gy, gridToPx) {
 /** Greedy：每轉折頂至多配一個黑點索引 k，每個 k 至多對一轉折頂（全體最小 |理想弧長 − 轉折弧長| 優先）。 */
 function greedyAssignKsToTurnVertices(turnVis, cumPx, nSta, totalPx) {
   const cand = [];
-  const seen = Array.isArray(turnVis)
-    ? turnVis.filter(Number.isFinite).sort((a, b) => a - b)
-    : [];
+  const seen = Array.isArray(turnVis) ? turnVis.filter(Number.isFinite).sort((a, b) => a - b) : [];
   for (const vi of seen) {
     const arcPx = cumPx[vi];
     if (!Number.isFinite(arcPx)) continue;
@@ -484,11 +456,7 @@ export function computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
     const gx = Number(rb.gx);
     const gy = Number(rb.gy);
     const foot = arcPxClosestGridFootAlongPolyline(gridPts, gx, gy, gridToPx);
-    if (
-      foot &&
-      foot.distGridSq <= epsCoord * epsCoord &&
-      Number.isFinite(foot.arcPx)
-    ) {
+    if (foot && foot.distGridSq <= epsCoord * epsCoord && Number.isFinite(foot.arcPx)) {
       anchorSet.add(foot.arcPx);
     }
   }
@@ -655,10 +623,7 @@ export function buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(dataStore, rout
 
     let totalGrid = 0;
     for (let i = 0; i < gridPts.length - 1; i++) {
-      totalGrid += Math.hypot(
-        gridPts[i + 1][0] - gridPts[i][0],
-        gridPts[i + 1][1] - gridPts[i][1]
-      );
+      totalGrid += Math.hypot(gridPts[i + 1][0] - gridPts[i][0], gridPts[i + 1][1] - gridPts[i][1]);
     }
     if (!(totalGrid > 0)) continue;
 
@@ -752,7 +717,12 @@ export function computeLayoutVhDrawFineGridSpec(dataStore, coarseFc) {
   const routeFeatures = coarseFc.features.filter((f) => f?.geometry?.type === 'LineString');
   if (!routeFeatures.length) return null;
   const { xMin, xMax, yMin, yMax } = featureCollectionGridBounds(coarseFc);
-  if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || !Number.isFinite(yMin) || !Number.isFinite(yMax))
+  if (
+    !Number.isFinite(xMin) ||
+    !Number.isFinite(xMax) ||
+    !Number.isFinite(yMin) ||
+    !Number.isFinite(yMax)
+  )
     return null;
   const x0 = Math.floor(xMin);
   const x1 = Math.ceil(xMax);
@@ -763,7 +733,10 @@ export function computeLayoutVhDrawFineGridSpec(dataStore, coarseFc) {
   const yTicks = [];
   for (let y = y0; y <= y1; y++) yTicks.push(y);
 
-  const { dotsForBandMax } = buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(dataStore, routeFeatures);
+  const { dotsForBandMax } = buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(
+    dataStore,
+    routeFeatures
+  );
   let M = 0;
   for (let i = 0; i < xTicks.length - 1; i++) {
     M = Math.max(
