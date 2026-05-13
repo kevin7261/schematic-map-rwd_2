@@ -2481,9 +2481,15 @@
    */
   const drawMap = () => {
     const layerTab = spaceGridDataLayerTabId.value;
-    /** layout-grid-viewer：`layout_network_grid_from_vh_draw`（／_2）繪區以 **px** 為軸刻度，不套用整數網格底色／細格 M。 */
+    /** layout-grid-viewer：`layout_network_grid_from_vh_draw`（／_2）；刻度線以繪區 **px** 定位，**刻度數為 pt（CSS 96dpi）**；**X 原點在左、Y 刻度讀數以左下為 0 往上遞增**；視窗／容器 resize 會重算；不套用整數網格底色／細格 M。 */
     const layoutVhDrawPixelAxisMode =
       props.layoutVhDrawPixelAxes === true && isLayoutNetworkGridFromVhDrawLayerId(layerTab);
+    const layoutViewerPxPtScale = layoutVhDrawPixelAxisMode
+      ? {
+          pxToPt: (px) => (Number(px) * 72) / 96,
+          ptToPx: (pt) => (Number(pt) * 96) / 72,
+        }
+      : null;
     const uniformGridRouteFamilyTab = isSpaceLayoutUniformGridViewerLayerId(layerTab);
     const activeTabLayer = dataStore.findLayerById(layerTab);
     const layoutUniformGridTooltipJr = uniformGridRouteFamilyTab
@@ -2529,6 +2535,7 @@
 
       if (
         !forceThisDraw &&
+        !layoutVhDrawPixelAxisMode &&
         Number.isFinite(ew) &&
         Number.isFinite(eh) &&
         Math.abs(ew - svgW) < 2 &&
@@ -2552,19 +2559,23 @@
       container.style.setProperty('background', '#FFFFFF', 'important');
     }
 
-    // 創建 SVG 元素（強制白色背景）；viewBox + 100% 填滿容器，配合 preserveAspectRatio 適應版面
+    // 創建 SVG 元素（強制白色背景）；viewBox + 100% 填滿容器，配合 preserveAspectRatio 適應版面；
+    // layout-grid-viewer（像素軸）：none 以使示意與網格拉滿 Upper 繪區、避免 meet 視窗留白。
     const svg = d3
       .select(`#${containerId}`)
       .append('svg')
       .attr('viewBox', `0 0 ${svgW} ${svgH}`)
-      .attr('preserveAspectRatio', 'xMidYMid meet')
+      .attr('preserveAspectRatio', layoutVhDrawPixelAxisMode ? 'none' : 'xMidYMid meet')
       .attr('width', '100%')
       .attr('height', '100%')
       .attr('data-inner-w', svgW)
       .attr('data-inner-h', svgH)
       .style('background-color', '#FFFFFF')
       .style('background', '#FFFFFF')
-      .style('transition', 'all 0.2s ease-in-out');
+      .style(
+        'transition',
+        layoutVhDrawPixelAxisMode ? 'none' : 'all 0.2s ease-in-out'
+      );
 
     // 🎯 強制設置 SVG 背景色（使用 DOM 直接設置以確保生效）
     const svgElement = svg.node();
@@ -3947,10 +3958,25 @@
       width > 0 &&
       height > 0
     ) {
-      const sx = Math.max(1, niceTickStepMultipleOf5(width, 11));
-      const sy = Math.max(1, niceTickStepMultipleOf5(height, 11));
-      xTicks.push(...buildTicksInRange(0, width, sx));
-      yTicks.push(...buildTicksInRange(0, height, sy));
+      const mergeLayoutPixelTicksToFullSpan = (baseTicks, spanMax) => {
+        const m = Number(spanMax);
+        if (!(Number.isFinite(m) && m > 0)) return [...baseTicks];
+        const set = new Set(
+          baseTicks.filter((t) => Number.isFinite(Number(t))).map((t) => Number(t))
+        );
+        set.add(0);
+        set.add(m);
+        return [...set].filter((t) => t >= -1e-9 && t <= m + 1e-9).sort((a, b) => a - b);
+      };
+      const { pxToPt, ptToPx } = layoutViewerPxPtScale;
+      const spanPtX = pxToPt(width);
+      const spanPtY = pxToPt(height);
+      const stepPtX = Math.max(1, niceTickStepMultipleOf5(spanPtX, 11));
+      const stepPtY = Math.max(1, niceTickStepMultipleOf5(spanPtY, 11));
+      const stepPxX = ptToPx(stepPtX);
+      const stepPxY = ptToPx(stepPtY);
+      xTicks.push(...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, width, stepPxX), width));
+      yTicks.push(...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, height, stepPxY), height));
     } else if (useSchematicCellCenterGrid) {
       for (let tx = Math.ceil(xMin / tickXStep) * tickXStep; tx <= xMax; tx += tickXStep) {
         xTicks.push(tx);
@@ -4001,7 +4027,7 @@
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
-    /** 軸刻度：一般為資料域 xScale(tick)；layout-grid-viewer 為繪區內像素 offset（0≈左／上緣）。 */
+    /** 軸刻度：一般為資料域 xScale(tick)；layout-grid-viewer 為繪區 px：X 由左向右、**Y 線位仍由上往下量**，唯 Y 刻度字為「距底往上」之 pt（原點在左下）。 */
     const svgXFromAxisTick = (tick) =>
       layoutVhDrawPixelAxisMode ? margin.left + Number(tick) : xScale(Number(tick));
     const svgYFromAxisTick = (tick) =>
@@ -4221,8 +4247,8 @@
         .attr('stroke-width', 1);
 
       // 繪製刻度標籤（layout_network_grid_from_vh_draw：列／垂直線之黑點區間標註繪於相鄰刻度之間）
-      const xTickLabel = layoutVhDrawPixelAxisMode
-        ? String(Math.round(Number(tick)))
+      const xTickLabel = layoutViewerPxPtScale
+        ? `${Math.round(layoutViewerPxPtScale.pxToPt(tick))}pt`
         : formatAxisTickLabelMaxTwoDecimals(tick, xAxisLabelsAsFloat);
       axisGroup
         .append('text')
@@ -4249,8 +4275,8 @@
         .attr('stroke-width', 1);
 
       // 繪製刻度標籤（layout_network_grid_from_vh_draw：欄／水平線之黑點區間標註繪於相鄰刻度之間）
-      const yTickLabel = layoutVhDrawPixelAxisMode
-        ? String(Math.round(Number(tick)))
+      const yTickLabel = layoutViewerPxPtScale
+        ? `${Math.round(layoutViewerPxPtScale.pxToPt(height - Number(tick)))}pt`
         : formatAxisTickLabelMaxTwoDecimals(tick, yAxisLabelsAsFloat);
       axisGroup
         .append('text')
@@ -7659,6 +7685,10 @@
 
     // 先更新尺寸狀態，再重新繪製
     getDimensions();
+    /** layout-grid-viewer：繞過 drawMap 同尺寸早退並避免舊 viewBox／pt 刻度殘留，拖曳 resizing 時即時對齊。 */
+    if (props.layoutVhDrawPixelAxes) {
+      drawMapForceNext = true;
+    }
     drawSchematic();
     refreshSpaceNetworkMinCellDimensions();
   };
