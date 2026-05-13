@@ -41,6 +41,7 @@
     POINT_ORTHOGONAL_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+    LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
@@ -48,6 +49,11 @@
     refreshLayoutNetworkGridFromVhDrawIfVisible,
     replaceDiagonalEdgesWithLOrtho,
     replaceDiagonalsInRouteUntilClear,
+    peekDiagonalReplaceNextUnitArmHighlightBundle,
+    listUnitOrthogonalLCandidates,
+    tryReplaceUnitOrthogonalLWith45,
+    replaceUnitOrthogonalLWith45DiagonalWhereClear,
+    unitOrthogonalL45HighlightBundle,
     listOrthogonalLShapesInFlatSegments,
     orthoBundleHighlightForLShape,
     orthoBundleHighlightForAllLShapes,
@@ -2425,6 +2431,7 @@
     stopLineOrthoTowardCrossAuto();
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
   });
 
   onUnmounted(() => {
@@ -2438,6 +2445,7 @@
     stopRbConnectAuto();
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
   });
 
   /** 黑點站向示意圖幾何中心（藍虛線）靠攏；僅更新黑點格座標，不修改折線轉折 */
@@ -6234,13 +6242,19 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
-  /** 將步進游標寫入圖層 highlight，供網格分頁與 export_row_index 對齊之路線加粗／粉色標示 */
-  const syncVhDrawDiagonalRouteHighlightToLayer = async (lyr) => {
+  /** 將步進游標寫入圖層 highlight：優先標示下一筆斜邊替換之<strong>單位 L 兩臂</strong>（各 1 格）；無候選時退回整條 export 路線粉色標示 */
+  const syncVhDrawDiagonalRouteHighlightToLayer = async (lyr, kind = 'l') => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     stopVhDrawLShapeAuto();
     const c = Number(vhDrawDiagonalRouteCursor.value);
     const idx = Number.isFinite(c) ? Math.max(0, Math.floor(c)) : 0;
-    lyr.highlightedSegmentIndex = ['vhDrawRoute', idx];
+    const orthoOpts = vhDrawDiagonalOrthoOptsFor(kind);
+    const flat = getVhDrawFlatSegments(lyr);
+    const armBundle =
+      flat?.length && idx >= 0 && idx < flat.length
+        ? peekDiagonalReplaceNextUnitArmHighlightBundle(flat, idx, orthoOpts)
+        : null;
+    lyr.highlightedSegmentIndex = armBundle ?? ['vhDrawRoute', idx];
     await dataStore.saveLayerState(lyr.layerId, {
       highlightedSegmentIndex: lyr.highlightedSegmentIndex,
     });
@@ -6329,12 +6343,166 @@
     }
   };
 
+  /** 「先直後橫·dataJson 繪製」：單位正交 L（兩段各 1 格）→ 45°，僅在安全時套用 */
+  const onOrthogonalVhDrawUnitLTo45Click = async (lyr, opts = {}) => {
+    const silent = opts.silent === true;
+    const externalExecuting = opts.externalExecuting === true;
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (!externalExecuting && isExecuting.value) return;
+    stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
+    vhDrawUnitL45Hint.value = '';
+    const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
+    if (!resolved?.spaceNetwork?.length) {
+      const msg = '無路網；請確認本層已有 dataJson／geojson，且來源「先直後橫」層已更新。';
+      if (silent) vhDrawUnitL45Hint.value = msg;
+      else window.alert(msg);
+      return;
+    }
+    if (!externalExecuting) {
+      isExecuting.value = true;
+    }
+    try {
+      await nextTick();
+      lyr.highlightedSegmentIndex = null;
+      await dataStore.saveLayerState(lyr.layerId, { highlightedSegmentIndex: null });
+      const flat = normalizeSpaceNetworkDataToFlatSegments(
+        JSON.parse(JSON.stringify(resolved.spaceNetwork))
+      );
+      const r = replaceUnitOrthogonalLWith45DiagonalWhereClear(flat);
+      if (!r.ok) {
+        const msg = r.message || '無法套用（路網幾何約束）。';
+        if (silent) vhDrawUnitL45Hint.value = msg;
+        else window.alert(msg);
+        return;
+      }
+      if (r.replacedCount === 0) {
+        vhDrawUnitL45Hint.value = r.message || '沒有可替換的單位 L。';
+        if (!silent) window.alert(r.message || '沒有可替換的單位 L。');
+        return;
+      }
+      await applyVhDrawDiagonalAfterReplace(lyr, r.segments);
+      vhDrawUnitL45Hint.value = r.message || '';
+      if (!silent) window.alert(r.message || '已完成。');
+    } catch (err) {
+      console.error(err);
+      const msg = '套用時發生錯誤（詳見控制台）。';
+      if (silent) vhDrawUnitL45Hint.value = msg;
+      else window.alert(msg);
+    } finally {
+      if (!externalExecuting) {
+        setTimeout(() => {
+          isExecuting.value = false;
+        }, 300);
+      }
+    }
+  };
+
+  /** 逐步：嘗試將游標所在的單位 L 候選替換為 45°；先以 L 形 highlight 標示，可行則套用並前進游標，不可行則寫原因並前進 */
+  const onOrthogonalVhDrawUnitL45OneClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (isExecuting.value) return;
+    stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
+    const flat = getVhDrawFlatSegments(lyr);
+    if (!flat?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      return;
+    }
+    const candidates = listUnitOrthogonalLCandidates(flat);
+    if (!candidates.length) {
+      vhDrawUnitL45Hint.value = '路網中沒有單位正交 L（兩臂各 1 格）。';
+      window.alert(vhDrawUnitL45Hint.value);
+      await applyVhDrawLOrthoBundleHighlight(lyr, null);
+      return;
+    }
+    const n = candidates.length;
+    const idx = ((vhDrawUnitL45Cursor.value % n) + n) % n;
+    const cand = candidates[idx];
+    vhDrawUnitL45Cursor.value = (idx + 1) % n;
+    // 僅標示靠轉角兩側各一格之 L（長臂用座標線段預覽，不延伸至整段長邊）
+    const highlightBundle = unitOrthogonalL45HighlightBundle(cand);
+    await applyVhDrawLOrthoBundleHighlight(lyr, highlightBundle);
+    const r = tryReplaceUnitOrthogonalLWith45(flat, cand);
+    if (r.replaced) {
+      await applyVhDrawDiagonalAfterReplace(lyr, r.segments);
+      vhDrawUnitL45Hint.value = `候選 ${idx + 1}／${n}（路段 #${cand.si + 1}，頂點 #${cand.ci}）：${r.reason}`;
+    } else {
+      vhDrawUnitL45Hint.value = `候選 ${idx + 1}／${n}（路段 #${cand.si + 1}，頂點 #${cand.ci}）不可替換：${r.reason}`;
+    }
+  };
+
+  const VH_DRAW_UNIT_L45_AUTO_MS = 1000;
+
+  /** 自動：每秒嘗試一個單位 L→45°；連續輪完一週皆失敗則停 */
+  const toggleOrthogonalVhDrawUnitL45Auto = (lyr) => {
+    if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
+    if (vhDrawUnitL45AutoActive.value) {
+      stopVhDrawUnitL45Auto();
+      return;
+    }
+    const flatProbe = getVhDrawFlatSegments(lyr);
+    if (!flatProbe?.length) {
+      window.alert('無路網；請確認本層已有 dataJson／geojson。');
+      return;
+    }
+    if (!listUnitOrthogonalLCandidates(flatProbe).length) {
+      window.alert('路網中沒有單位正交 L（兩臂各 1 格）。');
+      return;
+    }
+    stopVhDrawDiagonalRouteAuto();
+    stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
+    vhDrawUnitL45AutoActive.value = true;
+    vhDrawUnitL45AutoNoReplaceStreak = 0;
+    vhDrawUnitL45AutoTimerId = setInterval(async () => {
+      if (!vhDrawUnitL45AutoActive.value || vhDrawUnitL45AutoTickBusy) return;
+      const lyrFresh = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+      if (!lyrFresh) { stopVhDrawUnitL45Auto(); return; }
+      vhDrawUnitL45AutoTickBusy = true;
+      try {
+        const flat = getVhDrawFlatSegments(lyrFresh);
+        if (!flat?.length) { stopVhDrawUnitL45Auto(); return; }
+        const candidates = listUnitOrthogonalLCandidates(flat);
+        if (!candidates.length) {
+          stopVhDrawUnitL45Auto();
+          vhDrawUnitL45Hint.value = '所有單位 L 已替換或消失，自動已停止。';
+          return;
+        }
+        const n = candidates.length;
+        const idx = ((vhDrawUnitL45Cursor.value % n) + n) % n;
+        const cand = candidates[idx];
+        vhDrawUnitL45Cursor.value = (idx + 1) % n;
+        const r = tryReplaceUnitOrthogonalLWith45(flat, cand);
+        if (r.replaced) {
+          vhDrawUnitL45AutoNoReplaceStreak = 0;
+          await applyVhDrawDiagonalAfterReplace(lyrFresh, r.segments);
+          vhDrawUnitL45Hint.value = `候選 ${idx + 1}／${n}（路段 #${cand.si + 1}，頂點 #${cand.ci}）：${r.reason}（自動）`;
+        } else {
+          vhDrawUnitL45AutoNoReplaceStreak += 1;
+          vhDrawUnitL45Hint.value = `候選 ${idx + 1}／${n}（路段 #${cand.si + 1}，頂點 #${cand.ci}）不可替換：${r.reason}（連續 ${vhDrawUnitL45AutoNoReplaceStreak}／${n}）`;
+          if (vhDrawUnitL45AutoNoReplaceStreak >= n) {
+            stopVhDrawUnitL45Auto();
+            vhDrawUnitL45Hint.value += '；已輪完一週皆不可替換，自動停止。';
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        vhDrawUnitL45AutoTickBusy = false;
+      }
+    }, VH_DRAW_UNIT_L45_AUTO_MS);
+  };
+
   /** 每次只處理游標對應的一條折線（該線上可換斜邊一次清完），游標再移下一條（循環） */
   const onOrthogonalVhDrawDiagonalOneRouteClick = async (lyr, kind) => {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) {
       window.alert('無路網；請確認本層已有 dataJson／geojson。');
@@ -6351,7 +6519,7 @@
         window.alert('無 flat 路段。');
         return;
       }
-      await syncVhDrawDiagonalRouteHighlightToLayer(lyr);
+      await syncVhDrawDiagonalRouteHighlightToLayer(lyr, kind);
       const si = ((vhDrawDiagonalRouteCursor.value % n) + n) % n;
       const r = replaceDiagonalsInRouteUntilClear(flat, si, vhDrawDiagonalOrthoOptsFor(kind));
       if (!r.ok) {
@@ -6363,7 +6531,7 @@
         await applyVhDrawDiagonalAfterReplace(lyr, r.segments);
       }
       vhDrawDiagonalRouteStepHint.value = `${r.message || ''} 下次：路線 #${vhDrawDiagonalRouteCursor.value + 1}／共 ${n} 條折線。`;
-      await syncVhDrawDiagonalRouteHighlightToLayer(lyr);
+      await syncVhDrawDiagonalRouteHighlightToLayer(lyr, kind);
     } catch (err) {
       console.error(err);
       window.alert('套用時發生錯誤（詳見控制台）。');
@@ -6399,9 +6567,11 @@
     vhDrawDiagonalRouteAutoKind.value = kind;
     vhDrawDiagonalRouteAutoActive.value = true;
     vhDrawDiagonalRouteAutoIdleStreak = 0;
+    stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
     stopJsonGridFromCoordVertexAuto();
     stopRbConnectAuto();
-    void syncVhDrawDiagonalRouteHighlightToLayer(lyr).catch((e) => console.error(e));
+    void syncVhDrawDiagonalRouteHighlightToLayer(lyr, kind).catch((e) => console.error(e));
     vhDrawDiagonalRouteAutoTimerId = setInterval(async () => {
       if (!vhDrawDiagonalRouteAutoActive.value || vhDrawDiagonalRouteAutoTickBusy) return;
       const lyrFresh = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
@@ -6448,7 +6618,10 @@
             vhDrawDiagonalRouteStepHint.value = '已輪完一週各路線皆無可替換斜邊，自動執行已停止。';
           }
         }
-        await syncVhDrawDiagonalRouteHighlightToLayer(lyrFresh);
+        await syncVhDrawDiagonalRouteHighlightToLayer(
+          lyrFresh,
+          vhDrawDiagonalRouteAutoKind.value
+        );
       } catch (tickErr) {
         console.error(tickErr);
       } finally {
@@ -6467,6 +6640,24 @@
   const vhDrawLShapeStepHint = ref('');
   /** 先直後橫·繪製：三合一批次（無 window.alert）結果摘要 */
   const vhDrawTripleBatchHint = ref('');
+  /** 單位正交 L → 45° 斜線（全路網一鍵）提示 */
+  const vhDrawUnitL45Hint = ref('');
+  /** 單位 L→45°：逐步／自動游標 */
+  const vhDrawUnitL45Cursor = ref(0);
+  const vhDrawUnitL45AutoActive = ref(false);
+  let vhDrawUnitL45AutoTimerId = null;
+  let vhDrawUnitL45AutoTickBusy = false;
+  let vhDrawUnitL45AutoNoReplaceStreak = 0;
+
+  const stopVhDrawUnitL45Auto = () => {
+    if (vhDrawUnitL45AutoTimerId != null) {
+      clearInterval(vhDrawUnitL45AutoTimerId);
+      vhDrawUnitL45AutoTimerId = null;
+    }
+    vhDrawUnitL45AutoActive.value = false;
+    vhDrawUnitL45AutoTickBusy = false;
+    vhDrawUnitL45AutoNoReplaceStreak = 0;
+  };
 
   const stopVhDrawLShapeAuto = () => {
     if (vhDrawLShapeAutoTimerId != null) {
@@ -6507,6 +6698,7 @@
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
     const flat = getVhDrawFlatSegments(lyr);
     if (!flat?.length) {
       window.alert('無路網；請確認本層已有 dataJson／geojson。');
@@ -6544,6 +6736,7 @@
     if (!externalExecuting && isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
     vhDrawLShapeCursor.value = 0;
     const flat = getVhDrawFlatSegments(lyr);
     if (!flat?.length) {
@@ -6586,13 +6779,15 @@
     vhDrawLShapeStepHint.value = `找到 ${firstList.length} 個 L，但沒有可 flip：${lastNoFlip?.reason || '無可行 flip'}`;
   };
 
-  /** 一鍵連跑：全部 L flip → 斜邊改 L → 斜邊改 N／Z → 斜邊改 H／V／45°；不使用 window.alert，結果寫於下方摘要 */
+  /** 一鍵連跑：全部 L flip → 斜邊改 L → 斜邊改 N／Z → 斜邊改 H／V／45° → 單位 L 改 45°；不使用 window.alert，結果寫於下方摘要 */
   async function onOrthogonalVhDrawTripleBatchClick(lyr) {
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
     vhDrawTripleBatchHint.value = '';
+    vhDrawUnitL45Hint.value = '';
     vhDrawLShapeStepHint.value = '';
     vhDrawDiagonalRouteStepHint.value = '';
     isExecuting.value = true;
@@ -6621,7 +6816,13 @@
         externalExecuting: true,
       });
       const m4 = vhDrawDiagonalRouteStepHint.value || '—';
-      vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3} ④ 斜→H／V／45°：${m4}`;
+      lyr2 = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) || lyr2;
+      await onOrthogonalVhDrawUnitLTo45Click(lyr2, {
+        silent: true,
+        externalExecuting: true,
+      });
+      const m5 = vhDrawUnitL45Hint.value || '—';
+      vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3} ④ 斜→H／V／45°：${m4} ⑤ 單位 L→45°：${m5}`;
     } catch (e) {
       console.error(e);
       vhDrawTripleBatchHint.value = '批次中斷：發生錯誤（詳見控制台）。';
@@ -6652,6 +6853,7 @@
     }
     stopVhDrawDiagonalRouteAuto();
     stopVhDrawLShapeAuto();
+    stopVhDrawUnitL45Auto();
     stopJsonGridFromCoordVertexAuto();
     stopRbConnectAuto();
     vhDrawLShapeAutoActive.value = true;
@@ -6740,6 +6942,48 @@
   };
 
   /** `point_orthogonal`（站點移動水平垂直化）：刪除無 connect 之整欄／列並壓縮座標（僅寫入本層） */
+  /** layout_network_grid_from_vh_draw：載入交通流量 CSV */
+  const onLayoutNetworkLoadTrafficCsvClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    try {
+      const resp = await fetch('/data/taipei_city/mrt_link_volume_undirected.csv');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const text = await resp.text();
+      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) throw new Error('CSV 內容不足');
+      const header = lines[0].split(',');
+      const aIdx = header.findIndex((c) => c.includes('站點A'));
+      const bIdx = header.findIndex((c) => c.includes('站點B'));
+      const wIdx = header.findIndex((c) => c.includes('總人次') || c === 'weight');
+      if (aIdx < 0 || bIdx < 0 || wIdx < 0)
+        throw new Error(`CSV 欄位未找到（header: ${header.join(',')}）`);
+      const data = [];
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split(',');
+        if (parts.length <= Math.max(aIdx, bIdx, wIdx)) continue;
+        const a = parts[aIdx].trim();
+        const b = parts[bIdx].trim();
+        const w = Number(parts[wIdx]);
+        if (!a || !b || !Number.isFinite(w)) continue;
+        data.push({ a, b, weight: w });
+      }
+      lyr.layoutVhDrawTrafficData = data;
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+    } catch (err) {
+      console.error(err);
+      window.alert('載入 CSV 失敗：' + err.message);
+    }
+  };
+
+  /** layout_network_grid_from_vh_draw：清除交通流量 CSV */
+  const onLayoutNetworkClearTrafficCsvClick = async (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
+    lyr.layoutVhDrawTrafficData = null;
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
   const onJsonGridFromCoordPruneEmptyGridLinesClick = async () => {
     if (isExecuting.value) return;
     const follow = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
@@ -9914,6 +10158,35 @@
           </div>
         </div>
 
+        <!-- layout_network_grid_from_vh_draw：交通流量 CSV -->
+        <div
+          v-if="layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID"
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">路段交通流量（CSV）</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            來源：<code class="small">taipei_city/mrt_link_volume_undirected.csv</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
+            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。
+          </div>
+          <div class="d-grid gap-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue"
+              @click="onLayoutNetworkLoadTrafficCsvClick(layer)"
+            >
+              載入 mrt_link_volume_undirected.csv
+            </button>
+            <button
+              v-if="layer.layoutVhDrawTrafficData"
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary"
+              @click="onLayoutNetworkClearTrafficCsvClick(layer)"
+            >
+              清除交通流量資料（{{ layer.layoutVhDrawTrafficData.length }} 筆）
+            </button>
+          </div>
+        </div>
+
         <!-- orthogonal_toward_center_vh_draw：本機 JSON／斜向改 L -->
         <div
           v-if="layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID"
@@ -9940,10 +10213,10 @@
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
-            :disabled="isExecuting || layer.isLoading"
+            :disabled="isExecuting || layer.isLoading || vhDrawUnitL45AutoActive"
             @click="onOrthogonalVhDrawTripleBatchClick(layer)"
           >
-            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z → 斜邊→H／V／45°
+            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z → 斜邊→H／V／45° → 單位 L→45°
           </button>
           <div
             v-if="vhDrawTripleBatchHint"
@@ -9962,7 +10235,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawLShapeOneClick(layer)"
             >
               下一步：標示下一個 L，若可行則 flip（不可行寫原因）
@@ -9971,7 +10244,7 @@
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
               :class="vhDrawLShapeAutoActive ? 'my-btn-orange' : 'my-btn-blue'"
-              :disabled="isExecuting"
+              :disabled="isExecuting || vhDrawUnitL45AutoActive"
               @click="toggleOrthogonalVhDrawLShapeAuto(layer)"
             >
               {{
@@ -9983,7 +10256,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawLShapeHighlightAllClick(layer)"
             >
               一鍵：連續 flip 所有可行 L（不可行寫停止原因）
@@ -10005,7 +10278,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'l')"
             >
               下一步：下一條路線（僅 L；該線斜邊清完後換下一條，循環）
@@ -10021,6 +10294,7 @@
               :disabled="
                 isExecuting ||
                 vhDrawLShapeAutoActive ||
+                vhDrawUnitL45AutoActive ||
                 (vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind !== 'l')
               "
               @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer, 'l')"
@@ -10030,7 +10304,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'l')"
             >
               一鍵全路網：非 H／V 邊 → 僅正交 L（兩段）
@@ -10047,7 +10321,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'nz')"
             >
               下一步：下一條路線（僅 N／Z；該線斜邊清完後換下一條，循環）
@@ -10063,6 +10337,7 @@
               :disabled="
                 isExecuting ||
                 vhDrawLShapeAutoActive ||
+                vhDrawUnitL45AutoActive ||
                 (vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind !== 'nz')
               "
               @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer, 'nz')"
@@ -10072,7 +10347,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'nz')"
             >
               一鍵全路網：非 H／V 邊 → 僅 N／Z（三正交段）
@@ -10091,7 +10366,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive"
+              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'hv45')"
             >
               下一步：下一條路線（H／V／45°；該線可換之斜邊清完後換下一條，循環）
@@ -10107,6 +10382,7 @@
               :disabled="
                 isExecuting ||
                 vhDrawLShapeAutoActive ||
+                vhDrawUnitL45AutoActive ||
                 (vhDrawDiagonalRouteAutoActive && vhDrawDiagonalRouteAutoKind !== 'hv45')
               "
               @click="toggleOrthogonalVhDrawDiagonalRouteAuto(layer, 'hv45')"
@@ -10116,7 +10392,7 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
               @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'hv45')"
             >
               一鍵全路網：|Δx|≠|Δy| 斜邊 → H／V／45°（0.5 格·一至兩轉折）
@@ -10128,6 +10404,52 @@
             style="line-height: 1.45"
           >
             {{ vhDrawDiagonalRouteStepHint }}
+          </div>
+          <div class="my-title-xs-gray pb-2">單位正交 L → 45°</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            前面 L flip 與斜向邊轉換完成後再執行。轉角為先橫／豎再豎／橫之正交 L，且自轉角沿兩臂各至少
+            <strong>1</strong>
+            格時，將靠轉角之<strong>各 1 格</strong>（必要時自動插入折點）換成<strong>單一 45°
+            斜線</strong>並移除原位轉折；預覽仍以 L（兩段各一格）呈現。約束同上：無交叉、無與他線共線重疊、頂點不落在他線開放段上、線段開放內部不壓紅／藍
+            connect；轉折為 connect 站點時略過。
+          </div>
+          <div class="d-grid gap-2 mb-2">
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
+              @click="onOrthogonalVhDrawUnitL45OneClick(layer)"
+            >
+              下一步：下一個單位 L → 45°（可行則替換，不可行寫原因）
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer"
+              :class="vhDrawUnitL45AutoActive ? 'my-btn-orange' : 'my-btn-blue'"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
+              @click="toggleOrthogonalVhDrawUnitL45Auto(layer)"
+            >
+              {{
+                vhDrawUnitL45AutoActive
+                  ? '停止自動（每秒一個單位 L）'
+                  : '自動執行：每秒一個單位 L → 45°'
+              }}
+            </button>
+            <button
+              type="button"
+              class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
+              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
+              @click="onOrthogonalVhDrawUnitLTo45Click(layer)"
+            >
+              一鍵全路網：單位 L → 45°（僅安全處）
+            </button>
+          </div>
+          <div
+            v-if="vhDrawUnitL45Hint"
+            class="text-muted my-font-size-xs mb-3"
+            style="line-height: 1.45"
+          >
+            {{ vhDrawUnitL45Hint }}
           </div>
           <div class="text-muted my-font-size-xs" style="line-height: 1.45">
             <strong>JSON</strong>：與 taipei_e／f／j3 下載相同之<strong>純陣列</strong>或含

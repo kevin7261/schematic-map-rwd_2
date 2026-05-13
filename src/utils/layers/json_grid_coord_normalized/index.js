@@ -79,7 +79,14 @@ export {
   replaceDiagonalEdgesWithLOrtho,
   replaceOneDiagonalInRoute,
   replaceDiagonalsInRouteUntilClear,
+  peekDiagonalReplaceNextUnitArmHighlightBundle,
 } from './replaceDiagonalEdgesWithLOrtho.js';
+export {
+  listUnitOrthogonalLCandidates,
+  tryReplaceUnitOrthogonalLWith45,
+  replaceUnitOrthogonalLWith45DiagonalWhereClear,
+  unitOrthogonalL45HighlightBundle,
+} from './replaceUnitOrthogonalLWith45Diagonal.js';
 export {
   listOrthogonalLShapesInFlatSegments,
   orthoBundleHighlightForLShape,

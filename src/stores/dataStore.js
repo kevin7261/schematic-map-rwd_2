@@ -643,6 +643,8 @@ export const useDataStore = defineStore(
             layoutVhDrawFineGrid: null,
             /** 細格中段黑點：轉折吸附＋紅／藍錨區間像素弧長均分（僅在已套用細格時有效） */
             layoutVhDrawFineGridTurnRbMidDots: false,
+            /** 交通流量 CSV 資料（taipei_city/mrt_link_volume_undirected.csv），載入後為 Array<{a,b,weight}> */
+            layoutVhDrawTrafficData: null,
             upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],

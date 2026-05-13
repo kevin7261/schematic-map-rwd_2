@@ -760,6 +760,211 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
   return { work, replacedCount: 0 };
 }
 
+/** 自轉角 (cx,cy) 沿軸往 (tx,ty) 走 1 格（兩點須共水平或共垂直線） */
+function unitOrthoSegmentFromCornerToward(cx, cy, tx, ty) {
+  const dx = snapHalfCoord(tx) - snapHalfCoord(cx);
+  const dy = snapHalfCoord(ty) - snapHalfCoord(cy);
+  if (dx === 0 && dy === 0) return null;
+  if (dx !== 0 && dy !== 0) return null;
+  if (dx !== 0) {
+    const s = dx > 0 ? 1 : -1;
+    return { x0: cx, y0: cy, x1: cx + s, y1: cy };
+  }
+  const s = dy > 0 ? 1 : -1;
+  return { x0: cx, y0: cy, x1: cx, y1: cy + s };
+}
+
+/**
+ * 自 (fx,fy) 朝 (tx,ty) 的「視覺上第一步」線段（1 格）。
+ * `allowDiagonal`：若 |Δx|=|Δy|≠0 則走 45° 一步；否則取曼哈頓較大軸向一步。
+ */
+function unitGridSegmentToward(fx, fy, tx, ty, allowDiagonal) {
+  const dx = snapHalfCoord(tx) - snapHalfCoord(fx);
+  const dy = snapHalfCoord(ty) - snapHalfCoord(fy);
+  if (dx === 0 && dy === 0) return null;
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  const sx = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+  const sy = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+  if (!allowDiagonal) {
+    if (adx !== 0 && ady !== 0) return null;
+    if (adx > 0) return { x0: fx, y0: fy, x1: fx + sx, y1: fy };
+    return { x0: fx, y0: fy, x1: fx, y1: fy + sy };
+  }
+  if (adx !== 0 && ady !== 0) {
+    if (adx === ady) return { x0: fx, y0: fy, x1: fx + sx, y1: fy + sy };
+    if (adx > ady) return { x0: fx, y0: fy, x1: fx + sx, y1: fy };
+    return { x0: fx, y0: fy, x1: fx, y1: fy + sy };
+  }
+  if (adx > 0) return { x0: fx, y0: fy, x1: fx + sx, y1: fy };
+  return { x0: fx, y0: fy, x1: fx, y1: fy + sy };
+}
+
+function pairFromLReplacementCorner(x0, y0, x1, y1, cx, cy) {
+  const a = unitOrthoSegmentFromCornerToward(cx, cy, x0, y0);
+  const b = unitOrthoSegmentFromCornerToward(cx, cy, x1, y1);
+  return a && b ? [a, b] : null;
+}
+
+/**
+ * 預覽「下一筆」斜邊替換在轉角處的兩臂：各僅 1 格，呈 L 形（H／V／45° 模式若為單轉角則含斜向一步）。
+ * 與 {@link attemptFirstDiagonalReplacementOnRoute} 選案邏輯一致（含 preferVertFirst／tryL／tryNzIfNoL／tryHv45）。
+ *
+ * @returns {['diagReplaceUnitArms', Array<{x0:number,y0:number,x1:number,y1:number}>> | null}
+ */
+export function peekDiagonalReplaceNextUnitArmHighlightBundle(
+  flatSegments,
+  routeSegmentIndex,
+  options = {}
+) {
+  const { preferVertFirst = false, tryNzIfNoL = true, tryL = true, tryHv45 = false } = options;
+  if (!Array.isArray(flatSegments) || flatSegments.length === 0) return null;
+  const work = shallowCloneOrthoSegmentsSynced(flatSegments);
+  if (orthoDiagonalToLOrthoGeometryOrConnectInvalid(work)) return null;
+  const si = Number(routeSegmentIndex);
+  if (!Number.isFinite(si) || si < 0 || si >= work.length) return null;
+  const pts = work[si]?.points;
+  if (!Array.isArray(pts) || pts.length < 2) return null;
+
+  for (let pi = 0; pi < pts.length - 1; pi++) {
+    const [x0, y0] = getXY(pts[pi]);
+    const [x1, y1] = getXY(pts[pi + 1]);
+    if (x0 === x1 || y0 === y1) continue;
+
+    const px0 = pi > 0 ? getXY(pts[pi - 1])[0] : null;
+    const py0 = pi > 0 ? getXY(pts[pi - 1])[1] : null;
+    const nx1 = pi + 2 < pts.length ? getXY(pts[pi + 2])[0] : null;
+    const ny1 = pi + 2 < pts.length ? getXY(pts[pi + 2])[1] : null;
+
+    const cand = [
+      { cx: x1, cy: y0, horizFirst: true },
+      { cx: x0, cy: y1, horizFirst: false },
+    ];
+
+    const allowedCornerKeys = rbConnectAllowedCornerKeysForDiagonalEdge(work, si, pi);
+
+    if (tryL) {
+      const viable = [];
+      for (const { cx, cy, horizFirst } of cand) {
+        if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
+        const trial = JSON.parse(JSON.stringify(work));
+        if (!insertCorner(trial, si, pi, cx, cy)) continue;
+        syncOrthoFlatSegmentEndpoints(trial);
+        if (
+          orthoLcCornerTouchesForeignRbConnectDisplay(
+            cx,
+            cy,
+            trial,
+            si,
+            pi,
+            pi + 2,
+            allowedCornerKeys
+          ) ||
+          orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
+          orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
+        )
+          continue;
+        const score = straightContinuationScore(x0, y0, x1, y1, cx, cy, px0, py0, nx1, ny1);
+        viable.push({ score, horizFirst, cx, cy });
+      }
+
+      if (viable.length > 0) {
+        viable.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (a.horizFirst !== b.horizFirst) {
+            if (preferVertFirst) return a.horizFirst ? 1 : -1;
+            return a.horizFirst ? -1 : 1;
+          }
+          return 0;
+        });
+        const { cx, cy } = viable[0];
+        const pair = pairFromLReplacementCorner(x0, y0, x1, y1, cx, cy);
+        if (pair) return ['diagReplaceUnitArms', pair];
+      }
+    }
+
+    if (tryNzIfNoL) {
+      const nzViable = buildNzReplacementsForDiagonal(
+        work,
+        si,
+        pi,
+        x0,
+        y0,
+        x1,
+        y1,
+        px0,
+        py0,
+        nx1,
+        ny1,
+        allowedCornerKeys
+      );
+      if (nzViable.length > 0) {
+        nzViable.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (preferVertFirst) {
+            if (a.kind === 'n' && b.kind === 'z') return -1;
+            if (a.kind === 'z' && b.kind === 'n') return 1;
+          } else {
+            if (a.kind === 'z' && b.kind === 'n') return -1;
+            if (a.kind === 'n' && b.kind === 'z') return 1;
+          }
+          return 0;
+        });
+        const tpts = nzViable[0].trial[si]?.points;
+        if (!Array.isArray(tpts) || pi + 2 >= tpts.length) continue;
+        const [c1x, c1y] = getXY(tpts[pi + 1]);
+        const [c2x, c2y] = getXY(tpts[pi + 2]);
+        const s1 = unitOrthoSegmentFromCornerToward(c1x, c1y, x0, y0);
+        const s2 = unitOrthoSegmentFromCornerToward(c1x, c1y, c2x, c2y);
+        if (s1 && s2) return ['diagReplaceUnitArms', [s1, s2]];
+      }
+    }
+
+    if (tryHv45) {
+      const adxM = Math.abs(x1 - x0);
+      const adyM = Math.abs(y1 - y0);
+      if (adxM !== adyM) {
+        const hvViable = buildHv45ReplacementsForDiagonal(
+          work,
+          si,
+          pi,
+          x0,
+          y0,
+          x1,
+          y1,
+          px0,
+          py0,
+          nx1,
+          ny1,
+          allowedCornerKeys,
+          preferVertFirst
+        );
+        if (hvViable.length > 0) {
+          const best = hvViable[0];
+          const tpts = best.trial[si]?.points;
+          if (!Array.isArray(tpts)) continue;
+          if (best.bends === 1) {
+            if (pi + 1 >= tpts.length) continue;
+            const [cx, cy] = getXY(tpts[pi + 1]);
+            const s1 = unitGridSegmentToward(cx, cy, x0, y0, true);
+            const s2 = unitGridSegmentToward(cx, cy, x1, y1, true);
+            if (s1 && s2) return ['diagReplaceUnitArms', [s1, s2]];
+          } else {
+            if (pi + 2 >= tpts.length) continue;
+            const [p1x, p1y] = getXY(tpts[pi + 1]);
+            const [p2x, p2y] = getXY(tpts[pi + 2]);
+            const s1 = unitGridSegmentToward(p1x, p1y, x0, y0, true);
+            const s2 = unitGridSegmentToward(p1x, p1y, p2x, p2y, true);
+            if (s1 && s2) return ['diagReplaceUnitArms', [s1, s2]];
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * 僅針對單一折線（`flatSegments[routeSegmentIndex]`）：替換**一處**斜邊（若存在）。
  * @param {{ preferVertFirst?: boolean, tryNzIfNoL?: boolean, tryL?: boolean, tryHv45?: boolean }} [options] `tryL` 預設 true；`tryNzIfNoL` 預設 true。

@@ -3914,7 +3914,6 @@
     /** M>0：粗格區間內等分細線（對應細格每單元 (M+1) 份） */
     const layoutVHGridStrokeInner = { stroke: '#ECECEC', strokeW: 0.35, opacity: 0.5 };
 
-
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
@@ -3965,7 +3964,6 @@
         if (dataStore.showGrid) {
           appendLayoutVhDrawInnerSubgridLines();
           xTicks.forEach((tick) => {
-
             const xPos = xScale(tick);
             const vh = layoutVHGridStroke;
             gridGroup
@@ -5374,6 +5372,93 @@
             .attr('font-weight', '600')
             .attr('fill', '#1565C0')
             .text(String(yv));
+        }
+      }
+
+      // ── 交通流量標注：在每條路段折線像素弧長中點顯示總人次（無對應則顯示 0） ──
+      const trafficRawData = dataStore.findLayerById(layerTab)?.layoutVhDrawTrafficData;
+      if (Array.isArray(trafficRawData) && trafficRawData.length > 0) {
+        const mkTrafficKey = (a, b) => [String(a).trim(), String(b).trim()].sort().join('\x00');
+        const trafficMap = new Map();
+        for (const row of trafficRawData) {
+          trafficMap.set(mkTrafficKey(row.a, row.b), row.weight);
+        }
+
+        const trafficG = zoomGroup.append('g').attr('class', 'layout-vh-draw-traffic-labels');
+        let lineFeatIdxT = 0;
+        const lineFeatCountT = routeFeatures.filter(
+          (f) => f?.geometry?.type === 'LineString' && !(f.properties?.layoutUniformStationGrid)
+        ).length;
+
+        for (const rf of routeFeatures) {
+          if (!rf?.geometry || rf.geometry.type !== 'LineString') continue;
+          if (rf.properties?.layoutUniformStationGrid) continue;
+
+          const rawCoords = rf.geometry.coordinates;
+          if (!Array.isArray(rawCoords) || rawCoords.length < 2) {
+            lineFeatIdxT += 1;
+            continue;
+          }
+          const gridPts = rawCoords.map((c) => [Number(c[0]), Number(c[1])]);
+
+          // 找對應 export row 取站名
+          let matchRow = layoutFindRowForLineGrid(gridPts, exportRowsForSta);
+          if (!matchRow && lineFeatCountT === exportRowsForSta.length) {
+            matchRow = exportRowsForSta[lineFeatIdxT] ?? null;
+          }
+          lineFeatIdxT += 1;
+
+          const seg = matchRow?.segment;
+          const nodeDisplay = (node) => {
+            if (!node || typeof node !== 'object') return '';
+            const t = node.tags && typeof node.tags === 'object' ? node.tags : {};
+            return String(node.station_name ?? t.station_name ?? t.name ?? '').trim();
+          };
+          const nameA = nodeDisplay(seg?.start);
+          const nameB = nodeDisplay(seg?.end);
+
+          const weight =
+            nameA && nameB ? (trafficMap.get(mkTrafficKey(nameA, nameB)) ?? 0) : 0;
+
+          // 以像素弧長求中點
+          const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
+          let totalLen = 0;
+          for (let i = 0; i < pix.length - 1; i++) {
+            totalLen += Math.hypot(pix[i + 1][0] - pix[i][0], pix[i + 1][1] - pix[i][1]);
+          }
+          const midTarget = totalLen / 2;
+          let midPt = pix[Math.floor(pix.length / 2)];
+          let acc = 0;
+          for (let i = 0; i < pix.length - 1; i++) {
+            const segLen = Math.hypot(
+              pix[i + 1][0] - pix[i][0],
+              pix[i + 1][1] - pix[i][1]
+            );
+            if (acc + segLen >= midTarget) {
+              const t = segLen > 0 ? (midTarget - acc) / segLen : 0;
+              midPt = [
+                pix[i][0] + t * (pix[i + 1][0] - pix[i][0]),
+                pix[i][1] + t * (pix[i + 1][1] - pix[i][1]),
+              ];
+              break;
+            }
+            acc += segLen;
+          }
+
+          trafficG
+            .append('text')
+            .attr('x', midPt[0])
+            .attr('y', midPt[1])
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .attr('font-size', '8px')
+            .attr('font-weight', '600')
+            .attr('fill', '#6a1b9a')
+            .attr('stroke', '#ffffff')
+            .attr('stroke-width', 0.5)
+            .attr('paint-order', 'stroke')
+            .style('pointer-events', 'none')
+            .text(String(weight));
         }
       }
     }
@@ -7083,6 +7168,41 @@
                 .attr('fill', 'none');
             }
           }
+        }
+      }
+
+      /** 斜邊→正交／N-Z／H-V-45° 步進：下一筆替換轉角之「單位兩臂」預覽（與 orthoBundle 同色） */
+      if (
+        isSpaceGridVhDrawFamilyLayerId(layerTab) &&
+        hlLayer &&
+        Array.isArray(hl) &&
+        hl[0] === 'diagReplaceUnitArms' &&
+        Array.isArray(hl[1])
+      ) {
+        const armSegs = hl[1];
+        for (let ai = 0; ai < armSegs.length; ai++) {
+          const seg = armSegs[ai];
+          if (!seg || typeof seg !== 'object') continue;
+          const gx0 = Number(seg.x0);
+          const gy0 = Number(seg.y0);
+          const gx1 = Number(seg.x1);
+          const gy1 = Number(seg.y1);
+          if (![gx0, gy0, gx1, gy1].every(Number.isFinite)) continue;
+          zoomGroup
+            .append('g')
+            .attr('class', 'json-grid-diag-replace-unit-arm-highlight')
+            .style('pointer-events', 'none')
+            .append('line')
+            .attr('x1', xScale(gx0))
+            .attr('y1', yScale(gy0))
+            .attr('x2', xScale(gx1))
+            .attr('y2', yScale(gy1))
+            .attr('stroke', orthoBundleLineStroke)
+            .attr('stroke-width', 5)
+            .attr('stroke-dasharray', orthoBundleLineDash ?? '')
+            .attr('stroke-linecap', 'round')
+            .attr('stroke-linejoin', 'round')
+            .attr('fill', 'none');
         }
       }
 
