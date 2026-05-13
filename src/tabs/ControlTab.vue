@@ -41,7 +41,6 @@
     POINT_ORTHOGONAL_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
-    LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
@@ -59,7 +58,6 @@
     shallowCloneOrthoSegmentsSynced,
     buildInitialOrthoCoPointGroups,
     findBestConnectPointMoveForHV,
-    computeLayoutVhDrawFineGridSpec,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
@@ -6186,53 +6184,6 @@
     }
   };
 
-  const onLayoutNetworkApplyFineIntegerGridClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
-    if (isExecuting.value) return;
-    const fc = lyr.geojsonData;
-    const spec = computeLayoutVhDrawFineGridSpec(dataStore, fc);
-    if (!spec) {
-      window.alert('無法計算細格：請確認本層 geojson 有 LineString。');
-      return;
-    }
-    lyr.layoutVhDrawFineGrid = spec;
-    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
-    await nextTick();
-    dataStore.requestSpaceNetworkGridFullRedraw();
-  };
-
-  const onLayoutNetworkClearFineIntegerGridClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
-    if (isExecuting.value) return;
-    lyr.layoutVhDrawFineGrid = null;
-    lyr.layoutVhDrawFineGridTurnRbMidDots = false;
-    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
-    await nextTick();
-    dataStore.requestSpaceNetworkGridFullRedraw();
-  };
-
-  const onLayoutNetworkEnableFineGridTurnRbMidDotsClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
-    if (isExecuting.value) return;
-    if (!lyr.layoutVhDrawFineGrid) {
-      window.alert('請先「套用細格」後再開啟此功能。');
-      return;
-    }
-    lyr.layoutVhDrawFineGridTurnRbMidDots = true;
-    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
-    await nextTick();
-    dataStore.requestSpaceNetworkGridFullRedraw();
-  };
-
-  const onLayoutNetworkDisableFineGridTurnRbMidDotsClick = async (lyr) => {
-    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) return;
-    if (isExecuting.value) return;
-    lyr.layoutVhDrawFineGridTurnRbMidDots = false;
-    await dataStore.saveLayerState(lyr.layerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
-    await nextTick();
-    dataStore.requestSpaceNetworkGridFullRedraw();
-  };
-
   const VH_DRAW_DIAGONAL_ROUTE_AUTO_MS = 1000;
   let vhDrawDiagonalRouteAutoTimerId = null;
   const vhDrawDiagonalRouteAutoActive = ref(false);
@@ -10183,61 +10134,6 @@
             <code class="small">mapDrawnRoutes</code>
             之物件。各區塊共用同一條路線序號與提示列；斜向替換之自動執行僅能擇一（L、N／Z、H／V／45°）運行。
           </div>
-        </div>
-
-        <!-- layout_network_grid_from_vh_draw：依邊緣區間黑點 max 之全域極大 M，檢視細格整數座標 -->
-        <div
-          v-if="layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID"
-          class="pb-3 mb-3 border-bottom"
-        >
-          <div class="my-title-xs-gray pb-2">細格整數座標（僅檢視）</div>
-          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            取各欄／各列區間標籤數字之<strong>全域最大值 M</strong>，在 x、y 兩向皆以
-            <strong>M+1</strong> 倍粗格並四捨五入；資料層 geojson
-            不變，紅／藍端點與路線一併變換。各區間數字不同時仍採單一
-            M，故細格範圍由「最吃緊」區間決定。
-          </div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
-            :disabled="isExecuting || layer.isLoading"
-            @click="onLayoutNetworkApplyFineIntegerGridClick(layer)"
-          >
-            套用細格（M+1 倍·整數檢視）
-          </button>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary"
-            :disabled="isExecuting || layer.isLoading || !layer.layoutVhDrawFineGrid"
-            @click="onLayoutNetworkClearFineIntegerGridClick(layer)"
-          >
-            還原粗格檢視
-          </button>
-          <div class="my-title-xs-gray pt-3 pb-1">中段黑點（細格加值）</div>
-          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            須已套用細格。開啟後：最接近轉折之中段黑點移至轉折整數格；其餘在「轉折／紅·藍站（在線上）」錨之間依<strong>像素弧長</strong>均分並整數對齊。
-          </div>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
-            :disabled="
-              isExecuting ||
-              layer.isLoading ||
-              !layer.layoutVhDrawFineGrid ||
-              layer.layoutVhDrawFineGridTurnRbMidDots
-            "
-            @click="onLayoutNetworkEnableFineGridTurnRbMidDotsClick(layer)"
-          >
-            開啟：轉折／錨區中段重分配
-          </button>
-          <button
-            type="button"
-            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary mb-2"
-            :disabled="isExecuting || layer.isLoading || !layer.layoutVhDrawFineGridTurnRbMidDots"
-            @click="onLayoutNetworkDisableFineGridTurnRbMidDotsClick(layer)"
-          >
-            關閉：還原僅沿路徑細格對齊
-          </button>
         </div>
 
         <!-- 往中心聚集（列→欄 或 欄→列）：各列／欄 HV 線段（表格：站名＋座標） -->
