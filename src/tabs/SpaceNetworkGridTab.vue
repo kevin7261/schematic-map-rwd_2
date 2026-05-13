@@ -2438,6 +2438,75 @@
   let scheduleTaipeiFDrawForMouseZoom = () => {};
 
   /**
+   * layout_network_grid_from_vh_draw 背景強調：整數 **col**＝垂直格線（x）、**row**＝水平格線（y）。
+   * 含：① 任一正交路网邊落於該 x（垂直線段）／該 y（水平線段）；② 任一紅／藍 station Point 之格座標所在 col 與 row。
+   */
+  function computeLayoutNetworkGridOccupiedColsRows(routeFeatures, stationFeatures, eps = 1e-3) {
+    /** @type {Set<number>} */
+    const cols = new Set();
+    /** @type {Set<number>} */
+    const rows = new Set();
+    const ingestSeg = (xa, ya, xbx, yb) => {
+      const ax = Number(xa);
+      const ay = Number(ya);
+      const bx = Number(xbx);
+      const by = Number(yb);
+      if (
+        ![ax, ay, bx, by].every(Number.isFinite) ||
+        (Math.abs(ax - bx) < eps && Math.abs(ay - by) < eps)
+      )
+        return;
+      if (Math.abs(ax - bx) < eps && Math.abs(ay - by) >= eps) cols.add(Math.round(ax));
+      else if (Math.abs(ay - by) < eps && Math.abs(ax - bx) >= eps) rows.add(Math.round(ay));
+    };
+    const walkLineCoords = (arr) => {
+      if (!Array.isArray(arr) || arr.length < 2) return;
+      for (let i = 0; i < arr.length - 1; i++) {
+        const c0 = arr[i];
+        const c1 = arr[i + 1];
+        if (
+          Array.isArray(c0) &&
+          Array.isArray(c1) &&
+          c0.length >= 2 &&
+          c1.length >= 2 &&
+          typeof c0[0] === 'number' &&
+          typeof c1[0] === 'number'
+        ) {
+          ingestSeg(c0[0], c0[1], c1[0], c1[1]);
+        }
+      }
+    };
+    if (Array.isArray(routeFeatures)) {
+      for (const f of routeFeatures) {
+        const g = f?.geometry;
+        if (!g) continue;
+        if (g.type === 'LineString' && Array.isArray(g.coordinates)) {
+          walkLineCoords(g.coordinates);
+        } else if (g.type === 'MultiLineString' && Array.isArray(g.coordinates)) {
+          for (const line of g.coordinates) walkLineCoords(line);
+        }
+      }
+    }
+    if (Array.isArray(stationFeatures)) {
+      for (const pf of stationFeatures) {
+        if (!pf?.geometry || pf.geometry.type !== 'Point') continue;
+        const nt = pf.nodeType || pf.properties?.nodeType || 'line';
+        if (nt !== 'connect' && nt !== 'line') continue;
+        const c = pf.geometry.coordinates;
+        if (!Array.isArray(c) || c.length < 2) continue;
+        const props = pf.properties || {};
+        const tags = props.tags || {};
+        const gx = Number(props.x_grid ?? tags.x_grid ?? c[0]);
+        const gy = Number(props.y_grid ?? tags.y_grid ?? c[1]);
+        if (![gx, gy].every(Number.isFinite)) continue;
+        cols.add(Math.round(gx));
+        rows.add(Math.round(gy));
+      }
+    }
+    return { cols, rows };
+  }
+
+  /**
    * 🗺️ 繪製地圖 (Draw Map)
    * 使用 D3.js 繪製 GeoJSON 地圖數據或 Normalize Segments（站點和路線）
    * 背景強制為白色
@@ -3897,6 +3966,17 @@
       layoutUniformTickOverride?.skipDefaultBackgroundGrid
     );
 
+    const layoutVhDrawGridOcc =
+      isLayoutNetworkGridFromVhDrawLayerId(layerTab) && !skipDefaultLightBackgroundGrid
+        ? computeLayoutNetworkGridOccupiedColsRows(routeFeatures, stationFeatures)
+        : null;
+    /** 被路网／端點佔用之 col／row（layout_network）：較深色格線 */
+    const layoutVHGridStrokeVH = (isOccupied) => ({
+      stroke: isOccupied ? '#616161' : '#E0E0E0',
+      strokeW: isOccupied ? 1 : 0.5,
+      opacity: isOccupied ? 0.88 : 0.6,
+    });
+
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
@@ -3905,53 +3985,65 @@
         if (dataStore.showGrid) {
           xTicks.forEach((tick) => {
             const xPos = xScale(tick);
+            const vh = layoutVHGridStrokeVH(
+              layoutVhDrawGridOcc?.cols?.has(Number(tick)) ?? false
+            );
             gridGroup
               .append('line')
               .attr('x1', xPos)
               .attr('y1', margin.top)
               .attr('x2', xPos)
               .attr('y2', margin.top + height)
-              .attr('stroke', '#E0E0E0')
-              .attr('stroke-width', 0.5)
-              .attr('opacity', 0.6);
+              .attr('stroke', vh.stroke)
+              .attr('stroke-width', vh.strokeW)
+              .attr('opacity', vh.opacity);
           });
           yTicks.forEach((tick) => {
             const yPos = yScale(tick);
+            const vh = layoutVHGridStrokeVH(
+              layoutVhDrawGridOcc?.rows?.has(Number(tick)) ?? false
+            );
             gridGroup
               .append('line')
               .attr('x1', margin.left)
               .attr('y1', yPos)
               .attr('x2', margin.left + width)
               .attr('y2', yPos)
-              .attr('stroke', '#E0E0E0')
-              .attr('stroke-width', 0.5)
-              .attr('opacity', 0.6);
+              .attr('stroke', vh.stroke)
+              .attr('stroke-width', vh.strokeW)
+              .attr('opacity', vh.opacity);
           });
         }
       } else {
         xTicks.forEach((tick) => {
           const xPos = xScale(tick);
+          const vh = layoutVHGridStrokeVH(
+            layoutVhDrawGridOcc?.cols?.has(Number(tick)) ?? false
+          );
           gridGroup
             .append('line')
             .attr('x1', xPos)
             .attr('y1', margin.top)
             .attr('x2', xPos)
             .attr('y2', margin.top + height)
-            .attr('stroke', '#E0E0E0')
-            .attr('stroke-width', 0.5)
-            .attr('opacity', 0.6);
+            .attr('stroke', vh.stroke)
+            .attr('stroke-width', vh.strokeW)
+            .attr('opacity', vh.opacity);
         });
         yTicks.forEach((tick) => {
           const yPos = yScale(tick);
+          const vh = layoutVHGridStrokeVH(
+            layoutVhDrawGridOcc?.rows?.has(Number(tick)) ?? false
+          );
           gridGroup
             .append('line')
             .attr('x1', margin.left)
             .attr('y1', yPos)
             .attr('x2', margin.left + width)
             .attr('y2', yPos)
-            .attr('stroke', '#E0E0E0')
-            .attr('stroke-width', 0.5)
-            .attr('opacity', 0.6);
+            .attr('stroke', vh.stroke)
+            .attr('stroke-width', vh.strokeW)
+            .attr('opacity', vh.opacity);
         });
       }
     }
@@ -4021,8 +4113,7 @@
       coarseFcLayout?.type === 'FeatureCollection' &&
       Array.isArray(coarseFcLayout.features)
         ? coarseFcLayout.features.filter(
-            (f) =>
-              f?.geometry?.type === 'LineString' || f?.geometry?.type === 'MultiLineString'
+            (f) => f?.geometry?.type === 'LineString' || f?.geometry?.type === 'MultiLineString'
           )
         : routeFeatures;
 
@@ -5043,12 +5134,7 @@
         const nodeDisplay = (node) => {
           if (!node || typeof node !== 'object') return '';
           const tags = node.tags && typeof node.tags === 'object' ? node.tags : {};
-          const nameish = (
-            node.station_name ??
-            tags.station_name ??
-            tags.name ??
-            ''
-          ).trim();
+          const nameish = (node.station_name ?? tags.station_name ?? tags.name ?? '').trim();
           if (nameish) return nameish;
           return String(node.station_id ?? tags.station_id ?? '').trim();
         };
@@ -5060,7 +5146,13 @@
       };
 
       /** 中段黑點：與本站點圓 hover 同源（版面 JSON：`stationEndpointTooltipHtmlFromProps`） */
-      const showLayoutVHDrawMidStationTooltip = (event, stationPropBag, gx, gy, segmentExportRow) => {
+      const showLayoutVHDrawMidStationTooltip = (
+        event,
+        stationPropBag,
+        gx,
+        gy,
+        segmentExportRow
+      ) => {
         const gxLbl = formatAxisTickLabelMaxTwoDecimals(
           Number.isFinite(Number(gx)) ? Number(gx) : gx,
           xAxisLabelsAsFloat
