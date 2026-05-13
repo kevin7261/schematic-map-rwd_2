@@ -2,7 +2,8 @@
  * 衍生圖層：`point_orthogonal` 自「座標正規化」複製 dataJson／jsonData；
  * 「站點與路線往中心聚集」兩種線網層優先自 `point_orthogonal` 複製；若尚無陣列則改讀「座標正規化」同一欄位（便於只開本層也能顯示）。
  * `orthogonal_toward_center_vh_draw` 僅鏡像 `orthogonal_toward_center_vh` 之 dataJson／geojson 供繪製；
- * `layout_network_grid_from_vh_draw` 自繪製層複製 **dataOSM**（並解析為 geojson 供網格檢視）。
+ * `layout_network_grid_from_vh_draw` 自繪製層複製 **dataOSM**（並解析為 geojson 供網格檢視）；
+ * **`dataJson` 為與 Upper json-viewer 一致之路線匯出快照**（同源 `buildVhDrawStationRowsForLayoutMap`，含 `traffic_weight`）。
  */
 
 import {
@@ -27,6 +28,7 @@ import {
   LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
 } from './layerIds.js';
+import { buildVhDrawStationRowsForLayoutMap } from './layoutVhDrawFineIntegerGrid.js';
 
 /**
  * 將本圖層路網匯出列寫入 dataJson／jsonData／geojsonData（與座標正規化父層語意一致）。
@@ -73,8 +75,6 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
     const osm =
       draw?.dataOSM != null && String(draw.dataOSM).trim() !== '' ? String(draw.dataOSM) : null;
     derivedLayer.dataOSM = osm;
-    derivedLayer.jsonData = null;
-    derivedLayer.dataJson = null;
     if (osm) {
       try {
         const { geojsonData } = osmXmlStringToGeojsonData(osm);
@@ -102,6 +102,7 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
       derivedLayer.geojsonData = null;
     }
     derivedLayer.isLoaded = true;
+    syncLayoutNetworkGridRoutesDataJsonFromVhDraw(findLayerById, derivedLayer);
     return;
   }
 
@@ -192,6 +193,25 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
 }
 
 /**
+ * 「路網網格」：寫入與 Upper **json-viewer** 第一段優先順序同源之路由陣列（`mapDrawnExportRowsFromJsonDrawRoot`，深拷貝；含 VH 來源 segment 之 `traffic_weight`）。
+ *
+ * **必須** `jsonData` 為 null、僅 **`dataJson` 為匯出列陣列**，與 `SpaceNetworkGridJsonDataTab` 一致。
+ *
+ * @param {(id:string)=>*|null} findLayerById
+ * @param {object|null} [layoutLayer] — 若傳入則寫入該物件（鏡像 apply 時）。
+ */
+export function syncLayoutNetworkGridRoutesDataJsonFromVhDraw(findLayerById, layoutLayer) {
+  const layout = layoutLayer ?? findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID);
+  const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+  if (!layout || layout.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID || !draw) return;
+
+  const rows = buildVhDrawStationRowsForLayoutMap({ findLayerById }, draw);
+  layout.jsonData = null;
+  layout.dataJson =
+    Array.isArray(rows) && rows.length > 0 ? JSON.parse(JSON.stringify(rows)) : null;
+}
+
+/**
  * Pinia persist：開啟／reload 與 dataStore.toggle 共用。
  * @param {{ omitLoadingFlags?: boolean }} [opts]
  */
@@ -229,6 +249,14 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
     payload.vhDrawUserJsonOverride = !!layer.vhDrawUserJsonOverride;
     payload.jsonFileName = layer.jsonFileName ?? null;
+  }
+  if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID) {
+    payload.csvFileName_traffic = layer.csvFileName_traffic ?? null;
+    payload.layoutVhDrawTrafficData = layer.layoutVhDrawTrafficData ?? null;
+    payload.layoutVhDrawTrafficMissing = Array.isArray(layer.layoutVhDrawTrafficMissing)
+      ? layer.layoutVhDrawTrafficMissing
+      : [];
+    payload.layoutVhDrawShowTrafficWeights = layer.layoutVhDrawShowTrafficWeights !== false;
   }
   if (!omitLoadingFlags) {
     payload.isLoading = layer.isLoading;

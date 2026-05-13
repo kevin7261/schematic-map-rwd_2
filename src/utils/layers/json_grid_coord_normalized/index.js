@@ -38,6 +38,7 @@ export {
   refreshLineOrthogonalFromPointOrthogonalIfVisible,
   refreshOrthogonalVhMirrorDrawLayerIfVisible,
   refreshLayoutNetworkGridFromVhDrawIfVisible,
+  syncLayoutNetworkGridRoutesDataJsonFromVhDraw,
   syncJsonGridFromCoordDataJsonFromPipeline,
 } from './mirrorFromCoordNormalizedLayer.js';
 export { minimalOsmXmlFromLonLatFeatureCollection } from './minimalOsmXmlFromGeoJson.js';
