@@ -4,8 +4,9 @@
  * 1. **L 形**（兩段正交、一個轉角）：先橫後豎 `(x1,y)` 或先豎後橫 `(x,y1)`；`tryL === false` 時略過。
  * 2. 若兩種 L 皆不可行且 `tryNzIfNoL` 為 true，再試 **Z 形**（H-V-H：`(x0,y0)→(kx,y0)→(kx,y1)→(x1,y1)`）
  *    與 **N／反 N 形**（V-H-V：`(x0,y0)→(x0,ky)→(x1,ky)→(x1,y1)`），其中 `kx`、`ky` 為起迄之間的格點內點。
- * 3. 若 `tryHv45` 為 true（通常與 L／N／Z 互斥）：將 **|Δx|≠|Δy|** 之斜邊改為<strong>兩段</strong>，每段僅為水平、垂直或 45°（|Δx|=|Δy|）——
- *    先斜後正或先正後斜（兩種極小轉折枚舉）；已是單段 45° 斜線則略過。約束同 L／N／Z（交叉、共線重疊、紅藍 connect、轉角／線內部）。
+ * 3. 若 `tryHv45` 為 true（通常與 L／N／Z 互斥）：將 **|Δx|≠|Δy|** 之斜邊改為<strong>一段或兩段轉折</strong>之路徑，每段僅為水平、垂直或 45°（|Δx|=|Δy|）；
+ *    枚舉<strong>半格（0.5）刻度</strong>之轉折點。**單轉折**：先斜後正／先正後斜；**雙轉折**：斜線─直線─斜線（中間為水平或垂直）。
+ *    已是單段 45° 斜線則略過。約束同 L／N／Z。
  *
  * 約束（L 與 N／Z 共用）：ortho 硬約束過濾交叉／共線重疊／頂點落線，以及「正交線段開放內部壓過紅／藍 connect 顯示格」（含 display_x/y）；
  * 轉角格不得落在**其他折線**之任一頂點格（與他線共格視為重疊），亦不得落在**他線**紅／藍 connect 的顯示格上（除非與該斜邊兩端點之 connect 允許重合）。
@@ -18,21 +19,22 @@
 import {
   orthoFlatSegmentsGeometryInvalid,
   shallowCloneOrthoSegmentsSynced,
+  snapHalfCoord,
   syncOrthoFlatSegmentEndpoints,
 } from './axisAlignGridNetworkHillClimb.js';
 
-function num(v) {
-  return Math.round(Number(v ?? 0));
+function getXY(pt) {
+  if (Array.isArray(pt)) return [snapHalfCoord(pt[0]), snapHalfCoord(pt[1])];
+  return [snapHalfCoord(pt?.x), snapHalfCoord(pt?.y)];
 }
 
-function getXY(pt) {
-  if (Array.isArray(pt)) return [num(pt[0]), num(pt[1])];
-  return [num(pt?.x), num(pt?.y)];
+function cornerCellKey(cx, cy) {
+  return `${snapHalfCoord(cx)},${snapHalfCoord(cy)}`;
 }
 
 function cloneVertexFromTemplate(template, x, y) {
-  const rx = num(x);
-  const ry = num(y);
+  const rx = snapHalfCoord(x);
+  const ry = snapHalfCoord(y);
   const t = template ?? [0, 0];
   const j = JSON.parse(JSON.stringify(t));
   if (Array.isArray(j)) {
@@ -118,7 +120,7 @@ function connectEffectiveGridAtVertex(seg, pi) {
   if (!isConnectLikeNode(node)) return null;
   const dx = Number(node?.display_x);
   const dy = Number(node?.display_y);
-  if (Number.isFinite(dx) && Number.isFinite(dy)) return [num(dx), num(dy)];
+  if (Number.isFinite(dx) && Number.isFinite(dy)) return [snapHalfCoord(dx), snapHalfCoord(dy)];
   return getXY(pts[pi]);
 }
 
@@ -198,12 +200,12 @@ export function orthoLcCornerTouchesForeignRbConnectDisplay(
   diagonalSi,
   diagonalPiLow,
   diagonalPiHigh,
-  allowedCornerCellKeys,
+  allowedCornerCellKeys
 ) {
-  const cx = num(cornerGx);
-  const cy = num(cornerGy);
+  const cx = snapHalfCoord(cornerGx);
+  const cy = snapHalfCoord(cornerGy);
   if (!segments?.length || allowedCornerCellKeys == null) return false;
-  if (allowedCornerCellKeys.has(`${cx},${cy}`)) return false;
+  if (allowedCornerCellKeys.has(cornerCellKey(cornerGx, cornerGy))) return false;
   let lo = diagonalPiLow;
   let hi = diagonalPiHigh;
   if (lo > hi) [lo, hi] = [hi, lo];
@@ -215,7 +217,7 @@ export function orthoLcCornerTouchesForeignRbConnectDisplay(
       if (!isConnectLikeNode(nodeAtPolylineVertex(segments[sj], pj, pts))) continue;
       const g = connectEffectiveGridAtVertex(segments[sj], pj);
       if (!g) continue;
-      if (g[0] === cx && g[1] === cy) return true;
+      if (snapHalfCoord(g[0]) === cx && snapHalfCoord(g[1]) === cy) return true;
     }
   }
   return false;
@@ -228,10 +230,9 @@ export function orthoLcCornerCoincidesOtherRoutePolylineVertex(
   cornerGx,
   cornerGy,
   segments,
-  excludeSegIndex,
+  excludeSegIndex
 ) {
-  const cx = num(cornerGx);
-  const cy = num(cornerGy);
+  const ck = cornerCellKey(cornerGx, cornerGy);
   if (!segments?.length || excludeSegIndex < 0 || excludeSegIndex >= segments.length) return false;
   for (let sj = 0; sj < segments.length; sj++) {
     if (sj === excludeSegIndex) continue;
@@ -239,7 +240,7 @@ export function orthoLcCornerCoincidesOtherRoutePolylineVertex(
     if (!Array.isArray(pts)) continue;
     for (let pj = 0; pj < pts.length; pj++) {
       const [vx, vy] = getXY(pts[pj]);
-      if (vx === cx && vy === cy) return true;
+      if (cornerCellKey(vx, vy) === ck) return true;
     }
   }
   return false;
@@ -254,13 +255,16 @@ export function rbConnectAllowedCornerKeysForDiagonalEdge(segments, diagonalSi, 
     if (pIdx < 0 || pIdx >= pts.length) continue;
     if (!isConnectLikeNode(nodeAtPolylineVertex(seg, pIdx, pts))) continue;
     const g = connectEffectiveGridAtVertex(seg, pIdx);
-    if (g) allowed.add(`${g[0]},${g[1]}`);
+    if (g) allowed.add(cornerCellKey(g[0], g[1]));
   }
   return allowed;
 }
 
 export function orthoDiagonalToLOrthoGeometryOrConnectInvalid(segments) {
-  return orthoFlatSegmentsGeometryInvalid(segments) || orthoFlatSegmentsOverlapsForeignConnectDisplay(segments);
+  return (
+    orthoFlatSegmentsGeometryInvalid(segments) ||
+    orthoFlatSegmentsOverlapsForeignConnectDisplay(segments)
+  );
 }
 
 function insertCorner(segments, si, pi, cornerX, cornerY) {
@@ -275,7 +279,7 @@ function insertCorner(segments, si, pi, cornerX, cornerY) {
   if (Array.isArray(nodes) && nodes.length === lenBefore) {
     const bend = {
       node_type: 'line',
-      tags: { x_grid: num(cornerX), y_grid: num(cornerY) },
+      tags: { x_grid: snapHalfCoord(cornerX), y_grid: snapHalfCoord(cornerY) },
     };
     nodes.splice(pi + 1, 0, bend);
   }
@@ -292,16 +296,7 @@ function insertTwoCorners(segments, si, pi, c1x, c1y, c2x, c2y) {
 /**
  * 替換後 path 為 pi…pi+3 共四點；兩轉角均需通過 rb connect／他線頂點共格檢查。
  */
-function nzTwoCornersConstraintsOk(
-  trial,
-  si,
-  pi,
-  c1x,
-  c1y,
-  c2x,
-  c2y,
-  allowedCornerCellKeys,
-) {
+function nzTwoCornersConstraintsOk(trial, si, pi, c1x, c1y, c2x, c2y, allowedCornerCellKeys) {
   const lo = pi;
   const hi = pi + 3;
   if (
@@ -312,7 +307,7 @@ function nzTwoCornersConstraintsOk(
       si,
       lo,
       hi,
-      allowedCornerCellKeys,
+      allowedCornerCellKeys
     ) ||
     orthoLcCornerCoincidesOtherRoutePolylineVertex(c1x, c1y, trial, si)
   ) {
@@ -326,7 +321,7 @@ function nzTwoCornersConstraintsOk(
       si,
       lo,
       hi,
-      allowedCornerCellKeys,
+      allowedCornerCellKeys
     ) ||
     orthoLcCornerCoincidesOtherRoutePolylineVertex(c2x, c2y, trial, si)
   ) {
@@ -367,7 +362,7 @@ function buildNzReplacementsForDiagonal(
   py0,
   nx1,
   ny1,
-  allowedCornerKeys,
+  allowedCornerKeys
 ) {
   const xmin = Math.min(x0, x1);
   const xmax = Math.max(x0, x1);
@@ -379,9 +374,7 @@ function buildNzReplacementsForDiagonal(
     const trial = JSON.parse(JSON.stringify(work));
     if (!insertTwoCorners(trial, si, pi, kx, y0, kx, y1)) continue;
     syncOrthoFlatSegmentEndpoints(trial);
-    if (
-      !nzTwoCornersConstraintsOk(trial, si, pi, kx, y0, kx, y1, allowedCornerKeys)
-    ) {
+    if (!nzTwoCornersConstraintsOk(trial, si, pi, kx, y0, kx, y1, allowedCornerKeys)) {
       continue;
     }
     viable.push({
@@ -395,9 +388,7 @@ function buildNzReplacementsForDiagonal(
     const trial = JSON.parse(JSON.stringify(work));
     if (!insertTwoCorners(trial, si, pi, x0, ky, x1, ky)) continue;
     syncOrthoFlatSegmentEndpoints(trial);
-    if (
-      !nzTwoCornersConstraintsOk(trial, si, pi, x0, ky, x1, ky, allowedCornerKeys)
-    ) {
+    if (!nzTwoCornersConstraintsOk(trial, si, pi, x0, ky, x1, ky, allowedCornerKeys)) {
       continue;
     }
     viable.push({
@@ -434,9 +425,103 @@ function hv45StraightContinuationScore(x0, y0, cx, cy, x1, y1, px0, py0, nx1, ny
   return s;
 }
 
+const HV45_EPS = 1e-9;
+
+function isOrthoHV(ax, ay, bx, by) {
+  const axs = snapHalfCoord(ax);
+  const ays = snapHalfCoord(ay);
+  const bxs = snapHalfCoord(bx);
+  const bys = snapHalfCoord(by);
+  return axs === bxs || ays === bys;
+}
+
+function isDiag45HV(ax, ay, bx, by) {
+  const axs = snapHalfCoord(ax);
+  const ays = snapHalfCoord(ay);
+  const bxs = snapHalfCoord(bx);
+  const bys = snapHalfCoord(by);
+  const ddx = bxs - axs;
+  const ddy = bys - ays;
+  if (ddx === 0 || ddy === 0) return false;
+  return Math.abs(ddx) === Math.abs(ddy);
+}
+
+function hv45TripletSegmentsOk(ax, ay, px, py, qx, qy, bx, by) {
+  const len = (x1, y1, x2, y2) => Math.abs(x2 - x1) + Math.abs(y2 - y1);
+  if (
+    len(ax, ay, px, py) < HV45_EPS ||
+    len(px, py, qx, qy) < HV45_EPS ||
+    len(qx, qy, bx, by) < HV45_EPS
+  ) {
+    return false;
+  }
+  return (
+    isDiag45HV(ax, ay, px, py) &&
+    isOrthoHV(px, py, qx, qy) &&
+    isDiag45HV(qx, qy, bx, by)
+  );
+}
+
+function hv45DdContinuationScore(x0, y0, px, py, qx, qy, x1, y1, px0, py0, nx1, ny1) {
+  let s = 0;
+  if (px0 != null && py0 != null && collinearSameDirection(px0, py0, x0, y0, px, py)) s++;
+  if (nx1 != null && ny1 != null && collinearSameDirection(qx, qy, x1, y1, nx1, ny1)) s++;
+  return s;
+}
+
+/** 斜─橫─斜：中間為水平 */
+function collectHv45DodHorizontalMiddle(x0, y0, x1, y1, sx, sy, adx, ady) {
+  const out = [];
+  const seen = new Set();
+  const maxSteps = (adx + ady + 4) * 2;
+  for (let ki = 1; ki <= maxSteps; ki++) {
+    const k = ki / 2;
+    const Px = x0 + sx * k;
+    const Py = y0 + sy * k;
+    const legQB = Math.abs(y1 - Py);
+    if (legQB < HV45_EPS) continue;
+    for (const sign of [-1, 1]) {
+      const Qx = x1 + sign * legQB;
+      const Qy = Py;
+      if (Math.abs(Qx - Px) < HV45_EPS) continue;
+      if (!hv45TripletSegmentsOk(x0, y0, Px, Py, Qx, Qy, x1, y1)) continue;
+      const key = `${cornerCellKey(Px, Py)}|${cornerCellKey(Qx, Qy)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ px: Px, py: Py, qx: Qx, qy: Qy });
+    }
+  }
+  return out;
+}
+
+/** 斜─豎─斜：中間為垂直 */
+function collectHv45DodVerticalMiddle(x0, y0, x1, y1, sx, sy, adx, ady) {
+  const out = [];
+  const seen = new Set();
+  const maxSteps = (adx + ady + 4) * 2;
+  for (let ki = 1; ki <= maxSteps; ki++) {
+    const k = ki / 2;
+    const Px = x0 + sx * k;
+    const Py = y0 + sy * k;
+    const legQB = Math.abs(x1 - Px);
+    if (legQB < HV45_EPS) continue;
+    for (const sign of [-1, 1]) {
+      const Qx = Px;
+      const Qy = y1 + sign * legQB;
+      if (Math.abs(Qy - Py) < HV45_EPS) continue;
+      if (!hv45TripletSegmentsOk(x0, y0, Px, Py, Qx, Qy, x1, y1)) continue;
+      const key = `${cornerCellKey(Px, Py)}|${cornerCellKey(Qx, Qy)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ px: Px, py: Py, qx: Qx, qy: Qy });
+    }
+  }
+  return out;
+}
+
 /**
- * 將 |Δx|≠|Δy| 之斜邊改為兩段（先斜後正／先正後斜），每段僅 H、V 或 45°。
- * @returns {Array<{ trial: object[], score: number, kind: 'do'|'od' }>}
+ * |Δx|≠|Δy| 斜邊 → 一段或兩段轉折；轉折座標對齊 **0.5 格**。含單轉折（先斜後正／先正後斜）與雙轉折（斜─直─斜）。
+ * @returns {Array<{ trial: object[], score: number, kind: string, bends: number }>}
  */
 function buildHv45ReplacementsForDiagonal(
   work,
@@ -451,7 +536,7 @@ function buildHv45ReplacementsForDiagonal(
   nx1,
   ny1,
   allowedCornerKeys,
-  preferVertFirst,
+  preferVertFirst
 ) {
   const dx = x1 - x0;
   const dy = y1 - y0;
@@ -467,16 +552,19 @@ function buildHv45ReplacementsForDiagonal(
   const cdo = [x0 + sx * k, y0 + sy * k];
   const cod = adx > ady ? [x1 - sx * ady, y0] : [x0, y1 - sy * adx];
 
-  const raw = [
+  const rawOne = [
     { cx: cdo[0], cy: cdo[1], kind: /** @type {'do'} */ ('do') },
     { cx: cod[0], cy: cod[1], kind: /** @type {'od'} */ ('od') },
   ];
-  const seen = new Set();
-  for (const { cx, cy, kind } of raw) {
-    const key = `${cx},${cy}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
+  const seenOne = new Set();
+  for (const { cx, cy, kind } of rawOne) {
+    const key = cornerCellKey(cx, cy);
+    if (seenOne.has(key)) continue;
+    seenOne.add(key);
+    if ((snapHalfCoord(cx) === snapHalfCoord(x0) && snapHalfCoord(cy) === snapHalfCoord(y0)) ||
+        (snapHalfCoord(cx) === snapHalfCoord(x1) && snapHalfCoord(cy) === snapHalfCoord(y1))) {
+      continue;
+    }
 
     const trial = JSON.parse(JSON.stringify(work));
     if (!insertCorner(trial, si, pi, cx, cy)) continue;
@@ -489,7 +577,7 @@ function buildHv45ReplacementsForDiagonal(
         si,
         pi,
         pi + 2,
-        allowedCornerKeys,
+        allowedCornerKeys
       ) ||
       orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
       orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
@@ -500,12 +588,36 @@ function buildHv45ReplacementsForDiagonal(
       trial,
       score: hv45StraightContinuationScore(x0, y0, cx, cy, x1, y1, px0, py0, nx1, ny1),
       kind,
+      bends: 1,
+    });
+  }
+
+  const dodList = [
+    ...collectHv45DodHorizontalMiddle(x0, y0, x1, y1, sx, sy, adx, ady),
+    ...collectHv45DodVerticalMiddle(x0, y0, x1, y1, sx, sy, adx, ady),
+  ];
+  const seenDod = new Set();
+  for (const { px, py, qx, qy } of dodList) {
+    const dk = `${cornerCellKey(px, py)}|${cornerCellKey(qx, qy)}`;
+    if (seenDod.has(dk)) continue;
+    seenDod.add(dk);
+    const trial = JSON.parse(JSON.stringify(work));
+    if (!insertTwoCorners(trial, si, pi, px, py, qx, qy)) continue;
+    syncOrthoFlatSegmentEndpoints(trial);
+    if (!nzTwoCornersConstraintsOk(trial, si, pi, px, py, qx, qy, allowedCornerKeys)) continue;
+    viable.push({
+      trial,
+      score: hv45DdContinuationScore(x0, y0, px, py, qx, qy, x1, y1, px0, py0, nx1, ny1),
+      kind: 'dod',
+      bends: 2,
     });
   }
 
   viable.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
+    if (a.bends !== b.bends) return a.bends - b.bends;
     const pri = (v) => {
+      if (v.bends !== 1) return 1;
       if (v.kind === 'od' && ady > adx) return preferVertFirst ? 2 : 0;
       if (v.kind === 'od' && adx > ady) return preferVertFirst ? 0 : 2;
       return 1;
@@ -559,7 +671,7 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
             si,
             pi,
             pi + 2,
-            allowedCornerKeys,
+            allowedCornerKeys
           ) ||
           orthoLcCornerCoincidesOtherRoutePolylineVertex(cx, cy, trial, si) ||
           orthoDiagonalToLOrthoGeometryOrConnectInvalid(trial)
@@ -597,7 +709,7 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
         py0,
         nx1,
         ny1,
-        allowedCornerKeys,
+        allowedCornerKeys
       );
       if (nzViable.length > 0) {
         nzViable.sort((a, b) => {
@@ -634,7 +746,7 @@ function attemptFirstDiagonalReplacementOnRoute(work, routeSegmentIndex, options
           nx1,
           ny1,
           allowedCornerKeys,
-          preferVertFirst,
+          preferVertFirst
         );
         if (hvViable.length > 0) {
           const nextHv = hvViable[0].trial;
@@ -681,7 +793,9 @@ export function replaceOneDiagonalInRoute(flatSegments, routeSegmentIndex, optio
     segments: next,
     replacedCount,
     message:
-      replacedCount === 0 ? '該路線上無可替換斜邊（或皆違反約束）。' : `已於路線 #${si + 1} 替換 1 處斜邊。`,
+      replacedCount === 0
+        ? '該路線上無可替換斜邊（或皆違反約束）。'
+        : `已於路線 #${si + 1} 替換 1 處斜邊。`,
   };
 }
 
@@ -765,7 +879,11 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
     let replacedThisRound = false;
 
     for (let si = 0; si < work.length; si++) {
-      const { work: next, replacedCount: rc } = attemptFirstDiagonalReplacementOnRoute(work, si, opts);
+      const { work: next, replacedCount: rc } = attemptFirstDiagonalReplacementOnRoute(
+        work,
+        si,
+        opts
+      );
       if (rc > 0) {
         work = next;
         replacedCount += rc;
@@ -789,9 +907,9 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
     modePhrase = '僅 N／Z 形三正交段';
     emptyPhrase = '沒有可替換的非正交邊，或 N／Z 皆違反約束。';
   } else if (!tryL && !tryNz && tryHv45Only) {
-    modePhrase = '僅水平／垂直／45°（兩段；先斜後正或先正後斜）';
+    modePhrase = '僅水平／垂直／45°（0.5 格轉折；單轉折兩段或雙轉折斜─直─斜）';
     emptyPhrase =
-      '沒有可替換之 |Δx|≠|Δy| 斜邊，或兩種路徑皆違反約束（若已為單段 45° 則不需替換）。';
+      '沒有可替換之 |Δx|≠|Δy| 斜邊，或所有候選皆違反約束（若已為單段 45° 則不需替換）。';
   }
 
   return {
@@ -799,8 +917,6 @@ export function replaceDiagonalEdgesWithLOrtho(flatSegments, options = {}) {
     segments: work,
     replacedCount,
     message:
-      replacedCount === 0
-        ? emptyPhrase
-        : `已替換 ${replacedCount} 條非正交邊（${modePhrase}）。`,
+      replacedCount === 0 ? emptyPhrase : `已替換 ${replacedCount} 條非正交邊（${modePhrase}）。`,
   };
 }

@@ -11,9 +11,16 @@ function num(v) {
   return Math.round(Number(v ?? 0));
 }
 
+/** 對齊至 0.5 格（整數輸入維持整數）；供含斜線／半格轉折之路網讀取座標 */
+export function snapHalfCoord(v) {
+  const n = Number(v ?? 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 2) / 2;
+}
+
 function getXY(pt) {
-  if (Array.isArray(pt)) return [num(pt[0]), num(pt[1])];
-  return [num(pt?.x), num(pt?.y)];
+  if (Array.isArray(pt)) return [snapHalfCoord(pt[0]), snapHalfCoord(pt[1])];
+  return [snapHalfCoord(pt?.x), snapHalfCoord(pt?.y)];
 }
 
 function setXY(seg, idx, x, y) {

@@ -6177,9 +6177,7 @@
       });
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
-      window.alert(
-        `已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）。`
-      );
+      window.alert(`已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）。`);
     } catch (err) {
       console.error(err);
       window.alert('讀取或解析 JSON 失敗（詳見控制台）。');
@@ -6235,7 +6233,8 @@
   };
 
   function vhDrawDiagonalOrthoOptsFor(kind) {
-    if (kind === 'nz') return { preferVertFirst: true, tryL: false, tryNzIfNoL: true, tryHv45: false };
+    if (kind === 'nz')
+      return { preferVertFirst: true, tryL: false, tryNzIfNoL: true, tryHv45: false };
     if (kind === 'hv45')
       return { preferVertFirst: true, tryL: false, tryNzIfNoL: false, tryHv45: true };
     return { preferVertFirst: true, tryL: true, tryNzIfNoL: false, tryHv45: false };
@@ -6335,7 +6334,7 @@
         );
       } else if (kind === 'hv45') {
         window.alert(
-          `已將 ${r.replacedCount} 條 |Δx|≠|Δy| 之斜邊改為兩段路徑，每段僅水平、垂直或 45°（枚舉「先斜後正」與「先正後斜」；若該邊已為單段 45° 則略過）。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則「先直後橫」偏好。`
+          `已將 ${r.replacedCount} 條 |Δx|≠|Δy| 之斜邊改為僅含水平／垂直／45° 之路徑：轉折座標對齊 **0.5 格**，含<strong>單轉折</strong>（兩段：先斜後正或先正後斜）與<strong>雙轉折</strong>（三段：斜線─直線─斜線）。若該邊已為單段 45° 則略過。約束：無交叉、無與他線共線重疊、線段開放內部不壓紅／藍 connect、轉角不重疊他線紅／藍 connect 顯示格且轉角不與他線頂點共格；違反則略過該邊。平手時優先與鄰邊串成直線，再平手則較少轉折優先，再「先直後橫」偏好。`
         );
       } else {
         window.alert(
@@ -10108,7 +10107,12 @@
 
           <div class="my-title-xs-gray pb-2">斜向邊 → H／V／45°</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            不試 L、不試 N／Z。僅處理 <strong>|Δx|≠|Δy|</strong> 之斜邊：改為<strong>兩段</strong>，每段僅水平、垂直或 45°（|Δx|=|Δy|）；枚舉「先斜後正」與「先正後斜」兩條極短路徑。若該邊已是單段 45° 則略過。約束同 L／N／Z（交叉／共線重疊／壓紅藍／轉角與他線頂點共格）。
+            不試 L、不試 N／Z。僅處理
+            <strong>|Δx|≠|Δy|</strong> 之斜邊：每段僅水平、垂直或 45°（|Δx|=|Δy|）。轉折可在<strong
+              >0.5 格</strong
+            >（枚舉半格刻度）。含<strong>單轉折</strong>兩段（先斜後正／先正後斜）與<strong
+              >雙轉折</strong
+            >三段（斜線─直線─斜線）。若該邊已是單段 45° 則略過。約束同 L／N／Z。
           </div>
           <div class="d-grid gap-2 mb-2">
             <button
@@ -10142,7 +10146,7 @@
               :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive"
               @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'hv45')"
             >
-              一鍵全路網：|Δx|≠|Δy| 斜邊 → H／V／45°（兩段）
+              一鍵全路網：|Δx|≠|Δy| 斜邊 → H／V／45°（0.5 格·一至兩轉折）
             </button>
           </div>
           <div
@@ -10167,7 +10171,8 @@
           <div class="my-title-xs-gray pb-2">細格整數座標（僅檢視）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
             取各欄／各列區間標籤數字之<strong>全域最大值 M</strong>，在 x、y 兩向皆以
-            <strong>M+1</strong> 倍粗格並四捨五入；資料層 geojson 不變，紅／藍端點與路線一併變換。各區間數字不同時仍採單一
+            <strong>M+1</strong> 倍粗格並四捨五入；資料層 geojson
+            不變，紅／藍端點與路線一併變換。各區間數字不同時仍採單一
             M，故細格範圍由「最吃緊」區間決定。
           </div>
           <button
