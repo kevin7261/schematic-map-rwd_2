@@ -10133,9 +10133,8 @@
             不試 L、不試 N／Z。僅處理
             <strong>|Δx|≠|Δy|</strong> 之斜邊：每段僅水平、垂直或 45°（|Δx|=|Δy|）。轉折可在<strong
               >0.5 格</strong
-            >（枚舉半格刻度）。含<strong>單轉折</strong>兩段（先斜後正／先正後斜）與<strong
-              >雙轉折</strong
-            >三段（斜線─直線─斜線）。若該邊已是單段 45° 則略過。約束同 L／N／Z。
+            >（枚舉半格刻度）。含<strong>單轉折</strong>兩段（先斜後正／先正後斜）與<strong>雙轉折</strong>三段（斜線─直線─斜線）。若該邊已是單段
+            45° 則略過。約束同 L／N／Z。
           </div>
           <div class="d-grid gap-2 mb-2">
             <button
@@ -10234,9 +10233,7 @@
           <button
             type="button"
             class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-secondary mb-2"
-            :disabled="
-              isExecuting || layer.isLoading || !layer.layoutVhDrawFineGridTurnRbMidDots
-            "
+            :disabled="isExecuting || layer.isLoading || !layer.layoutVhDrawFineGridTurnRbMidDots"
             @click="onLayoutNetworkDisableFineGridTurnRbMidDotsClick(layer)"
           >
             關閉：還原僅沿路徑細格對齊

@@ -52,9 +52,13 @@ export {
   gridXYAtGridDistanceAlongLineString,
   integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString,
   integerLatticeBlackDotAtPixelArcLengthAlongLineString,
+  integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString,
   layoutVhDrawInteriorTurnVertexIndices,
   computeLayoutVhDrawFineBlackDotsTurnRbRedistribute,
   snapSegmentInteriorToIntegerLattice,
+  snapSegmentInteriorToFineSubgridLattice,
+  snapBlackDotGxGyToFineSubgridAlongPolyline,
+  snapBlackDotGxGyToIntegerLatticeAlongPolyline,
 } from './layoutVhDrawFineIntegerGrid.js';
 export {
   lineStringFeatureCollectionFromSpaceNetwork,

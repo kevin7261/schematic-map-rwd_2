@@ -111,7 +111,10 @@
     featureCollectionGridBounds,
     computeLayoutVhDrawFineGridSpec,
     integerLatticeBlackDotAtPixelArcLengthAlongLineString,
+    integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString,
     computeLayoutVhDrawFineBlackDotsTurnRbRedistribute,
+    snapBlackDotGxGyToFineSubgridAlongPolyline,
+    snapBlackDotGxGyToIntegerLatticeAlongPolyline,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -4078,9 +4081,6 @@
       Array.isArray(coarseFcLayout.features)
         ? computeLayoutVhDrawFineGridSpec(dataStore, coarseFcLayout)
         : null;
-    /** Control 區「中段黑點（細格加值）」開關：與細格並用 */
-    const layoutFineGridTurnRbMidDots =
-      !!layoutFineGridSpec && !!layoutLayerForFineGrid?.layoutVhDrawFineGridTurnRbMidDots;
     let layoutBlackMaxXTicks = xTicks;
     let layoutBlackMaxYTicks = yTicks;
     if (
@@ -4938,8 +4938,10 @@
     }
 
     // layout_network_grid_from_vh_draw：JSON segment.stations 中段車站；
-    // — 細格：**像素弧長** 對齊錨區（轉折吸附、紅藍車站為錨後區間均分）再整數格點；
-    // — 非細格：僅沿路徑視圖像素弧長插值。
+    // — 共通：弧長最接近轉折者吸至該頂整數格；錨含轉折與沿路投影在線上的紅／藍車站；
+    //   其餘在各錨之間沿像素弧長均分後再對齊（resize 會重算弧長）。
+    // — 粗格視圖：對齊至與背景插入內網格同源（computeLayoutVhDrawFineGridSpec 全域 M）。
+    // — 已套用細格座標視圖：對齊至細格整數網線。
     if (isLayoutNetworkGridFromVhDrawLayerId(layerTab)) {
       const drawLayer = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
       const exportRowsForSta = buildVhDrawStationRowsForLayoutMap(dataStore, drawLayer);
@@ -5143,9 +5145,9 @@
           .style('top', `${event.pageY - 10}px`);
       };
 
-      /** 細格：紅（connect）／藍線（line）座標若在該線段格誤差內可作為區間錨（與轉折共用）。 */
+      /** layout_network_grid_from_vh_draw：紅／藍站（在线上投影）為弧長區間錨，與轉折並用（resize 亦同）。 */
       const rbAnchorGxGyForFineLayout =
-        layoutFineGridTurnRbMidDots && stationFeatures?.length > 0
+        stationFeatures?.length > 0
           ? stationFeatures
               .filter((pf) => {
                 if (!pf?.geometry || pf.geometry.type !== 'Point') return false;
@@ -5157,6 +5159,13 @@
                 return { gx: Number(c[0]), gy: Number(c[1]) };
               })
           : [];
+      /** 粗格視圖：與插入內線同源之全域 M／(x0,y0)，用於對齊至細分格子。 */
+      const layoutMidDotsFineSubgridSpec =
+        !layoutFineGridSpec &&
+        coarseFcLayout?.type === 'FeatureCollection' &&
+        Array.isArray(coarseFcLayout.features)
+          ? computeLayoutVhDrawFineGridSpec(dataStore, coarseFcLayout)
+          : null;
 
       const nearestSegIndexOnGridPolyline = (gridPts, gx, gy) => {
         if (!Array.isArray(gridPts) || gridPts.length < 2) return -1;
@@ -5229,41 +5238,82 @@
         } else if (!(totalPx > 0)) {
           continue;
         }
-        const redisFine = layoutFineGridTurnRbMidDots
-          ? computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
-              gridPts,
-              nSta,
-              (gx, gy) => [xScale(gx), yScale(gy)],
-              { rbStationsGxGy: rbAnchorGxGyForFineLayout }
-            )
-          : null;
+        const redisFine = computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
+          gridPts,
+          nSta,
+          (gx, gy) => [xScale(gx), yScale(gy)],
+          {
+            rbStationsGxGy: rbAnchorGxGyForFineLayout,
+            fineSubgridSpec:
+              layoutMidDotsFineSubgridSpec &&
+              Number.isFinite(layoutMidDotsFineSubgridSpec.m) &&
+              Math.floor(layoutMidDotsFineSubgridSpec.m) > 0
+                ? layoutMidDotsFineSubgridSpec
+                : null,
+          }
+        );
         const dotRadius = 2.5;
         for (let k = 1; k <= nSta; k++) {
           let gxy;
           let dotSegIndex = -1;
-          if (layoutFineGridSpec) {
-            gxy = redisFine?.[k - 1] ?? null;
-            if (gxy) {
-              dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
-            }
-            if (!gxy) {
-              const targetPx = (k * totalPx) / (nSta + 1);
+          gxy = redisFine?.[k - 1] ?? null;
+          if (gxy) {
+            dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
+          }
+          if (!gxy) {
+            const targetPx = (k * totalPx) / (nSta + 1);
+            if (layoutFineGridSpec) {
               gxy = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
                 gridPts,
                 targetPx,
                 (gx, gy) => [xScale(gx), yScale(gy)]
               );
-              if (gxy) {
-                dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
-              }
+            } else if (
+              layoutMidDotsFineSubgridSpec &&
+              Number.isFinite(layoutMidDotsFineSubgridSpec.m) &&
+              Math.floor(layoutMidDotsFineSubgridSpec.m) > 0
+            ) {
+              gxy = integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString(
+                gridPts,
+                targetPx,
+                (gx, gy) => [xScale(gx), yScale(gy)],
+                layoutMidDotsFineSubgridSpec
+              );
+            } else {
+              gxy = gridXYAtPixelDistanceAlong(gridPts, targetPx);
             }
-            if (!gxy) continue;
-          } else {
-            const target = (k * totalPx) / (nSta + 1);
-            gxy = gridXYAtPixelDistanceAlong(gridPts, target);
-            if (!gxy) continue;
-            dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
+            if (gxy) {
+              dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
+            }
           }
+          if (!gxy) continue;
+
+          /** 強制落在插入細分／細格視圖之合法網格座標（resize 弧度重算後仍對齊） */
+          const midDotLatticeEps = 1e-3;
+          if (layoutFineGridSpec) {
+            const clampedInt = snapBlackDotGxGyToIntegerLatticeAlongPolyline(
+              gridPts,
+              gxy[0],
+              gxy[1],
+              midDotLatticeEps
+            );
+            if (clampedInt) gxy = clampedInt;
+          } else if (
+            layoutMidDotsFineSubgridSpec &&
+            Number.isFinite(layoutMidDotsFineSubgridSpec.m) &&
+            Math.floor(layoutMidDotsFineSubgridSpec.m) > 0
+          ) {
+            const clampedFine = snapBlackDotGxGyToFineSubgridAlongPolyline(
+              gridPts,
+              gxy[0],
+              gxy[1],
+              layoutMidDotsFineSubgridSpec,
+              midDotLatticeEps
+            );
+            if (clampedFine) gxy = clampedFine;
+          }
+
+          dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
           if (
             dotSegIndex >= 0 &&
             Number.isFinite(Number(gxy[0])) &&

@@ -292,6 +292,277 @@ export function snapSegmentInteriorToIntegerLattice(ax, ay, bx, by, rawGx, rawGy
   return [ax0 + sx * bestK, ay0 + sy * bestK];
 }
 
+/**
+ * 與插入之 (M+1) 細分網格一致：粗格座標下，區間內之點須滿足
+ * \( (gx-x0)\cdot s,\ (gy-y0)\cdot s \) 為整數（s=M+1）；
+ * orthogonal / gcd 斜段之合法內點，取距 (rawGx, rawGy) 最近者。
+ *
+ * @param {{ m: number, x0: number, y0: number }} spec
+ */
+export function snapSegmentInteriorToFineSubgridLattice(
+  ax,
+  ay,
+  bx,
+  by,
+  rawGx,
+  rawGy,
+  spec,
+  eps = 1e-3
+) {
+  if (![ax, ay, bx, by, rawGx, rawGy].every(Number.isFinite)) return null;
+  if (
+    !spec ||
+    !Number.isFinite(spec.m) ||
+    !Number.isFinite(spec.x0) ||
+    !Number.isFinite(spec.y0)
+  ) {
+    return snapSegmentInteriorToIntegerLattice(ax, ay, bx, by, rawGx, rawGy, eps);
+  }
+  const M = Math.max(0, Math.floor(Number(spec.m)));
+  const s = M + 1;
+  if (s < 2) return snapSegmentInteriorToIntegerLattice(ax, ay, bx, by, rawGx, rawGy, eps);
+
+  const x0 = Number(spec.x0);
+  const y0 = Number(spec.y0);
+  const dx = bx - ax;
+  const dy = by - ay;
+  let bestGx = NaN;
+  let bestGy = NaN;
+  let bestDist = Infinity;
+
+  const consider = (gx, gy) => {
+    if (![gx, gy].every(Number.isFinite)) return;
+    const fx = (gx - x0) * s;
+    const fy = (gy - y0) * s;
+    if (Math.abs(fx - Math.round(fx)) > eps || Math.abs(fy - Math.round(fy)) > eps) return;
+    const wx = bx - ax;
+    const wy = by - ay;
+    const vv = wx * wx + wy * wy;
+    if (!(vv > 1e-24)) return;
+    const t = ((gx - ax) * wx + (gy - ay) * wy) / vv;
+    if (t <= eps || t >= 1 - eps) return;
+    const px = ax + t * wx;
+    const py = ay + t * wy;
+    if (Math.hypot(px - gx, py - gy) > 2e-2) return;
+    const d = (gx - rawGx) ** 2 + (gy - rawGy) ** 2;
+    if (d < bestDist - 1e-18) {
+      bestDist = d;
+      bestGx = gx;
+      bestGy = gy;
+    }
+  };
+
+  if (Math.abs(dx) < eps && Math.abs(dy) < eps) {
+    return [Math.round(ax), Math.round(ay)];
+  }
+  if (Math.abs(dx) < eps && Math.abs(dy) >= eps) {
+    const gx = ax;
+    const lo = Math.min(ay, by);
+    const hi = Math.max(ay, by);
+    const fyLo = Math.ceil((lo + eps - y0) * s);
+    const fyHi = Math.floor((hi - eps - y0) * s);
+    if (fyLo > fyHi) return null;
+    const fyT = Math.round((rawGy - y0) * s);
+    const fy = Math.max(fyLo, Math.min(fyHi, fyT));
+    return [gx, y0 + fy / s];
+  }
+  if (Math.abs(dy) < eps && Math.abs(dx) >= eps) {
+    const gy = ay;
+    const lo = Math.min(ax, bx);
+    const hi = Math.max(ax, bx);
+    const fxLo = Math.ceil((lo + eps - x0) * s);
+    const fxHi = Math.floor((hi - eps - x0) * s);
+    if (fxLo > fxHi) return null;
+    const fxT = Math.round((rawGx - x0) * s);
+    const fx = Math.max(fxLo, Math.min(fxHi, fxT));
+    return [x0 + fx / s, gy];
+  }
+
+  const minx = Math.min(ax, bx);
+  const maxx = Math.max(ax, bx);
+  const nxA = Math.floor((minx - x0) * s) - 2;
+  const nxB = Math.ceil((maxx - x0) * s) + 2;
+
+  if (Math.abs(dx) >= eps) {
+    for (let nx = nxA; nx <= nxB; nx++) {
+      const gx = x0 + nx / s;
+      const t = (gx - ax) / dx;
+      if (t <= eps || t >= 1 - eps) continue;
+      const gy = ay + t * dy;
+      const ny = Math.round((gy - y0) * s);
+      const gySnap = y0 + ny / s;
+      consider(gx, gySnap);
+    }
+  }
+
+  const miny = Math.min(ay, by);
+  const maxy = Math.max(ay, by);
+  const nyA = Math.floor((miny - y0) * s) - 2;
+  const nyB = Math.ceil((maxy - y0) * s) + 2;
+
+  if (Math.abs(dy) >= eps) {
+    for (let ny = nyA; ny <= nyB; ny++) {
+      const gy = y0 + ny / s;
+      const t = (gy - ay) / dy;
+      if (t <= eps || t >= 1 - eps) continue;
+      const gx = ax + t * dx;
+      const nx = Math.round((gx - x0) * s);
+      const gxSnap = x0 + nx / s;
+      consider(gxSnap, gy);
+    }
+  }
+
+  if (Number.isFinite(bestGx) && Number.isFinite(bestGy)) return [bestGx, bestGy];
+  return snapSegmentInteriorToIntegerLattice(ax, ay, bx, by, rawGx, rawGy, eps);
+}
+
+/**
+ * 像素弧長定位後對齊至 **粗格視圖** 插入之 (M+1) 細分網格（與 `computeLayoutVhDrawFineGridSpec` 同源）。
+ *
+ * @param {{ m: number, x0: number, y0: number }} fineSubgridSpec
+ */
+export function integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString(
+  gridPts,
+  targetPx,
+  gridToPx,
+  fineSubgridSpec,
+  eps = 1e-3
+) {
+  const hit = gridXYAndSegAtPixelDistanceAlong(gridPts, targetPx, gridToPx);
+  if (!hit) return null;
+  const g0 = gridPts[hit.segIndex];
+  const g1 = gridPts[hit.segIndex + 1];
+  if (!g0 || !g1) return null;
+  return snapSegmentInteriorToFineSubgridLattice(
+    g0[0],
+    g0[1],
+    g1[0],
+    g1[1],
+    hit.gx,
+    hit.gy,
+    fineSubgridSpec,
+    eps
+  );
+}
+
+function latticeAlmostInt(x, tol) {
+  return Math.abs(Number(x) - Math.round(Number(x))) <= tol;
+}
+
+/**
+ * 粗格視圖：將 (gx,gy) 對到折線上距離最近且落在插入細分網格整數座標（含合法「格点」頂點）之點。
+ */
+export function snapBlackDotGxGyToFineSubgridAlongPolyline(gridPts, gx, gy, spec, eps = 1e-3) {
+  if (
+    !Array.isArray(gridPts) ||
+    gridPts.length < 1 ||
+    !Number.isFinite(Number(gx)) ||
+    !Number.isFinite(Number(gy))
+  ) {
+    return null;
+  }
+  if (
+    !spec ||
+    !Number.isFinite(spec.m) ||
+    !Number.isFinite(spec.x0) ||
+    !Number.isFinite(spec.y0)
+  ) {
+    return null;
+  }
+  const M = Math.max(0, Math.floor(Number(spec.m)));
+  const s = M + 1;
+  if (s < 2) return null;
+  const x0 = Number(spec.x0);
+  const y0 = Number(spec.y0);
+  let best = null;
+  let bestD = Infinity;
+  for (let vi = 0; vi < gridPts.length; vi++) {
+    const vx = Number(gridPts[vi][0]);
+    const vy = Number(gridPts[vi][1]);
+    if (![vx, vy].every(Number.isFinite)) continue;
+    const ffx = (vx - x0) * s;
+    const ffy = (vy - y0) * s;
+    if (!latticeAlmostInt(ffx, eps) || !latticeAlmostInt(ffy, eps)) continue;
+    const d = (vx - gx) ** 2 + (vy - gy) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = [vx, vy];
+    }
+  }
+  for (let i = 0; i < gridPts.length - 1; i++) {
+    const g0 = gridPts[i];
+    const g1 = gridPts[i + 1];
+    if (!Array.isArray(g0) || !Array.isArray(g1)) continue;
+    const snapped = snapSegmentInteriorToFineSubgridLattice(
+      g0[0],
+      g0[1],
+      g1[0],
+      g1[1],
+      gx,
+      gy,
+      spec,
+      eps
+    );
+    if (!snapped) continue;
+    const d = (snapped[0] - gx) ** 2 + (snapped[1] - gy) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = snapped;
+    }
+  }
+  return best;
+}
+
+/**
+ * 細格座標視圖：對到折線上距離最近之 **整數網格交叉**（與整數格對齊）。
+ */
+export function snapBlackDotGxGyToIntegerLatticeAlongPolyline(gridPts, gx, gy, eps = 1e-3) {
+  if (
+    !Array.isArray(gridPts) ||
+    gridPts.length < 1 ||
+    !Number.isFinite(Number(gx)) ||
+    !Number.isFinite(Number(gy))
+  ) {
+    return null;
+  }
+  let best = null;
+  let bestD = Infinity;
+  for (let vi = 0; vi < gridPts.length; vi++) {
+    const vx = Number(gridPts[vi][0]);
+    const vy = Number(gridPts[vi][1]);
+    if (![vx, vy].every(Number.isFinite)) continue;
+    if (!latticeAlmostInt(vx, eps) || !latticeAlmostInt(vy, eps)) continue;
+    const xr = Math.round(vx);
+    const yr = Math.round(vy);
+    const d = (xr - gx) ** 2 + (yr - gy) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = [xr, yr];
+    }
+  }
+  for (let i = 0; i < gridPts.length - 1; i++) {
+    const g0 = gridPts[i];
+    const g1 = gridPts[i + 1];
+    if (!Array.isArray(g0) || !Array.isArray(g1)) continue;
+    const snapped = snapSegmentInteriorToIntegerLattice(
+      g0[0],
+      g0[1],
+      g1[0],
+      g1[1],
+      gx,
+      gy,
+      eps
+    );
+    if (!snapped) continue;
+    const d = (snapped[0] - gx) ** 2 + (snapped[1] - gy) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = snapped;
+    }
+  }
+  return best;
+}
+
 function cumPxAtVertices(gridPts, gridToPx) {
   const n = gridPts.length;
   const cum = new Array(n).fill(0);
@@ -406,7 +677,7 @@ function greedyAssignKsToTurnVertices(turnVis, cumPx, nSta, totalPx) {
 /**
  * 細格中段黑點：① 對每個轉折頂以 **弧長最接近** 指派一個黑點到該整數頂格；② 其餘在相鄰錨（起／末、轉折、沿路線投影且在格誤差內之紅／藍車站）之間沿 **像素弧長** 均分，並整數對齊。
  *
- * @param {{ rbStationsGxGy?: Array<{ gx: number; gy: number }>, latticeEpsGrid?: number, coordMatchEpsGrid?: number, uniqArcPxTol?: number }} [opt]
+ * @param {{ rbStationsGxGy?: Array<{ gx: number; gy: number }>, latticeEpsGrid?: number, coordMatchEpsGrid?: number, uniqArcPxTol?: number, fineSubgridSpec?: { m: number, x0: number, y0: number } | null }} [opt]
  * @returns {( [number, number] | null )[]} 長度 `nSta`：第 index 對應 k=index+1
  */
 export function computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
@@ -427,6 +698,13 @@ export function computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
       ? opt.uniqArcPxTol
       : 1e-4;
   const rbList = Array.isArray(opt.rbStationsGxGy) ? opt.rbStationsGxGy : [];
+  const fs = opt.fineSubgridSpec;
+  const fineSub =
+    fs &&
+    Number.isFinite(fs.m) &&
+    Number.isFinite(fs.x0) &&
+    Number.isFinite(fs.y0) &&
+    Math.floor(fs.m) > 0;
 
   if (!Array.isArray(gridPts) || gridPts.length < 2 || nSta <= 0 || typeof gridToPx !== 'function')
     return out;
@@ -514,29 +792,59 @@ export function computeLayoutVhDrawFineBlackDotsTurnRbRedistribute(
       const frac = (t + 1) / (m + 1);
       let pxTar = L + frac * spanPx;
       pxTar = Math.min(totalPx - relGap * 100, Math.max(relGap * 100, pxTar));
-      let snapped = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
-        gridPts,
-        pxTar,
-        gridToPx,
-        latticeEps
-      );
+      let snapped = fineSub
+        ? integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString(
+            gridPts,
+            pxTar,
+            gridToPx,
+            fs,
+            latticeEps
+          )
+        : integerLatticeBlackDotAtPixelArcLengthAlongLineString(
+            gridPts,
+            pxTar,
+            gridToPx,
+            latticeEps
+          );
       if (!snapped) {
         const hit = gridXYAndSegAtPixelDistanceAlong(gridPts, pxTar, gridToPx);
         if (hit) {
           const g0 = gridPts[hit.segIndex];
           const g1 = gridPts[hit.segIndex + 1];
           if (g0 && g1) {
-            snapped = snapSegmentInteriorToIntegerLattice(
-              g0[0],
-              g0[1],
-              g1[0],
-              g1[1],
-              hit.gx,
-              hit.gy,
-              latticeEps
-            );
+            snapped = fineSub
+              ? snapSegmentInteriorToFineSubgridLattice(
+                  g0[0],
+                  g0[1],
+                  g1[0],
+                  g1[1],
+                  hit.gx,
+                  hit.gy,
+                  fs,
+                  latticeEps
+                )
+              : snapSegmentInteriorToIntegerLattice(
+                  g0[0],
+                  g0[1],
+                  g1[0],
+                  g1[1],
+                  hit.gx,
+                  hit.gy,
+                  latticeEps
+                );
           }
-          if (!snapped) snapped = [Math.round(hit.gx), Math.round(hit.gy)];
+          if (!snapped) {
+            if (fineSub) {
+              snapped = snapBlackDotGxGyToFineSubgridAlongPolyline(
+                gridPts,
+                hit.gx,
+                hit.gy,
+                fs,
+                latticeEps
+              );
+            }
+            if (!snapped) snapped = [Math.round(hit.gx), Math.round(hit.gy)];
+          }
         }
       }
       out[k - 1] = snapped;
