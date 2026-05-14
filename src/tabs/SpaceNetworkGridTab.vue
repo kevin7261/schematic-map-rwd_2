@@ -4058,7 +4058,9 @@
         const stepPxX = ptToPx(stepPtX);
         const stepPxY = ptToPx(stepPtY);
         if (!hasLayoutConnectPixelTicksX) {
-          xTicks.push(...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, width, stepPxX), width));
+          xTicks.push(
+            ...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, width, stepPxX), width)
+          );
         }
         if (!hasLayoutConnectPixelTicksY) {
           yTicks.push(
@@ -4394,6 +4396,57 @@
       .y((d) => plotRemapSvgY(yScale(d[1])))
       .curve(d3.curveLinear);
 
+    /** 加權繪區：路徑已為 plot 內 SVG 座標時，直接連線（不重複套用 remap）。 */
+    const routeLinePlotSvgDirect = d3
+      .line()
+      .x((d) => d[0])
+      .y((d) => d[1])
+      .curve(d3.curveLinear);
+
+    /**
+     * 欄／列比例條開啟時，獨立 X／Y remap 會拉非等比斜線；
+     * 對「原本在 plot 上接近 45°」的斜段，改以 pt 空間強制 |dx_pt|=|dy_pt|，讓 resize 後仍維持 45°。
+     */
+    const snapWeightedLayoutRouteTo45DiagonalsInPlotSvg = (gridCoords) => {
+      if (!Array.isArray(gridCoords) || gridCoords.length < 2) return null;
+      const pxToPt = layoutViewerPxPtScale?.pxToPt ?? ((v) => Number(v));
+      const ptToPx = layoutViewerPxPtScale?.ptToPx ?? ((v) => Number(v));
+      const epsLenPt = 0.2;
+      const epsDiagPt = 0.75;
+      const pts = gridCoords.map((p) => {
+        const gx = Number(p[0]);
+        const gy = Number(p[1]);
+        return [plotRemapSvgX(xScale(gx)), plotRemapSvgY(yScale(gy))];
+      });
+      const isNear45InBasePt = (g0, g1) => {
+        const bx0 = xScale(Number(g0[0]));
+        const by0 = yScale(Number(g0[1]));
+        const bx1 = xScale(Number(g1[0]));
+        const by1 = yScale(Number(g1[1]));
+        const dptx = pxToPt(bx1 - bx0);
+        const dpty = pxToPt(by1 - by0);
+        const adx = Math.abs(dptx);
+        const ady = Math.abs(dpty);
+        if (!(adx > epsLenPt) || !(ady > epsLenPt)) return false;
+        return Math.abs(adx - ady) <= epsDiagPt;
+      };
+      for (let i = 0; i < gridCoords.length - 1; i++) {
+        if (!isNear45InBasePt(gridCoords[i], gridCoords[i + 1])) continue;
+        const A = pts[i];
+        const B = pts[i + 1];
+        const dptx = pxToPt(B[0] - A[0]);
+        const dpty = pxToPt(B[1] - A[1]);
+        if (!(Math.abs(dptx) > epsLenPt) || !(Math.abs(dpty) > epsLenPt)) continue;
+        const sx = dptx >= 0 ? 1 : -1;
+        const sy = dpty >= 0 ? 1 : -1;
+        const Lpt = Math.min(Math.abs(dptx), Math.abs(dpty));
+        if (!(Lpt > epsLenPt)) continue;
+        const Lpx = ptToPx(Lpt);
+        pts[i + 1] = [A[0] + sx * Lpx, A[1] + sy * Lpx];
+      }
+      return pts;
+    };
+
     /** taipei_h2 導航：僅由 store 寫入 station_weights（路徑 10／其餘 0），此處不畫額外 highlight */
     const matchH2TrafficConnect = () => false;
     const matchH2TrafficBlack = () => false;
@@ -4638,13 +4691,23 @@
       isHvZTest3E3F3Highlight = false,
       l3BlackDotReducedWeightGreen = false,
       routeFeatureRouteId = '',
-      exportRowIndexHint = null
+      exportRowIndexHint = null,
+      /** 加權模式專用：已在加權 SVG 空間計算完成的 H/V/45° 座標，直接畫線不再套 remap。 */
+      svgCoordsOverride = null
     ) => {
       // 與 MapTab 一致：tags.color／tags.colour，否則 feature.properties.color（如路段匯出列），預設 #666666
       const trimColour = (s) => (typeof s === 'string' && s.trim() !== '' ? s.trim() : '');
       const routeColor =
         trimColour(tags?.colour) || trimColour(tags?.color) || trimColour(color) || '#666666';
-      const pathData = lineGenerator(coords);
+      let pathData;
+      if (svgCoordsOverride) {
+        pathData = routeLinePlotSvgDirect(svgCoordsOverride);
+      } else if (layoutVhDrawWeightedLayoutMode) {
+        const snappedPts = snapWeightedLayoutRouteTo45DiagonalsInPlotSvg(coords);
+        pathData = snappedPts ? routeLinePlotSvgDirect(snappedPts) : lineGenerator(coords);
+      } else {
+        pathData = lineGenerator(coords);
+      }
       if (!pathData) return;
 
       const baseStroke = isHvZTest3E3F3Highlight ? '#c2185b' : routeColor;
@@ -4956,6 +5019,10 @@
      */
     /** @type {Map<string, number[][]>|null} */
     let layoutPixelVhDrawRouteGridByKey = null;
+    /** 加權模式：已在加權 SVG 空間重算的 H/V/45° 路線（直接畫，不再套 remap）。 */
+    let layoutWeightedRouteSvgByKey = null;
+    /** 加權模式：待 plotRemapSvgX/Y 就緒後呼叫，重跑同套 HV45° 算法。 */
+    let recomputeWeightedRoutes = null;
     /** @param {number[][]} path */
     let hvTransformPath = (path) => path;
 
@@ -5321,6 +5388,78 @@
           pts.map((c) => [xScale.invert(c[0]), yScale.invert(c[1])])
         );
       }
+
+      /**
+       * 加權繪區：待 plotRemapSvgX/Y 計算完畢後呼叫。
+       * 以加權 SVG 座標重跑同套 buildStCandidatesPx + conflict resolution，
+       * 保證路線在加權空間中只有 H/V/45° 且轉折 ≤ 2。
+       */
+      if (layoutVhDrawWeightedLayoutMode) {
+        recomputeWeightedRoutes = (remapX, remapY) => {
+          layoutWeightedRouteSvgByKey = new Map();
+          const wAssign = [];
+          for (const item of routeItems) {
+            const gridPath = transformPathCoords(item.coordinates);
+            const wKey = `${item.featIdx}#${item.pi}`;
+            if (!Array.isArray(gridPath) || gridPath.length < 2) {
+              layoutWeightedRouteSvgByKey.set(
+                wKey,
+                (gridPath || []).map((c) => [remapX(xScale(c[0])), remapY(yScale(c[1]))])
+              );
+              continue;
+            }
+            const pxIn = gridPath.map((c) => [remapX(xScale(c[0])), remapY(yScale(c[1]))]);
+            if (pathEveryEdgeHorizOrVertOnlyPx(pxIn, PATH_EPS)) {
+              wAssign.push({ key: wKey, candidates: [{ bends: -1, pts: pxIn }] });
+              continue;
+            }
+            const S = pxIn[0];
+            const T = pxIn[pxIn.length - 1];
+            const simplified = buildStCandidatesPx(S, T);
+            wAssign.push({
+              key: wKey,
+              candidates: simplified.length > 0 ? simplified : [{ bends: 0, pts: pxIn }],
+            });
+          }
+          const wIdx = wAssign.map(() => 0);
+          const wPts = (i) => wAssign[i].candidates[wIdx[i]].pts;
+          for (let i = 0; i < wAssign.length; i++) {
+            let pick = 0;
+            for (; pick < wAssign[i].candidates.length; pick++) {
+              const pi = wAssign[i].candidates[pick].pts;
+              let ok = true;
+              for (let k = 0; k < i; k++) {
+                if (routesGeomConflict(pi, wPts(k), OVERLAP_PT_TOL)) {
+                  ok = false;
+                  break;
+                }
+              }
+              if (ok) break;
+            }
+            if (pick >= wAssign[i].candidates.length) pick = wAssign[i].candidates.length - 1;
+            wIdx[i] = pick;
+          }
+          let wG = 0;
+          const wMaxG = wAssign.length * wAssign.length * 16 + 48;
+          while (wG < wMaxG) {
+            let wHit = null;
+            for (let i = 0; i < wAssign.length && !wHit; i++) {
+              for (let j = i + 1; j < wAssign.length && !wHit; j++) {
+                if (routesGeomConflict(wPts(i), wPts(j), OVERLAP_PT_TOL)) wHit = { i, j };
+              }
+            }
+            if (!wHit) break;
+            const { j } = wHit;
+            if (wIdx[j] + 1 < wAssign[j].candidates.length) wIdx[j]++;
+            else if (wIdx[wHit.i] + 1 < wAssign[wHit.i].candidates.length) wIdx[wHit.i]++;
+            else break;
+            wG++;
+          }
+          for (let ri = 0; ri < wAssign.length; ri++) {
+            layoutWeightedRouteSvgByKey.set(wAssign[ri].key, wAssign[ri].candidates[wIdx[ri]].pts);
+          }
+        };
+      }
     }
 
     const drawLayoutUniformGridLines = (coords) => {
@@ -5388,7 +5527,9 @@
 
         if (geom.type === 'LineString') {
           const rawGrid = transformPathCoords(geom.coordinates);
-          const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#0`) ?? rawGrid;
+          const key0 = `${featIdx}#0`;
+          const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(key0) ?? rawGrid;
+          const svgOvr = layoutWeightedRouteSvgByKey?.get(key0) ?? null;
           drawRoutePath(
             offsetPathToSchematicCellCenters(gridForDraw),
             tags,
@@ -5400,12 +5541,15 @@
             isHvZHl || isVhDrawRouteHl,
             Boolean(props.l3_black_dot_reduced_weight_green),
             routeFeatId,
-            exportRowIdx
+            exportRowIdx,
+            svgOvr
           );
         } else if (geom.type === 'MultiLineString') {
           geom.coordinates.forEach((coords, pi) => {
             const rawGrid = transformPathCoords(coords);
-            const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#${pi}`) ?? rawGrid;
+            const keyPi = `${featIdx}#${pi}`;
+            const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(keyPi) ?? rawGrid;
+            const svgOvr = layoutWeightedRouteSvgByKey?.get(keyPi) ?? null;
             drawRoutePath(
               offsetPathToSchematicCellCenters(gridForDraw),
               tags,
@@ -5417,7 +5561,8 @@
               isHvZHl || isVhDrawRouteHl,
               Boolean(props.l3_black_dot_reduced_weight_green),
               routeFeatId,
-              exportRowIdx
+              exportRowIdx,
+              svgOvr
             );
           });
         }
@@ -5870,8 +6015,7 @@
         if (!Array.isArray(coords) || coords.length < 2) continue;
         const gridPtsOrig = coords.map((c) => [Number(c[0]), Number(c[1])]);
         // layout-grid-viewer：黑點座標基於簡化路徑（45°-H/V-45°）而非原始格座標
-        const gridPts =
-          layoutPixelVhDrawRouteGridByKey?.get(`${rfGlobalIdx}#0`) ?? gridPtsOrig;
+        const gridPts = layoutPixelVhDrawRouteGridByKey?.get(`${rfGlobalIdx}#0`) ?? gridPtsOrig;
         let row = layoutFindRowForLineGrid(gridPtsOrig, exportRowsForSta);
         if (
           !row &&
@@ -5991,6 +6135,7 @@
             const paintMidDot = (cx, cy) => {
               layoutStaG
                 .append('circle')
+                .attr('class', 'layout-vh-draw-mid-black-dot space-network-rb-station-dot')
                 .attr('cx', cx)
                 .attr('cy', cy)
                 .attr('r', dotRadius)
@@ -6061,7 +6206,11 @@
           for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
             const t0 = layoutBlackMaxXTicks[xi];
             const t1 = layoutBlackMaxXTicks[xi + 1];
-            const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(layoutDotsForBandMaxRealtime, t0, t1);
+            const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(
+              layoutDotsForBandMaxRealtime,
+              t0,
+              t1
+            );
             const fx0 = layoutFineGridMapX ? layoutFineGridMapX(t0) : t0;
             const fx1 = layoutFineGridMapX ? layoutFineGridMapX(t1) : t1;
             const cx = (xScale(fx0) + xScale(fx1)) / 2;
@@ -6112,7 +6261,11 @@
           for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
             const t0 = layoutBlackMaxYTicks[yi];
             const t1 = layoutBlackMaxYTicks[yi + 1];
-            const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(layoutDotsForBandMaxRealtime, t0, t1);
+            const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(
+              layoutDotsForBandMaxRealtime,
+              t0,
+              t1
+            );
             const fy0 = layoutFineGridMapY ? layoutFineGridMapY(t0) : t0;
             const fy1 = layoutFineGridMapY ? layoutFineGridMapY(t1) : t1;
             const cy = (yScale(fy0) + yScale(fy1)) / 2;
@@ -6194,6 +6347,9 @@
             .x((d) => plotRemapSvgX(xScale(d[0])))
             .y((d) => plotRemapSvgY(yScale(d[1])))
             .curve(d3.curveLinear);
+
+          // remap 就緒 → 在加權座標空間重算 HV45° 路線（保證角度與重疊約束）
+          if (recomputeWeightedRoutes) recomputeWeightedRoutes(plotRemapSvgX, plotRemapSvgY);
 
           const vh = layoutVHGridStroke;
           let xCursor = margin.left;
@@ -6444,7 +6600,12 @@
         .attr('fill', fillColor)
         .attr('stroke', strokeColor)
         .attr('stroke-width', strokeWidth)
-        .attr('class', isOnOtherRoute ? 'highlighted-connect-point' : '')
+        .attr(
+          'class',
+          [isOnOtherRoute ? 'highlighted-connect-point' : '', 'space-network-rb-station-dot']
+            .filter(Boolean)
+            .join(' ')
+        )
         .style('cursor', 'pointer');
 
       if (dataStore.showStationNames && isConnect) {
@@ -6456,6 +6617,7 @@
         if (labelName) {
           zoomGroup
             .append('text')
+            .attr('class', 'space-network-rb-station-label')
             .attr('x', plotRemapSvgX(xScale(drawX)))
             .attr('y', plotRemapSvgY(yScale(drawY)) - radius - 4)
             .attr('text-anchor', 'middle')
@@ -6478,6 +6640,7 @@
         if (labelName) {
           zoomGroup
             .append('text')
+            .attr('class', 'space-network-rb-station-label')
             .attr('x', plotRemapSvgX(xScale(drawX)))
             .attr('y', plotRemapSvgY(yScale(drawY)) - radius - 4)
             .attr('text-anchor', 'middle')
@@ -6867,7 +7030,12 @@
               .attr('fill', fillColor)
               .attr('stroke', strokeColor)
               .attr('stroke-width', strokeWidth)
-              .attr('class', isHighlighted ? 'highlighted-connect-point' : '')
+              .attr(
+                'class',
+                [isHighlighted ? 'highlighted-connect-point' : '', 'space-network-rb-station-dot']
+                  .filter(Boolean)
+                  .join(' ')
+              )
               .style('cursor', 'pointer');
             if (dataStore.showStationNames && isConnect) {
               let sname = (props.station_name ?? props.tags?.station_name ?? props.tags?.name ?? '')
@@ -6880,6 +7048,7 @@
               if (sname) {
                 zoomGroup
                   .append('text')
+                  .attr('class', 'space-network-rb-station-label')
                   .attr('x', plotRemapSvgX(xScale(px)))
                   .attr('y', plotRemapSvgY(yScale(py)) - r - 4)
                   .attr('text-anchor', 'middle')
@@ -6904,6 +7073,7 @@
               if (sname) {
                 zoomGroup
                   .append('text')
+                  .attr('class', 'space-network-rb-station-label')
                   .attr('x', plotRemapSvgX(xScale(px)))
                   .attr('y', plotRemapSvgY(yScale(py)) - r - 4)
                   .attr('text-anchor', 'middle')
@@ -8356,6 +8526,12 @@
         }
       }
     }
+
+    // 紅／藍／黑站點、路線中段黑點、站名：置於路線／網格／流量等標註之上
+    const gVhMidDots = zoomGroup.select('g.layout-vh-draw-line-stations-pt');
+    if (!gVhMidDots.empty()) gVhMidDots.raise();
+    zoomGroup.selectAll('circle.space-network-rb-station-dot').raise();
+    zoomGroup.selectAll('text.space-network-rb-station-label').raise();
   };
 
   /**
