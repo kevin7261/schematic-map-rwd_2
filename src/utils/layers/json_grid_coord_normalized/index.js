@@ -68,6 +68,7 @@ export {
   buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine,
   featureCollectionGridBounds,
   computeLayoutVhDrawFineGridSpec,
+  computeLayoutVhDrawBlackDotRowColRatioReport,
   applyLayoutVhDrawFineGridToFeatureCollection,
   gridXYAtGridDistanceAlongLineString,
   integerLatticeBlackDotAtGridArcLengthAlongOrthoLineString,

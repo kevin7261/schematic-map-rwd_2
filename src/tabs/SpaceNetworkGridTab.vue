@@ -4113,6 +4113,12 @@
     /** M>0：粗格區間內等分細線（對應細格每單元 (M+1) 份） */
     const layoutVHGridStrokeInner = { stroke: '#ECECEC', strokeW: 0.35, opacity: 0.5 };
 
+    /** layout-grid 像素軸：開啟「欄／列比例條」時，依黑點區間 max Σ 歸一後重設繪區欄寬／列高（分段線性映射）。 */
+    const layoutVhDrawWeightedLayoutMode =
+      layoutVhDrawPixelAxisMode &&
+      isLayoutNetworkGridFromVhDrawLayerId(layerTab) &&
+      activeTabLayer?.layoutVhDrawShowBlackDotRowColRatioOverlay === true;
+
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
@@ -4195,7 +4201,7 @@
               .attr('opacity', vh.opacity);
           });
         }
-      } else {
+      } else if (!(layoutVhDrawPixelAxisMode && layoutVhDrawWeightedLayoutMode)) {
         appendLayoutVhDrawInnerSubgridLines();
         xTicks.forEach((tick) => {
           const xPos = svgXFromAxisTick(tick);
@@ -4378,11 +4384,14 @@
         .text(yTickLabel);
     });
 
-    // 創建線條生成器
-    const lineGenerator = d3
+    /** 繪區內 pt→px 後再套加權映射（layout-grid 欄寬／列高比例）；預設恆等。 */
+    let plotRemapSvgX = (sx) => sx;
+    let plotRemapSvgY = (sy) => sy;
+    // 創建線條生成器（加權模式下於 ratio 就緒後重設）
+    let lineGenerator = d3
       .line()
-      .x((d) => xScale(d[0]))
-      .y((d) => yScale(d[1]))
+      .x((d) => plotRemapSvgX(xScale(d[0])))
+      .y((d) => plotRemapSvgY(yScale(d[1])))
       .curve(d3.curveLinear);
 
     /** taipei_h2 導航：僅由 store 寫入 station_weights（路徑 10／其餘 0），此處不畫額外 highlight */
@@ -5353,48 +5362,33 @@
         : null;
 
     // 繪製路線（支援 LineString / MultiLineString）；有疊加網格時線一起移動
-    routeFeatures.forEach((feature, featIdx) => {
-      if (!feature || !feature.geometry) return;
-      const props = feature.properties || {};
-      if (props.layoutUniformStationGrid === true) return;
-      const tags = props.tags || {};
-      const geom = feature.geometry;
-      const isHvZHl = false;
+    /** layout-grid 加權繪區：延後至欄／列比例與 plotRemap 就緒後再畫。 */
+    const drawLayoutRoutesPass = () => {
+      routeFeatures.forEach((feature, featIdx) => {
+        if (!feature || !feature.geometry) return;
+        const props = feature.properties || {};
+        if (props.layoutUniformStationGrid === true) return;
+        const tags = props.tags || {};
+        const geom = feature.geometry;
+        const isHvZHl = false;
 
-      const routeFeatId =
-        props.route_id != null && props.route_id !== '' ? String(props.route_id) : '';
-      const exportRowIdx =
-        props.map_draw_row_index != null && Number.isFinite(Number(props.map_draw_row_index))
-          ? Number(props.map_draw_row_index)
-          : props.export_row_index != null && Number.isFinite(Number(props.export_row_index))
-            ? Number(props.export_row_index)
-            : null;
+        const routeFeatId =
+          props.route_id != null && props.route_id !== '' ? String(props.route_id) : '';
+        const exportRowIdx =
+          props.map_draw_row_index != null && Number.isFinite(Number(props.map_draw_row_index))
+            ? Number(props.map_draw_row_index)
+            : props.export_row_index != null && Number.isFinite(Number(props.export_row_index))
+              ? Number(props.export_row_index)
+              : null;
 
-      const isVhDrawRouteHl =
-        vhDrawRouteStrokeHlIdx != null &&
-        exportRowIdx != null &&
-        exportRowIdx === vhDrawRouteStrokeHlIdx;
+        const isVhDrawRouteHl =
+          vhDrawRouteStrokeHlIdx != null &&
+          exportRowIdx != null &&
+          exportRowIdx === vhDrawRouteStrokeHlIdx;
 
-      if (geom.type === 'LineString') {
-        const rawGrid = transformPathCoords(geom.coordinates);
-        const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#0`) ?? rawGrid;
-        drawRoutePath(
-          offsetPathToSchematicCellCenters(gridForDraw),
-          tags,
-          props.name,
-          props.color,
-          props.station_weights,
-          props.original_points,
-          props.points,
-          isHvZHl || isVhDrawRouteHl,
-          Boolean(props.l3_black_dot_reduced_weight_green),
-          routeFeatId,
-          exportRowIdx
-        );
-      } else if (geom.type === 'MultiLineString') {
-        geom.coordinates.forEach((coords, pi) => {
-          const rawGrid = transformPathCoords(coords);
-          const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#${pi}`) ?? rawGrid;
+        if (geom.type === 'LineString') {
+          const rawGrid = transformPathCoords(geom.coordinates);
+          const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#0`) ?? rawGrid;
           drawRoutePath(
             offsetPathToSchematicCellCenters(gridForDraw),
             tags,
@@ -5408,9 +5402,30 @@
             routeFeatId,
             exportRowIdx
           );
-        });
-      }
-    });
+        } else if (geom.type === 'MultiLineString') {
+          geom.coordinates.forEach((coords, pi) => {
+            const rawGrid = transformPathCoords(coords);
+            const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#${pi}`) ?? rawGrid;
+            drawRoutePath(
+              offsetPathToSchematicCellCenters(gridForDraw),
+              tags,
+              props.name,
+              props.color,
+              props.station_weights,
+              props.original_points,
+              props.points,
+              isHvZHl || isVhDrawRouteHl,
+              Boolean(props.l3_black_dot_reduced_weight_green),
+              routeFeatId,
+              exportRowIdx
+            );
+          });
+        }
+      });
+    };
+    if (!layoutVhDrawWeightedLayoutMode) {
+      drawLayoutRoutesPass();
+    }
 
     // taipei_f：欄高亮——垂直線 overlay（SectionData 路段紅色，其餘綠色；無 per-path 色則橘色）
     const colHl = dataStore.taipeiFColRouteHighlight;
@@ -5829,12 +5844,19 @@
             b: b.name,
             x: (px0 + px1) / 2,
             y: (py0 + py1) / 2,
+            px0,
+            py0,
+            px1,
+            py1,
           });
         }
       };
 
       const layoutStaG = zoomGroup.append('g').attr('class', 'layout-vh-draw-line-stations-pt');
       const layoutDotsForBandMaxRealtime = [];
+      const layoutPxBandMaxColVals = [];
+      const layoutPxBandMaxRowVals = [];
+      const pendingWeightedMidDots = [];
       const layoutLineFeatCount = routeFeatures.filter(
         (f) => f?.geometry?.type === 'LineString'
       ).length;
@@ -5966,29 +5988,40 @@
             const sta = midsArc[k - 1] ?? {};
             const trafficMidName = layoutTrafficStationName(sta);
             if (trafficMidName) trafficOrderedPoints.push({ name: trafficMidName, gxy });
-            layoutStaG
-              .append('circle')
-              .attr('cx', xScale(gxy[0]))
-              .attr('cy', yScale(gxy[1]))
-              .attr('r', dotRadius)
-              .attr('fill', '#000000')
-              .attr('stroke', '#000000')
-              .attr('stroke-width', 1)
-              .style('cursor', 'pointer')
-              .style('pointer-events', 'all')
-              .on('mouseover', function (event) {
-                d3.select(this).attr('r', 5).attr('stroke-width', 2);
-                showLayoutVHDrawMidStationTooltip(event, sta, gxy[0], gxy[1], row);
-              })
-              .on('mousemove', function (event) {
-                tooltip
-                  .style('left', `${event.pageX + 10}px`)
-                  .style('top', `${event.pageY - 10}px`);
-              })
-              .on('mouseout', function () {
-                d3.select(this).attr('r', dotRadius).attr('stroke-width', 1);
-                tooltip.style('opacity', 0);
+            const paintMidDot = (cx, cy) => {
+              layoutStaG
+                .append('circle')
+                .attr('cx', cx)
+                .attr('cy', cy)
+                .attr('r', dotRadius)
+                .attr('fill', '#000000')
+                .attr('stroke', '#000000')
+                .attr('stroke-width', 1)
+                .style('cursor', 'pointer')
+                .style('pointer-events', 'all')
+                .on('mouseover', function (event) {
+                  d3.select(this).attr('r', 5).attr('stroke-width', 2);
+                  showLayoutVHDrawMidStationTooltip(event, sta, gxy[0], gxy[1], row);
+                })
+                .on('mousemove', function (event) {
+                  tooltip
+                    .style('left', `${event.pageX + 10}px`)
+                    .style('top', `${event.pageY - 10}px`);
+                })
+                .on('mouseout', function () {
+                  d3.select(this).attr('r', dotRadius).attr('stroke-width', 1);
+                  tooltip.style('opacity', 0);
+                });
+            };
+            if (layoutVhDrawWeightedLayoutMode) {
+              pendingWeightedMidDots.push({
+                paint: paintMidDot,
+                sx: xScale(gxy[0]),
+                sy: yScale(gxy[1]),
               });
+            } else {
+              paintMidDot(xScale(gxy[0]), yScale(gxy[1]));
+            }
           }
         if (trafficEndName) {
           trafficOrderedPoints.push({ name: trafficEndName, gxy: gridPts[gridPts.length - 1] });
@@ -6009,17 +6042,20 @@
               t0,
               t1
             );
-            const cx = margin.left + (Number(t0) + Number(t1)) / 2;
-            axisGroup
-              .append('text')
-              .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
-              .attr('x', cx)
-              .attr('y', margin.top + height + 28)
-              .attr('text-anchor', 'middle')
-              .attr('font-size', '9px')
-              .attr('font-weight', '600')
-              .attr('fill', '#1565C0')
-              .text(String(xv));
+            layoutPxBandMaxColVals.push(xv);
+            if (!layoutVhDrawWeightedLayoutMode) {
+              const cx = margin.left + (Number(t0) + Number(t1)) / 2;
+              axisGroup
+                .append('text')
+                .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
+                .attr('x', cx)
+                .attr('y', margin.top + height + 28)
+                .attr('text-anchor', 'middle')
+                .attr('font-size', '9px')
+                .attr('font-weight', '600')
+                .attr('fill', '#1565C0')
+                .text(String(xv));
+            }
           }
         } else {
           for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
@@ -6056,18 +6092,21 @@
               t0,
               t1
             );
-            const cy = margin.top + (Number(t0) + Number(t1)) / 2;
-            axisGroup
-              .append('text')
-              .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
-              .attr('x', yBandLabelX)
-              .attr('y', cy)
-              .attr('text-anchor', 'end')
-              .attr('dominant-baseline', 'middle')
-              .attr('font-size', '9px')
-              .attr('font-weight', '600')
-              .attr('fill', '#1565C0')
-              .text(String(yv));
+            layoutPxBandMaxRowVals.push(yv);
+            if (!layoutVhDrawWeightedLayoutMode) {
+              const cy = margin.top + (Number(t0) + Number(t1)) / 2;
+              axisGroup
+                .append('text')
+                .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
+                .attr('x', yBandLabelX)
+                .attr('y', cy)
+                .attr('text-anchor', 'end')
+                .attr('dominant-baseline', 'middle')
+                .attr('font-size', '9px')
+                .attr('font-weight', '600')
+                .attr('fill', '#1565C0')
+                .text(String(yv));
+            }
           }
         } else {
           for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
@@ -6089,6 +6128,143 @@
               .attr('fill', '#1565C0')
               .text(String(yv));
           }
+        }
+      }
+
+      if (layoutVhDrawWeightedLayoutMode) {
+        const nColSlabs = layoutBlackMaxXTicks.length - 1;
+        const nRowSlabs = layoutBlackMaxYTicks.length - 1;
+        const canApplyWeightedPlotRemap =
+          nColSlabs > 0 &&
+          nRowSlabs > 0 &&
+          !layoutFineGridSpec &&
+          layoutPxBandMaxColVals.length === nColSlabs &&
+          layoutPxBandMaxRowVals.length === nRowSlabs;
+        const normalizeSlabRatios = (vals) => {
+          const w = vals.map((v) => {
+            const x = Number(v);
+            return Number.isFinite(x) && x >= 0 ? x : 0;
+          });
+          const sum = w.reduce((a, b) => a + b, 0);
+          const n = w.length;
+          if (!(sum > 0) || n === 0) return w.map(() => (n > 0 ? 1 / n : 1));
+          return w.map((x) => x / sum);
+        };
+        const slabRemapPlotLocal = (ticks, rats, span, uIn) => {
+          const n = ticks.length;
+          if (n < 2 || rats.length !== n - 1) return Number(uIn);
+          const u0 = Number(ticks[0]);
+          const u1 = Number(ticks[n - 1]);
+          const x = Math.min(Math.max(Number(uIn), u0), u1);
+          const newW = rats.map((r) => r * span);
+          const cumStarts = [0];
+          for (let ii = 0; ii < newW.length; ii++) {
+            cumStarts.push(cumStarts[ii] + newW[ii]);
+          }
+          let i = 0;
+          for (; i < n - 2; i++) {
+            if (x < Number(ticks[i + 1])) break;
+          }
+          const a = Number(ticks[i]);
+          const b = Number(ticks[i + 1]);
+          const ow = b - a;
+          const frac = ow > 1e-12 ? (x - a) / ow : 0;
+          const f = Math.max(0, Math.min(1, frac));
+          return cumStarts[i] + f * newW[i];
+        };
+        const flushPendingWeightedMidDots = () => {
+          for (let pi = 0; pi < pendingWeightedMidDots.length; pi++) {
+            const p = pendingWeightedMidDots[pi];
+            p.paint(plotRemapSvgX(p.sx), plotRemapSvgY(p.sy));
+          }
+          pendingWeightedMidDots.length = 0;
+        };
+        if (canApplyWeightedPlotRemap) {
+          const ratXC = normalizeSlabRatios(layoutPxBandMaxColVals);
+          const ratYR = normalizeSlabRatios(layoutPxBandMaxRowVals);
+          const wtx = layoutBlackMaxXTicks.map((t) => Number(t));
+          const wty = layoutBlackMaxYTicks.map((t) => Number(t));
+
+          plotRemapSvgX = (sx) =>
+            margin.left + slabRemapPlotLocal(wtx, ratXC, width, sx - margin.left);
+          plotRemapSvgY = (sy) =>
+            margin.top + slabRemapPlotLocal(wty, ratYR, height, sy - margin.top);
+          lineGenerator = d3
+            .line()
+            .x((d) => plotRemapSvgX(xScale(d[0])))
+            .y((d) => plotRemapSvgY(yScale(d[1])))
+            .curve(d3.curveLinear);
+
+          const vh = layoutVHGridStroke;
+          let xCursor = margin.left;
+          for (let xi = 0; xi <= ratXC.length; xi++) {
+            gridGroup
+              .append('line')
+              .attr('class', 'layout-vh-draw-weighted-grid-v')
+              .attr('x1', xCursor)
+              .attr('y1', margin.top)
+              .attr('x2', xCursor)
+              .attr('y2', margin.top + height)
+              .attr('stroke', vh.stroke)
+              .attr('stroke-width', vh.strokeW)
+              .attr('opacity', vh.opacity);
+            if (xi < ratXC.length) xCursor += width * ratXC[xi];
+          }
+          let yCursor = margin.top;
+          for (let yi = 0; yi <= ratYR.length; yi++) {
+            gridGroup
+              .append('line')
+              .attr('class', 'layout-vh-draw-weighted-grid-h')
+              .attr('x1', margin.left)
+              .attr('y1', yCursor)
+              .attr('x2', margin.left + width)
+              .attr('y2', yCursor)
+              .attr('stroke', vh.stroke)
+              .attr('stroke-width', vh.strokeW)
+              .attr('opacity', vh.opacity);
+            if (yi < ratYR.length) yCursor += height * ratYR[yi];
+          }
+
+          for (let xi = 0; xi < nColSlabs; xi++) {
+            const t0 = Number(layoutBlackMaxXTicks[xi]);
+            const t1 = Number(layoutBlackMaxXTicks[xi + 1]);
+            const midOld = (t0 + t1) / 2;
+            const midNew = slabRemapPlotLocal(wtx, ratXC, width, midOld);
+            axisGroup
+              .append('text')
+              .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
+              .attr('x', margin.left + midNew)
+              .attr('y', margin.top + height + 28)
+              .attr('text-anchor', 'middle')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('fill', '#1565C0')
+              .text(String(layoutPxBandMaxColVals[xi]));
+          }
+          const yBandLabelXW = margin.left - 46;
+          for (let yi = 0; yi < nRowSlabs; yi++) {
+            const t0 = Number(layoutBlackMaxYTicks[yi]);
+            const t1 = Number(layoutBlackMaxYTicks[yi + 1]);
+            const midOld = (t0 + t1) / 2;
+            const midNew = slabRemapPlotLocal(wty, ratYR, height, midOld);
+            axisGroup
+              .append('text')
+              .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
+              .attr('x', yBandLabelXW)
+              .attr('y', margin.top + midNew)
+              .attr('text-anchor', 'end')
+              .attr('dominant-baseline', 'middle')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('fill', '#1565C0')
+              .text(String(layoutPxBandMaxRowVals[yi]));
+          }
+
+          flushPendingWeightedMidDots();
+          drawLayoutRoutesPass();
+        } else {
+          flushPendingWeightedMidDots();
+          drawLayoutRoutesPass();
         }
       }
 
@@ -6123,8 +6299,8 @@
             const weight = trafficMap.get(edge.key) ?? 0;
             trafficG
               .append('text')
-              .attr('x', edge.x)
-              .attr('y', edge.y)
+              .attr('x', plotRemapSvgX(edge.x))
+              .attr('y', plotRemapSvgY(edge.y))
               .attr('text-anchor', 'middle')
               .attr('dominant-baseline', 'middle')
               .attr('font-size', '8px')
@@ -6262,8 +6438,8 @@
 
       const circleElement = zoomGroup
         .append('circle')
-        .attr('cx', xScale(drawX))
-        .attr('cy', yScale(drawY))
+        .attr('cx', plotRemapSvgX(xScale(drawX)))
+        .attr('cy', plotRemapSvgY(yScale(drawY)))
         .attr('r', radius)
         .attr('fill', fillColor)
         .attr('stroke', strokeColor)
@@ -6280,8 +6456,8 @@
         if (labelName) {
           zoomGroup
             .append('text')
-            .attr('x', xScale(drawX))
-            .attr('y', yScale(drawY) - radius - 4)
+            .attr('x', plotRemapSvgX(xScale(drawX)))
+            .attr('y', plotRemapSvgY(yScale(drawY)) - radius - 4)
             .attr('text-anchor', 'middle')
             .attr('dominant-baseline', 'bottom')
             .attr('font-size', '11px')
@@ -6302,8 +6478,8 @@
         if (labelName) {
           zoomGroup
             .append('text')
-            .attr('x', xScale(drawX))
-            .attr('y', yScale(drawY) - radius - 4)
+            .attr('x', plotRemapSvgX(xScale(drawX)))
+            .attr('y', plotRemapSvgY(yScale(drawY)) - radius - 4)
             .attr('text-anchor', 'middle')
             .attr('dominant-baseline', 'bottom')
             .attr('font-size', '10px')
@@ -6685,8 +6861,8 @@
             const strokeWidth = isHighlighted ? 2.5 : 1;
             const el = zoomGroup
               .append('circle')
-              .attr('cx', xScale(px))
-              .attr('cy', yScale(py))
+              .attr('cx', plotRemapSvgX(xScale(px)))
+              .attr('cy', plotRemapSvgY(yScale(py)))
               .attr('r', r)
               .attr('fill', fillColor)
               .attr('stroke', strokeColor)
@@ -6704,8 +6880,8 @@
               if (sname) {
                 zoomGroup
                   .append('text')
-                  .attr('x', xScale(px))
-                  .attr('y', yScale(py) - r - 4)
+                  .attr('x', plotRemapSvgX(xScale(px)))
+                  .attr('y', plotRemapSvgY(yScale(py)) - r - 4)
                   .attr('text-anchor', 'middle')
                   .attr('dominant-baseline', 'bottom')
                   .attr('font-size', '11px')
@@ -6728,8 +6904,8 @@
               if (sname) {
                 zoomGroup
                   .append('text')
-                  .attr('x', xScale(px))
-                  .attr('y', yScale(py) - r - 4)
+                  .attr('x', plotRemapSvgX(xScale(px)))
+                  .attr('y', plotRemapSvgY(yScale(py)) - r - 4)
                   .attr('text-anchor', 'middle')
                   .attr('dominant-baseline', 'bottom')
                   .attr('font-size', '10px')

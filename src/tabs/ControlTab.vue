@@ -55,6 +55,7 @@
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw2,
     applyLayoutTrafficCsvToVhDrawLayerRoots,
     buildSyntheticTrafficRowsFromVhDrawLayer,
+    computeLayoutVhDrawBlackDotRowColRatioReport,
     replaceDiagonalEdgesWithLOrtho,
     replaceDiagonalsInRouteUntilClear,
     peekDiagonalReplaceNextUnitArmHighlightBundle,
@@ -7093,6 +7094,39 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
+  /** 版面路網層 geojson bbox 粗格：欄／列各自區間 black-dot max 再以 Σ 歸一（與 space-layout 整數刻度語意同源；表內區間為格座標） */
+  const onLayoutVhDrawComputeBlackDotRowColRatiosClick = (lyr) => {
+    if (!isLayoutNetworkGridFromVhDrawControlLayer(lyr)) return;
+    const coarseFc = lyr.geojsonData;
+    if (!coarseFc || coarseFc.type !== 'FeatureCollection') {
+      window.alert(
+        '本層尚無 geojson（路網線段）。請先開啟本圖層讓資料自 VH 繪製層同步，或確認路網已載入。'
+      );
+      return;
+    }
+    const rep = computeLayoutVhDrawBlackDotRowColRatioReport(dataStore, coarseFc);
+    if (!rep) {
+      window.alert('無法計算：請確認 geojson 內至少有 LineString 路線。');
+      return;
+    }
+    lyr.layoutVhDrawBlackDotRowColRatioReport = rep;
+    dataStore.saveLayerState(
+      lyr.layerId,
+      jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true })
+    );
+  };
+
+  const onLayoutVhDrawShowBlackDotRowColRatioOverlayChange = async (lyr, checked) => {
+    if (!isLayoutNetworkGridFromVhDrawControlLayer(lyr)) return;
+    lyr.layoutVhDrawShowBlackDotRowColRatioOverlay = checked === true;
+    dataStore.saveLayerState(
+      lyr.layerId,
+      jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true })
+    );
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
   /**
    * 1–9 整數抽樣：機率與反等比級數 1/r^k 成正比（公比 r>1 → k 愈小愈容易出現）。
    * @param {number} [ratio=2]
@@ -10335,6 +10369,132 @@
                   <td>{{ it.deg }}</td>
                   <td class="text-nowrap">({{ it.x }}, {{ it.y }})</td>
                   <td class="text-break" style="max-width: 160px">{{ it.label }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div
+          v-if="
+            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
+          <div class="my-title-xs-gray pb-2">粗格版面：欄／列黑點 max 比例（分開歸一）</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            各<strong>欄開區間</strong>與<strong>列開區間</strong>分別算出刻度間 black-dot max 後，在<strong>同一方向</strong>內加總歸一（欄、列互不混算；與版面網格區間標註同源）。
+            若該方向全系皆為 0，該方向各段比例均等。下方為<strong>粗格／格座標</strong>區間之比例表。<strong>顯示比例條繪製</strong>僅於 Upper「<strong>layout-grid</strong>」分頁生效：依該檢視之
+            pt 區間即時算出之 black-dot max（與軸間藍色數字同源）繪製青色（欄）／玫瑰色（列）條，Σ 歸一比例見條 tooltip。
+          </div>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="my-content-sm-black">顯示比例條繪製</div>
+            <div class="layer-toggle flex-shrink-0" @click.stop>
+              <input
+                type="checkbox"
+                :id="'switch-layout-vh-draw-bd-rowcol-' + layer.layerId"
+                :checked="layer.layoutVhDrawShowBlackDotRowColRatioOverlay === true"
+                @change="
+                  onLayoutVhDrawShowBlackDotRowColRatioOverlayChange(
+                    layer,
+                    $event.target.checked
+                  )
+                "
+              />
+              <label :for="'switch-layout-vh-draw-bd-rowcol-' + layer.layerId"></label>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            :disabled="!layer.geojsonData || layer.geojsonData.type !== 'FeatureCollection'"
+            @click="onLayoutVhDrawComputeBlackDotRowColRatiosClick(layer)"
+          >
+            計算並儲存欄／列比例
+          </button>
+          <div
+            v-if="
+              layer.layoutVhDrawBlackDotRowColRatioReport?.colRatios?.length ||
+              layer.layoutVhDrawBlackDotRowColRatioReport?.rowRatios?.length
+            "
+            class="border rounded overflow-auto bg-body mb-2"
+            style="max-height: 220px; font-size: 11px"
+          >
+            <div class="px-2 py-1 border-bottom text-muted">
+              {{ layer.layoutVhDrawBlackDotRowColRatioReport.nCols }} 欄 ×
+              {{ layer.layoutVhDrawBlackDotRowColRatioReport.nRows }} 列；Σ<sub>欄</sub>={{
+                layer.layoutVhDrawBlackDotRowColRatioReport.sumColMax
+              }}
+              ，Σ<sub>列</sub>={{
+                layer.layoutVhDrawBlackDotRowColRatioReport.sumRowMax
+              }}
+              —
+              {{
+                new Date(layer.layoutVhDrawBlackDotRowColRatioReport.computedAt).toLocaleString()
+              }}
+            </div>
+            <div class="px-2 py-1 fw-semibold small bg-secondary bg-opacity-10">欄（x 區間）</div>
+            <table class="table table-sm table-bordered mb-0 align-middle">
+              <thead class="sticky-top bg-secondary bg-opacity-10">
+                <tr class="text-nowrap">
+                  <th>#</th>
+                  <th>x</th>
+                  <th>max</th>
+                  <th>比例</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(r, ix) in layer.layoutVhDrawBlackDotRowColRatioReport.colRatios"
+                  :key="'bdcol-' + ix"
+                >
+                  <td>{{ ix }}</td>
+                  <td class="text-nowrap">
+                    {{
+                      layer.layoutVhDrawBlackDotRowColRatioReport.xTicks[ix]
+                    }}～{{
+                      layer.layoutVhDrawBlackDotRowColRatioReport.xTicks[ix + 1]
+                    }}
+                  </td>
+                  <td>
+                    {{
+                      layer.layoutVhDrawBlackDotRowColRatioReport.colMaxBlackDots[ix]
+                    }}
+                  </td>
+                  <td>{{ (Number(r) * 100).toFixed(2) }}%</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="px-2 py-1 fw-semibold small bg-secondary bg-opacity-10">列（y 區間）</div>
+            <table class="table table-sm table-bordered mb-0 align-middle">
+              <thead class="sticky-top bg-secondary bg-opacity-10">
+                <tr class="text-nowrap">
+                  <th>#</th>
+                  <th>y</th>
+                  <th>max</th>
+                  <th>比例</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(r, jy) in layer.layoutVhDrawBlackDotRowColRatioReport.rowRatios"
+                  :key="'bdrow-' + jy"
+                >
+                  <td>{{ jy }}</td>
+                  <td class="text-nowrap">
+                    {{
+                      layer.layoutVhDrawBlackDotRowColRatioReport.yTicks[jy]
+                    }}～{{
+                      layer.layoutVhDrawBlackDotRowColRatioReport.yTicks[jy + 1]
+                    }}
+                  </td>
+                  <td>
+                    {{
+                      layer.layoutVhDrawBlackDotRowColRatioReport.rowMaxBlackDots[jy]
+                    }}
+                  </td>
+                  <td>{{ (Number(r) * 100).toFixed(2) }}%</td>
                 </tr>
               </tbody>
             </table>

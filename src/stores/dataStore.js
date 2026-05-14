@@ -652,6 +652,10 @@ export const useDataStore = defineStore(
             layoutVhDrawShowTrafficWeights: true,
             /** 交通流量 CSV 載入後，找不到相鄰紅／藍／黑點者列於此 */
             layoutVhDrawTrafficMissing: [],
+            /** 「計算欄／列黑點 max 比例」結果：各欄、各列分別 Σ 歸一 */
+            layoutVhDrawBlackDotRowColRatioReport: null,
+            /** Upper「layout-grid」檢視專用：顯示欄／列 black-dot Σ 歸一比例條（pt 區間，與藍字同源） */
+            layoutVhDrawShowBlackDotRowColRatioOverlay: false,
             upperViewTabs: ['space-layout-grid-viewer', 'layout-grid-viewer', 'json-viewer'],
           },
         ],
@@ -708,6 +712,8 @@ export const useDataStore = defineStore(
             layoutVhDrawTrafficData: null,
             layoutVhDrawShowTrafficWeights: true,
             layoutVhDrawTrafficMissing: [],
+            layoutVhDrawBlackDotRowColRatioReport: null,
+            layoutVhDrawShowBlackDotRowColRatioOverlay: false,
             upperViewTabs: ['space-layout-grid-viewer', 'layout-grid-viewer', 'json-viewer'],
           },
           {
@@ -759,6 +765,8 @@ export const useDataStore = defineStore(
             layoutVhDrawTrafficData: null,
             layoutVhDrawShowTrafficWeights: true,
             layoutVhDrawTrafficMissing: [],
+            layoutVhDrawBlackDotRowColRatioReport: null,
+            layoutVhDrawShowBlackDotRowColRatioOverlay: false,
             upperViewTabs: ['canvas-layout-grid-viewer', 'json-viewer'],
           },
         ],

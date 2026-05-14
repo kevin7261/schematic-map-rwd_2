@@ -1121,6 +1121,105 @@ export function computeLayoutVhDrawFineGridSpec(dataStore, coarseFc) {
   return { m: mOut, x0, y0 };
 }
 
+/**
+ * 粗格版面：各**欄**開區間、各**列**開區間分別取其刻度間 black-dot max（語意與版面網格檢視之區間標註同源），
+ * 再累加各自方向歸一化為該方向的配置比例。**欄／列互不混算**。
+ * 若某方向全系 max 為 0，則該方向各段比例均等。
+ *
+ * @returns {{
+ *   computedAt: string,
+ *   xTicks: number[],
+ *   yTicks: number[],
+ *   colMaxBlackDots: number[],
+ *   rowMaxBlackDots: number[],
+ *   colRatios: number[],
+ *   rowRatios: number[],
+ *   sumColMax: number,
+ *   sumRowMax: number,
+ *   nCols: number,
+ *   nRows: number,
+ * } | null}
+ */
+export function computeLayoutVhDrawBlackDotRowColRatioReport(dataStore, coarseFc) {
+  if (!coarseFc || coarseFc.type !== 'FeatureCollection' || !Array.isArray(coarseFc.features))
+    return null;
+  const routeFeatures = coarseFc.features.filter((f) => f?.geometry?.type === 'LineString');
+  if (!routeFeatures.length) return null;
+  const { xMin, xMax, yMin, yMax } = featureCollectionGridBounds(coarseFc);
+  if (
+    !Number.isFinite(xMin) ||
+    !Number.isFinite(xMax) ||
+    !Number.isFinite(yMin) ||
+    !Number.isFinite(yMax)
+  ) {
+    return null;
+  }
+  const x0 = Math.floor(xMin);
+  const x1 = Math.ceil(xMax);
+  const y0 = Math.floor(yMin);
+  const y1 = Math.ceil(yMax);
+  /** @type {number[]} */
+  const xTicks = [];
+  for (let x = x0; x <= x1; x++) xTicks.push(x);
+  /** @type {number[]} */
+  const yTicks = [];
+  for (let y = y0; y <= y1; y++) yTicks.push(y);
+
+  const { dotsForBandMax } = buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine(
+    dataStore,
+    routeFeatures
+  );
+
+  const nCols = Math.max(0, xTicks.length - 1);
+  const nRows = Math.max(0, yTicks.length - 1);
+  if (nCols <= 0 || nRows <= 0) return null;
+
+  /** @type {number[]} */
+  const colMaxBlackDots = [];
+  for (let i = 0; i < nCols; i++) {
+    colMaxBlackDots.push(
+      maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(dotsForBandMax, xTicks[i], xTicks[i + 1])
+    );
+  }
+  /** @type {number[]} */
+  const rowMaxBlackDots = [];
+  for (let j = 0; j < nRows; j++) {
+    rowMaxBlackDots.push(
+      maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(dotsForBandMax, yTicks[j], yTicks[j + 1])
+    );
+  }
+
+  let sumColMax = 0;
+  for (let i = 0; i < colMaxBlackDots.length; i++) sumColMax += colMaxBlackDots[i] ?? 0;
+  let sumRowMax = 0;
+  for (let j = 0; j < rowMaxBlackDots.length; j++) sumRowMax += rowMaxBlackDots[j] ?? 0;
+
+  /** @type {number[]} */
+  const colRatios = colMaxBlackDots.map((m) => {
+    if (sumColMax > 0) return (Number(m) || 0) / sumColMax;
+    return nCols > 0 ? 1 / nCols : 0;
+  });
+  /** @type {number[]} */
+  const rowRatios = rowMaxBlackDots.map((m) => {
+    if (sumRowMax > 0) return (Number(m) || 0) / sumRowMax;
+    return nRows > 0 ? 1 / nRows : 0;
+  });
+
+  return {
+    computedAt: new Date().toISOString(),
+    xTicks,
+    yTicks,
+    colMaxBlackDots,
+    rowMaxBlackDots,
+    colRatios,
+    rowRatios,
+    sumColMax,
+    sumRowMax,
+    nCols,
+    nRows,
+  };
+}
+
 function mapPair(coord, spec) {
   const gx = Number(coord[0]);
   const gy = Number(coord[1]);

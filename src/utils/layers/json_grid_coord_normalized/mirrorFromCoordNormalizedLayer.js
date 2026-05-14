@@ -228,7 +228,15 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
   ) {
     lyr.layoutVhDrawFineGridTurnRbMidDots = false;
   }
+  if (
+    lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+    lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2 ||
+    lyr.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2
+  ) {
+    lyr.layoutVhDrawShowBlackDotRowColRatioOverlay = false;
+  }
   lyr.layoutVhDrawFineGrid = null;
+  lyr.layoutVhDrawBlackDotRowColRatioReport = null;
   lyr.showStationPlacement = true;
 }
 
@@ -288,6 +296,9 @@ export function syncLayoutNetworkGridReadLayerFromLayoutRoutesDataJson2(
 
   target.layoutVhDrawFineGrid = jsonCloneOrNull(src.layoutVhDrawFineGrid);
   target.layoutVhDrawFineGridTurnRbMidDots = !!src.layoutVhDrawFineGridTurnRbMidDots;
+  target.layoutVhDrawBlackDotRowColRatioReport = jsonCloneOrNull(src.layoutVhDrawBlackDotRowColRatioReport);
+  target.layoutVhDrawShowBlackDotRowColRatioOverlay =
+    src.layoutVhDrawShowBlackDotRowColRatioOverlay === true;
 
   target.csvFileName_traffic = src.csvFileName_traffic ?? null;
   target.layoutVhDrawTrafficData = jsonCloneOrNull(src.layoutVhDrawTrafficData);
@@ -382,6 +393,9 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
       ? layer.layoutVhDrawTrafficMissing
       : [];
     payload.layoutVhDrawShowTrafficWeights = layer.layoutVhDrawShowTrafficWeights !== false;
+    payload.layoutVhDrawBlackDotRowColRatioReport = layer.layoutVhDrawBlackDotRowColRatioReport ?? null;
+    payload.layoutVhDrawShowBlackDotRowColRatioOverlay =
+      layer.layoutVhDrawShowBlackDotRowColRatioOverlay === true;
   }
   if (layer.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2) {
     payload.csvFileName_traffic = layer.csvFileName_traffic ?? null;
@@ -390,6 +404,9 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
       ? layer.layoutVhDrawTrafficMissing
       : [];
     payload.layoutVhDrawShowTrafficWeights = layer.layoutVhDrawShowTrafficWeights !== false;
+    payload.layoutVhDrawBlackDotRowColRatioReport = layer.layoutVhDrawBlackDotRowColRatioReport ?? null;
+    payload.layoutVhDrawShowBlackDotRowColRatioOverlay =
+      layer.layoutVhDrawShowBlackDotRowColRatioOverlay === true;
   }
   if (!omitLoadingFlags) {
     payload.isLoading = layer.isLoading;
