@@ -4850,11 +4850,11 @@
     };
 
     /**
-     * layout-grid-viewer（layoutVhDrawPixelAxisMode）：在「像素（pt）」合規路線。
-     * - 僅當路徑上至少有一條邊**不是**水平或垂直（pt 空間）時才改畫；純 H/V 折線維持不變。
-     * - 非 H/V 路徑統一改為「45°-水平/垂直-45°」樣式（最多 2 個轉折）。
-     * - 與已繪製路線比對時，會搜尋多組 detour 候選，優先選擇不重疊路徑。
-     * - 均勻網格輔助線仍可做單線合規化（不重疊檢查，因其在路線下層且非「路線」本體）。
+     * layout-grid-viewer（layoutVhDrawPixelAxisMode）：以路徑**起點—終點（pt）**重畫為
+     * **45°–水平／垂直–45°**（含 0／1 轉折退化），**每條路線至多 2 個轉折**（≤4 頂點）。
+     * 雙轉折時，中間 H／V 段取起迄 **幾何中點**（ym 或 xm）；純 H／V 摺線不改畫。
+     * 候選依轉折由少到多；並做**幾何重疊 + 水平／垂直共線重疊**檢測與反覆調整。
+     * 均勻網格輔助線僅單線簡化、不排除與路網重疊。
      */
     /** @type {Map<string, number[][]>|null} */
     let layoutPixelVhDrawRouteGridByKey = null;
@@ -4941,22 +4941,68 @@
         return false;
       };
 
-      const polylineOverlapsAnyPx = (poly, list, tol) => {
-        for (const o of list) {
-          if (polylinePairOverlapsPx(poly, o, tol)) return true;
-        }
-        return false;
+      /** 兩段水平（或兩段垂直）幾乎同列／同行且投影重疊長度超過容許 */
+      const parallelHVStripOverlap = (polyA, polyB, eps) => {
+        const HV_OVERLAP_MIN_LEN = OVERLAP_PT_TOL * 2 + 0.01;
+        const collectH = (poly) => {
+          const segs = [];
+          for (let i = 0; i < poly.length - 1; i++) {
+            const p1 = poly[i];
+            const p2 = poly[i + 1];
+            if (Math.abs(p2[1] - p1[1]) < eps && Math.abs(p2[0] - p1[0]) >= eps) {
+              segs.push({
+                y: (p1[1] + p2[1]) / 2,
+                lo: Math.min(p1[0], p2[0]),
+                hi: Math.max(p1[0], p2[0]),
+              });
+            }
+          }
+          return segs;
+        };
+        const collectV = (poly) => {
+          const segs = [];
+          for (let i = 0; i < poly.length - 1; i++) {
+            const p1 = poly[i];
+            const p2 = poly[i + 1];
+            if (Math.abs(p2[0] - p1[0]) < eps && Math.abs(p2[1] - p1[1]) >= eps) {
+              segs.push({
+                x: (p1[0] + p2[0]) / 2,
+                lo: Math.min(p1[1], p2[1]),
+                hi: Math.max(p1[1], p2[1]),
+              });
+            }
+          }
+          return segs;
+        };
+        const hh = (as, bs) => {
+          for (const a of as) {
+            for (const b of bs) {
+              if (Math.abs(a.y - b.y) > eps) continue;
+              const lo = Math.max(a.lo, b.lo);
+              const hi = Math.min(a.hi, b.hi);
+              if (hi - lo > HV_OVERLAP_MIN_LEN) return true;
+            }
+          }
+          return false;
+        };
+        const vv = (as, bs) => {
+          for (const a of as) {
+            for (const b of bs) {
+              if (Math.abs(a.x - b.x) > eps) continue;
+              const lo = Math.max(a.lo, b.lo);
+              const hi = Math.min(a.hi, b.hi);
+              if (hi - lo > HV_OVERLAP_MIN_LEN) return true;
+            }
+          }
+          return false;
+        };
+        return hh(collectH(polyA), collectH(polyB)) || vv(collectV(polyA), collectV(polyB));
       };
 
-      const polylineOverlapCountPx = (poly, list, tol) => {
-        let count = 0;
-        for (const o of list) {
-          if (polylinePairOverlapsPx(poly, o, tol)) count += 1;
-        }
-        return count;
-      };
+      const routesGeomConflict = (polyA, polyB, tol) =>
+        polylinePairOverlapsPx(polyA, polyB, tol) || parallelHVStripOverlap(polyA, polyB, tol);
 
-      /** 每一段皆為水平或垂直（不含斜線／45°）→ 不需改畫 */
+      /** 每一段皆為水平或垂直（無斜線／45°）→ 不改畫 */
       const pathEveryEdgeHorizOrVertOnlyPx = (pts, eps) => {
         for (let i = 0; i < pts.length - 1; i++) {
           const A = pts[i];
@@ -4970,90 +5016,112 @@
         return pts.length >= 2;
       };
 
-      const normalizePolylinePx = (pts, eps) => {
-        if (!Array.isArray(pts) || pts.length < 2) return pts;
-        const out = [pts[0]];
-        for (let i = 1; i < pts.length; i++) {
-          const p = pts[i];
-          if (!ptNear(p, out[out.length - 1], eps)) out.push(p);
-        }
-        if (out.length < 3) return out;
-        const compact = [out[0]];
-        for (let i = 1; i < out.length - 1; i++) {
-          const A = compact[compact.length - 1];
-          const B = out[i];
-          const C = out[i + 1];
-          const dxAB = B[0] - A[0];
-          const dyAB = B[1] - A[1];
-          const dxBC = C[0] - B[0];
-          const dyBC = C[1] - B[1];
-          const cross = dxAB * dyBC - dyAB * dxBC;
-          if (Math.abs(cross) > eps * eps) compact.push(B);
-        }
-        compact.push(out[out.length - 1]);
-        return compact;
-      };
-
-      const buildTwoBendPx = (A, B, axis, t, eps) => {
+      const classifyEdgeHV45 = (A, B, eps) => {
         const dx = B[0] - A[0];
         const dy = B[1] - A[1];
         const adx = Math.abs(dx);
         const ady = Math.abs(dy);
-        const isH = ady < eps;
-        const isV = adx < eps;
-        const is45 = !isH && !isV && Math.abs(adx - ady) < eps;
-        if (isH || isV || is45) return [A, B];
+        if (ady < eps) return 'H';
+        if (adx < eps) return 'V';
+        if (Math.abs(adx - ady) < eps) return '45';
+        return 'X';
+      };
+
+      const polylineEdgesAllHV45 = (pts, eps) => {
+        for (let i = 0; i < pts.length - 1; i++) {
+          if (classifyEdgeHV45(pts[i], pts[i + 1], eps) === 'X') return false;
+        }
+        return pts.length >= 2;
+      };
+
+      const dedupeConsecutivePx = (pts, tol) =>
+        pts.reduce((acc, p) => {
+          if (acc.length === 0 || !ptNear(p, acc[acc.length - 1], tol)) acc.push(p);
+          return acc;
+        }, []);
+
+      const polylineKeyForDedupe = (pts) =>
+        pts
+          .map((p) => `${Math.round(p[0] * 1000) / 1000},${Math.round(p[1] * 1000) / 1000}`)
+          .join('|');
+
+      /** 起迄 S,T（pt）→ 45°–H/V–45° 候選，轉折 0→1→2；雙轉折之中段在起迄中點 ym 或 xm */
+      const buildStCandidatesPx = (S, T) => {
+        /** @type {{ bends: number; pts: number[][] }[]} */
+        const raw = [];
+        const dx = T[0] - S[0];
+        const dy = T[1] - S[1];
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
         const sx = dx >= 0 ? 1 : -1;
         const sy = dy >= 0 ? 1 : -1;
-        const total = axis === 'h' ? ady : adx;
-        if (total < eps) return [A, B];
-        const l1 = total * t;
-        const l2 = total - l1;
-        const p1 = [A[0] + sx * l1, A[1] + sy * l1];
-        const p2 = [B[0] - sx * l2, B[1] - sy * l2];
-        return normalizePolylinePx([A, p1, p2, B], eps);
-      };
+        const k = Math.min(adx, ady);
 
-      const buildTwoBendCandidatesPx = (gridPath, eps) => {
-        if (!Array.isArray(gridPath) || gridPath.length < 2) return [gridPath];
-        if (pathEveryEdgeHorizOrVertOnlyPx(gridPath, eps)) return [gridPath];
-        const A = gridPath[0];
-        const B = gridPath[gridPath.length - 1];
-        const dx = B[0] - A[0];
-        const dy = B[1] - A[1];
-        const adx = Math.abs(dx);
-        const ady = Math.abs(dy);
-        const isH = ady < eps;
-        const isV = adx < eps;
-        const is45 = !isH && !isV && Math.abs(adx - ady) < eps;
-        if (isH || isV || is45) return [[A, B]];
-        const centerFirst = [0.5, 0.35, 0.65, 0.2, 0.8, 0, 1];
-        const detours = [];
-        for (let k = 1; k <= 12; k++) {
-          detours.push(0.5 - k, 0.5 + k);
-        }
-        const tCandidates = [...centerFirst, ...detours];
-        const axisOrder = adx >= ady ? ['h', 'v'] : ['v', 'h'];
-        const candidates = [];
-        for (const axis of axisOrder) {
-          for (const t of tCandidates) {
-            candidates.push(buildTwoBendPx(A, B, axis, t, eps));
+        const tryPush = (pts) => {
+          const d = dedupeConsecutivePx(pts, PATH_EPS * 0.5);
+          if (d.length < 2) return;
+          if (!polylineEdgesAllHV45(d, PATH_EPS)) return;
+          const bends = Math.max(0, d.length - 2);
+          if (bends > 2) return;
+          raw.push({ bends, pts: d });
+        };
+
+        tryPush([S, T]);
+
+        if (k > PATH_EPS) {
+          const CA = [S[0] + sx * k, S[1] + sy * k];
+          tryPush([S, CA, T]);
+          let CB;
+          if (adx > ady) {
+            CB = [T[0] - sx * k, S[1]];
+          } else {
+            CB = [S[0], T[1] - sy * k];
           }
+          tryPush([S, CB, T]);
         }
-        return candidates;
+
+        if (ady > PATH_EPS && Math.abs(sy) > 1e-12) {
+          const ym = (S[1] + T[1]) / 2;
+          const M1x = S[0] + sx * Math.abs(ym - S[1]);
+          const M1 = [M1x, ym];
+          const M2x = T[0] - sx * Math.abs(ym - T[1]);
+          const M2 = [M2x, ym];
+          tryPush([S, M1, M2, T]);
+        }
+
+        if (adx > PATH_EPS && Math.abs(sx) > 1e-12) {
+          const xm = (S[0] + T[0]) / 2;
+          const M1y = S[1] + sy * Math.abs(xm - S[0]);
+          const M1 = [xm, M1y];
+          const M2y = T[1] - sy * Math.abs(xm - T[0]);
+          const M2 = [xm, M2y];
+          tryPush([S, M1, M2, T]);
+        }
+
+        raw.sort((a, b) => a.bends - b.bends);
+        const seen = new Set();
+        const out = [];
+        for (const c of raw) {
+          const k0 = polylineKeyForDedupe(c.pts);
+          if (seen.has(k0)) continue;
+          seen.add(k0);
+          out.push(c);
+        }
+        return out;
       };
 
       hvTransformPath = (gridPath) => {
         if (!Array.isArray(gridPath) || gridPath.length < 2) return gridPath;
         const pxIn = gridPath.map((c) => [xScale(c[0]), yScale(c[1])]);
         if (pathEveryEdgeHorizOrVertOnlyPx(pxIn, PATH_EPS)) return gridPath;
-        const cand = buildTwoBendCandidatesPx(pxIn, PATH_EPS);
-        const px = cand.length > 0 ? cand[0] : pxIn;
+        const S = pxIn[0];
+        const T = pxIn[pxIn.length - 1];
+        const cand = buildStCandidatesPx(S, T);
+        const px = (cand[0] && cand[0].pts) || pxIn;
         return px.map((c) => [xScale.invert(c[0]), yScale.invert(c[1])]);
       };
 
       layoutPixelVhDrawRouteGridByKey = new Map();
-      const finalizedPxPolylines = [];
 
       const routeItems = [];
       routeFeatures.forEach((feature, featIdx) => {
@@ -5070,6 +5138,8 @@
         }
       });
 
+      /** @type {{ key: string; pxIn: number[][]; candidates: { bends: number; pts: number[][] }[] }[]} */
+      const assignment = [];
       for (const item of routeItems) {
         const gridPath = transformPathCoords(item.coordinates);
         const key = `${item.featIdx}#${item.pi}`;
@@ -5079,31 +5149,75 @@
         }
         const pxIn = gridPath.map((c) => [xScale(c[0]), yScale(c[1])]);
         if (pathEveryEdgeHorizOrVertOnlyPx(pxIn, PATH_EPS)) {
-          layoutPixelVhDrawRouteGridByKey.set(key, gridPath);
-          finalizedPxPolylines.push(pxIn);
+          assignment.push({ key, pxIn, candidates: [{ bends: -1, pts: pxIn }] });
           continue;
         }
-        const candidates = buildTwoBendCandidatesPx(pxIn, PATH_EPS);
-        let chosenPx = candidates.length > 0 ? candidates[0] : pxIn;
-        let bestOverlapCount = Number.POSITIVE_INFINITY;
-        for (const cand of candidates) {
-          const overlapCount = polylineOverlapCountPx(cand, finalizedPxPolylines, OVERLAP_PT_TOL);
-          if (overlapCount < bestOverlapCount) {
-            bestOverlapCount = overlapCount;
-            chosenPx = cand;
+        const S = pxIn[0];
+        const T = pxIn[pxIn.length - 1];
+        const simplified = buildStCandidatesPx(S, T);
+        const candidates = [...simplified, { bends: 99, pts: pxIn }];
+        assignment.push({ key, pxIn, candidates });
+      }
+
+      const chosenIdx = assignment.map(() => 0);
+      const ptsAt = (i) => assignment[i].candidates[chosenIdx[i]].pts;
+
+      for (let i = 0; i < assignment.length; i++) {
+        let pick = 0;
+        for (; pick < assignment[i].candidates.length; pick += 1) {
+          const pi = assignment[i].candidates[pick].pts;
+          let ok = true;
+          for (let k = 0; k < i; k += 1) {
+            if (routesGeomConflict(pi, ptsAt(k), OVERLAP_PT_TOL)) {
+              ok = false;
+              break;
+            }
           }
-          if (overlapCount === 0) {
+          if (ok) break;
+        }
+        if (pick >= assignment[i].candidates.length) {
+          pick = assignment[i].candidates.length - 1;
+        }
+        chosenIdx[i] = pick;
+      }
+
+      const pairwiseConflict = () => {
+        for (let i = 0; i < assignment.length; i += 1) {
+          for (let j = i + 1; j < assignment.length; j += 1) {
+            if (routesGeomConflict(ptsAt(i), ptsAt(j), OVERLAP_PT_TOL)) {
+              return { i, j };
+            }
+          }
+        }
+        return null;
+      };
+
+      const tryResolve = () => {
+        let guard = 0;
+        const maxGuard = assignment.length * assignment.length * 16 + 48;
+        while (guard < maxGuard) {
+          const hit = pairwiseConflict();
+          if (!hit) return;
+          const { j } = hit;
+          if (chosenIdx[j] + 1 < assignment[j].candidates.length) {
+            chosenIdx[j] += 1;
+          } else if (chosenIdx[hit.i] + 1 < assignment[hit.i].candidates.length) {
+            chosenIdx[hit.i] += 1;
+          } else {
             break;
           }
+          guard += 1;
         }
-        if (bestOverlapCount > 0 && !polylineOverlapsAnyPx(pxIn, finalizedPxPolylines, OVERLAP_PT_TOL)) {
-          chosenPx = pxIn;
-        }
+      };
+      tryResolve();
+
+      for (let ri = 0; ri < assignment.length; ri += 1) {
+        const row = assignment[ri];
+        const pts = row.candidates[chosenIdx[ri]].pts;
         layoutPixelVhDrawRouteGridByKey.set(
-          key,
-          chosenPx.map((c) => [xScale.invert(c[0]), yScale.invert(c[1])])
+          row.key,
+          pts.map((c) => [xScale.invert(c[0]), yScale.invert(c[1])])
         );
-        finalizedPxPolylines.push(chosenPx);
       }
     }
 
