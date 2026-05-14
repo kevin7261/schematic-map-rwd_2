@@ -3966,17 +3966,104 @@
         set.add(m);
         return [...set].filter((t) => t >= -1e-9 && t <= m + 1e-9).sort((a, b) => a - b);
       };
-      const { pxToPt, ptToPx } = layoutViewerPxPtScale;
-      const spanPtX = pxToPt(width);
-      const spanPtY = pxToPt(height);
-      const stepPtX = Math.max(1, niceTickStepMultipleOf5(spanPtX, 11));
-      const stepPtY = Math.max(1, niceTickStepMultipleOf5(spanPtY, 11));
-      const stepPxX = ptToPx(stepPtX);
-      const stepPxY = ptToPx(stepPtY);
-      xTicks.push(...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, width, stepPxX), width));
-      yTicks.push(
-        ...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, height, stepPxY), height)
-      );
+      /** layout-grid-viewer：刻度／背景格線對齊有紅／藍 connect 的欄、列（繪區內像素座標） */
+      const uniqSortedPixelTicks = (raw, spanMax) => {
+        const m = Number(spanMax);
+        const eps = 1e-4;
+        const arr = raw.filter((t) => Number.isFinite(t) && t >= -1e-9 && t <= m + 1e-9);
+        arr.sort((a, b) => a - b);
+        const out = [];
+        for (const v of arr) {
+          if (out.length === 0 || Math.abs(v - out[out.length - 1]) > eps) out.push(v);
+        }
+        return out;
+      };
+      const isRbConnectStationFeature = (sf) => {
+        if (!sf || typeof sf !== 'object') return false;
+        if (sf.nodeType === 'connect') return true;
+        const p = sf.properties && typeof sf.properties === 'object' ? sf.properties : {};
+        const tags = p.tags && typeof p.tags === 'object' ? p.tags : {};
+        const nodeType = String(p.node_type ?? tags.node_type ?? p.nodeType ?? tags.nodeType ?? '')
+          .trim()
+          .toLowerCase();
+        if (nodeType === 'connect') return true;
+        const cn = p.connect_number ?? tags.connect_number ?? p.connectNumber ?? tags.connectNumber;
+        if (Number.isFinite(Number(cn))) return true;
+        /** VH 繪製層 Point：紅／藍對應 intersection／terminal（MapTab endpoint），通常無 node_type:connect */
+        if (p.endpointFromRouteLonLatSegment === true) {
+          const ep = normalizeRouteSegmentEndpointType(p.type ?? tags.type ?? 'normal');
+          if (ep === 'intersection' || ep === 'terminal') return true;
+        }
+        return false;
+      };
+      /** 與下方站點繪製一致：疊加網格時僞 connect 之座標移到格中心（endpointFromRouteLonLatSegment 站點不套用） */
+      const layoutRbBlueTickPlotXY = (sf, gx, gy) => {
+        const p = sf.properties && typeof sf.properties === 'object' ? sf.properties : {};
+        const tags = p.tags && typeof p.tags === 'object' ? p.tags : {};
+        const mapLonLatEndpoints = p.endpointFromRouteLonLatSegment === true;
+        const nt = String(sf.nodeType ?? p.node_type ?? tags.node_type ?? '').trim() || 'line';
+        const isConnect = nt === 'connect';
+        if (overlayForSnap && !mapLonLatEndpoints && isConnect) {
+          const ox = overlayForSnap.xLength;
+          const oy = overlayForSnap.yLength;
+          if (Number(ox) > 0 && Number(oy) > 0) {
+            const cx = (Math.floor(gx / ox) + 0.5) * ox;
+            const cy = (Math.floor(gy / oy) + 0.5) * oy;
+            return [cx, cy];
+          }
+        }
+        return [gx, gy];
+      };
+      let hasLayoutConnectPixelTicksX = false;
+      let hasLayoutConnectPixelTicksY = false;
+      if (isLayoutNetworkGridFromVhDrawLayerId(layerTab)) {
+        const pxFromConnect = [];
+        const pyFromConnect = [];
+        for (const sf of stationFeatures) {
+          if (!isRbConnectStationFeature(sf)) continue;
+          const c = sf.geometry?.coordinates;
+          if (!Array.isArray(c) || c.length < 2) continue;
+          const gx = Number(c[0]);
+          const gy = Number(c[1]);
+          if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
+          const [tx, ty] = layoutRbBlueTickPlotXY(sf, gx, gy);
+          const sx = xScale(tx) - margin.left;
+          const sy = yScale(ty) - margin.top;
+          if (Number.isFinite(sx) && Number.isFinite(sy)) {
+            pxFromConnect.push(sx);
+            pyFromConnect.push(sy);
+          }
+        }
+        if (pxFromConnect.length > 0) {
+          xTicks.push(
+            ...mergeLayoutPixelTicksToFullSpan(uniqSortedPixelTicks(pxFromConnect, width), width)
+          );
+          hasLayoutConnectPixelTicksX = true;
+        }
+        if (pyFromConnect.length > 0) {
+          yTicks.push(
+            ...mergeLayoutPixelTicksToFullSpan(uniqSortedPixelTicks(pyFromConnect, height), height)
+          );
+          hasLayoutConnectPixelTicksY = true;
+        }
+      }
+      if (!hasLayoutConnectPixelTicksX || !hasLayoutConnectPixelTicksY) {
+        const { pxToPt, ptToPx } = layoutViewerPxPtScale;
+        const spanPtX = pxToPt(width);
+        const spanPtY = pxToPt(height);
+        const stepPtX = Math.max(1, niceTickStepMultipleOf5(spanPtX, 11));
+        const stepPtY = Math.max(1, niceTickStepMultipleOf5(spanPtY, 11));
+        const stepPxX = ptToPx(stepPtX);
+        const stepPxY = ptToPx(stepPtY);
+        if (!hasLayoutConnectPixelTicksX) {
+          xTicks.push(...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, width, stepPxX), width));
+        }
+        if (!hasLayoutConnectPixelTicksY) {
+          yTicks.push(
+            ...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, height, stepPxY), height)
+          );
+        }
+      }
     } else if (useSchematicCellCenterGrid) {
       for (let tx = Math.ceil(xMin / tickXStep) * tickXStep; tx <= xMax; tx += tickXStep) {
         xTicks.push(tx);
