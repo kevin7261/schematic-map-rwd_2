@@ -6161,6 +6161,8 @@
             if (layoutVhDrawWeightedLayoutMode) {
               pendingWeightedMidDots.push({
                 paint: paintMidDot,
+                routeKey: `${rfGlobalIdx}#0`,
+                frac: nSta > 0 ? k / (nSta + 1) : 0.5,
                 sx: xScale(gxy[0]),
                 sy: yScale(gxy[1]),
               });
@@ -6325,9 +6327,45 @@
           const f = Math.max(0, Math.min(1, frac));
           return cumStarts[i] + f * newW[i];
         };
+        /** 沿 SVG 折線（已在加權空間）以弧長比例取點 */
+        const pointAtArcFracSvg = (svgPts, frac) => {
+          if (!svgPts || svgPts.length < 2) return null;
+          const lens = [];
+          let total = 0;
+          for (let ii = 0; ii < svgPts.length - 1; ii++) {
+            const L = Math.hypot(svgPts[ii + 1][0] - svgPts[ii][0], svgPts[ii + 1][1] - svgPts[ii][1]);
+            lens.push(L);
+            total += L;
+          }
+          if (!(total > 0)) return [svgPts[0][0], svgPts[0][1]];
+          const target = Math.max(0, Math.min(1, frac)) * total;
+          let acc = 0;
+          for (let ii = 0; ii < lens.length; ii++) {
+            if (acc + lens[ii] >= target) {
+              const t = lens[ii] > 0 ? (target - acc) / lens[ii] : 0;
+              return [
+                svgPts[ii][0] + t * (svgPts[ii + 1][0] - svgPts[ii][0]),
+                svgPts[ii][1] + t * (svgPts[ii + 1][1] - svgPts[ii][1]),
+              ];
+            }
+            acc += lens[ii];
+          }
+          const last = svgPts[svgPts.length - 1];
+          return [last[0], last[1]];
+        };
         const flushPendingWeightedMidDots = () => {
           for (let pi = 0; pi < pendingWeightedMidDots.length; pi++) {
             const p = pendingWeightedMidDots[pi];
+            // 優先沿加權路線弧長插值（路線在加權空間已重算）
+            if (p.routeKey != null && p.frac != null && layoutWeightedRouteSvgByKey?.has(p.routeKey)) {
+              const svgPts = layoutWeightedRouteSvgByKey.get(p.routeKey);
+              const pt = pointAtArcFracSvg(svgPts, p.frac);
+              if (pt) {
+                p.paint(pt[0], pt[1]);
+                continue;
+              }
+            }
+            // fallback：直接套 remap
             p.paint(plotRemapSvgX(p.sx), plotRemapSvgY(p.sy));
           }
           pendingWeightedMidDots.length = 0;
