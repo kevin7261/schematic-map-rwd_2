@@ -109,6 +109,8 @@
     buildVhDrawStationRowsForLayoutMap,
     maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
     maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,
+    maxLayoutVhDrawBlackDotsOnLegInOpenXSlabPlotPx,
+    maxLayoutVhDrawBlackDotsOnLegInOpenYSlabPlotPx,
     applyLayoutVhDrawFineGridToFeatureCollection,
     featureCollectionGridBounds,
     computeLayoutVhDrawFineGridSpec,
@@ -2504,9 +2506,9 @@
     const dimensions = getDimensions();
 
     // 添加適當的邊距（增加底部和左側邊距以容納刻度標籤）
-    /** layout_network_grid_from_vh_draw／讀版面路網·dataJson：軸上座標下加一行「刻度間黑點max」；左側為欄區間標籤留寬（後者為獨立深拷快照・繪製邏輯同）；像素刻度檢視僅標一般軸標、不留該區。 */
+    /** layout_network_grid_from_vh_draw：軸下「刻度間黑點 max」、左側欄區間標籤；layout-grid-viewer（像素軸）與 space-layout-grid-viewer 同源即時計算，邊距對齊後者。 */
     const margin = layoutVhDrawPixelAxisMode
-      ? { top: 20, right: 20, bottom: 40, left: 50 }
+      ? { top: 20, right: 20, bottom: 52, left: 72 }
       : isLayoutNetworkGridFromVhDrawLayerId(layerTab) ||
           isLayoutNetworkGridReadLayoutDataJsonLayerId(layerTab)
         ? { top: 20, right: 20, bottom: 52, left: 72 }
@@ -5933,11 +5935,32 @@
               Number.isFinite(Number(gxy[0])) &&
               Number.isFinite(Number(gxy[1]))
             ) {
+              /**
+               * 段方向分類：H（水平）、V（垂直）、D（45°斜線）；用於 layout-grid-viewer 刻度間黑點 max 計算時的軸向過濾。
+               * ⚠ 必須在「畫面像素空間」分類：routing 演算法在 px 空間建 45° 路徑，
+               *   之後以 xScale.invert 還原回 grid(pt) 座標；若 plot 非正方形，pt 空間的 adx≠ady，
+               *   會把 45° 誤判成 V 而被排除。
+               */
+              let segDir = 'D';
+              if (dotSegIndex < gridPts.length - 1) {
+                const sA = gridPts[dotSegIndex];
+                const sB = gridPts[dotSegIndex + 1];
+                const pxA = xScale(Number(sA[0]));
+                const pyA = yScale(Number(sA[1]));
+                const pxB = xScale(Number(sB[0]));
+                const pyB = yScale(Number(sB[1]));
+                const adxPx = Math.abs(pxB - pxA);
+                const adyPx = Math.abs(pyB - pyA);
+                const segEpsPx = 1.0;
+                if (adyPx < segEpsPx && adxPx >= segEpsPx) segDir = 'H';
+                else if (adxPx < segEpsPx && adyPx >= segEpsPx) segDir = 'V';
+              }
               layoutDotsForBandMaxRealtime.push({
                 gx: Number(gxy[0]),
                 gy: Number(gxy[1]),
                 fi: layoutRouteFi,
                 si: dotSegIndex,
+                segDir,
               });
             }
             const sta = midsArc[k - 1] ?? {};
@@ -5974,47 +5997,98 @@
         layoutRouteFi += 1;
       }
 
-      if (layoutBlackMaxXTicks.length >= 2 && !layoutVhDrawPixelAxisMode) {
-        for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
-          const t0 = layoutBlackMaxXTicks[xi];
-          const t1 = layoutBlackMaxXTicks[xi + 1];
-          const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(layoutDotsForBandMaxRealtime, t0, t1);
-          const fx0 = layoutFineGridMapX ? layoutFineGridMapX(t0) : t0;
-          const fx1 = layoutFineGridMapX ? layoutFineGridMapX(t1) : t1;
-          const cx = (xScale(fx0) + xScale(fx1)) / 2;
-          axisGroup
-            .append('text')
-            .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
-            .attr('x', cx)
-            .attr('y', margin.top + height + 28)
-            .attr('text-anchor', 'middle')
-            .attr('font-size', '9px')
-            .attr('font-weight', '600')
-            .attr('fill', '#1565C0')
-            .text(String(xv));
+      if (layoutBlackMaxXTicks.length >= 2) {
+        if (layoutVhDrawPixelAxisMode) {
+          for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
+            const t0 = layoutBlackMaxXTicks[xi];
+            const t1 = layoutBlackMaxXTicks[xi + 1];
+            const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlabPlotPx(
+              layoutDotsForBandMaxRealtime,
+              xScale,
+              margin.left,
+              t0,
+              t1
+            );
+            const cx = margin.left + (Number(t0) + Number(t1)) / 2;
+            axisGroup
+              .append('text')
+              .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
+              .attr('x', cx)
+              .attr('y', margin.top + height + 28)
+              .attr('text-anchor', 'middle')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('fill', '#1565C0')
+              .text(String(xv));
+          }
+        } else {
+          for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
+            const t0 = layoutBlackMaxXTicks[xi];
+            const t1 = layoutBlackMaxXTicks[xi + 1];
+            const xv = maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(layoutDotsForBandMaxRealtime, t0, t1);
+            const fx0 = layoutFineGridMapX ? layoutFineGridMapX(t0) : t0;
+            const fx1 = layoutFineGridMapX ? layoutFineGridMapX(t1) : t1;
+            const cx = (xScale(fx0) + xScale(fx1)) / 2;
+            axisGroup
+              .append('text')
+              .attr('class', 'layout-vh-draw-axis-interval-black-max-x')
+              .attr('x', cx)
+              .attr('y', margin.top + height + 28)
+              .attr('text-anchor', 'middle')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('fill', '#1565C0')
+              .text(String(xv));
+          }
         }
       }
 
-      if (layoutBlackMaxYTicks.length >= 2 && !layoutVhDrawPixelAxisMode) {
+      if (layoutBlackMaxYTicks.length >= 2) {
         const yBandLabelX = margin.left - 46;
-        for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
-          const t0 = layoutBlackMaxYTicks[yi];
-          const t1 = layoutBlackMaxYTicks[yi + 1];
-          const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(layoutDotsForBandMaxRealtime, t0, t1);
-          const fy0 = layoutFineGridMapY ? layoutFineGridMapY(t0) : t0;
-          const fy1 = layoutFineGridMapY ? layoutFineGridMapY(t1) : t1;
-          const cy = (yScale(fy0) + yScale(fy1)) / 2;
-          axisGroup
-            .append('text')
-            .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
-            .attr('x', yBandLabelX)
-            .attr('y', cy)
-            .attr('text-anchor', 'end')
-            .attr('dominant-baseline', 'middle')
-            .attr('font-size', '9px')
-            .attr('font-weight', '600')
-            .attr('fill', '#1565C0')
-            .text(String(yv));
+        if (layoutVhDrawPixelAxisMode) {
+          for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
+            const t0 = layoutBlackMaxYTicks[yi];
+            const t1 = layoutBlackMaxYTicks[yi + 1];
+            const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlabPlotPx(
+              layoutDotsForBandMaxRealtime,
+              yScale,
+              margin.top,
+              t0,
+              t1
+            );
+            const cy = margin.top + (Number(t0) + Number(t1)) / 2;
+            axisGroup
+              .append('text')
+              .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
+              .attr('x', yBandLabelX)
+              .attr('y', cy)
+              .attr('text-anchor', 'end')
+              .attr('dominant-baseline', 'middle')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('fill', '#1565C0')
+              .text(String(yv));
+          }
+        } else {
+          for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
+            const t0 = layoutBlackMaxYTicks[yi];
+            const t1 = layoutBlackMaxYTicks[yi + 1];
+            const yv = maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(layoutDotsForBandMaxRealtime, t0, t1);
+            const fy0 = layoutFineGridMapY ? layoutFineGridMapY(t0) : t0;
+            const fy1 = layoutFineGridMapY ? layoutFineGridMapY(t1) : t1;
+            const cy = (yScale(fy0) + yScale(fy1)) / 2;
+            axisGroup
+              .append('text')
+              .attr('class', 'layout-vh-draw-axis-interval-black-max-y')
+              .attr('x', yBandLabelX)
+              .attr('y', cy)
+              .attr('text-anchor', 'end')
+              .attr('dominant-baseline', 'middle')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('fill', '#1565C0')
+              .text(String(yv));
+          }
         }
       }
 

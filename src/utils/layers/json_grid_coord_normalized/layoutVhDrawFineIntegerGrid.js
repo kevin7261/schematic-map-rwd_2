@@ -81,6 +81,63 @@ export function maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(dotRows, t0, t1) {
   return m;
 }
 
+/**
+ * layout-grid-viewer X 刻度間黑點 max：
+ * - X 軸方向帶狀（垂直帶 px0~px1）：只計 H（水平）或 D（45°斜線）段上的黑點，V 段不貢獻 x 方向
+ * - 按路線 fi 加總後取最大值，得「該欄間最多有幾顆對 x 方向有貢獻的黑點」
+ * - dotRows 每筆需有 segDir（'H'|'V'|'D'）欄位；缺失時視為 D 以向下相容
+ */
+export function maxLayoutVhDrawBlackDotsOnLegInOpenXSlabPlotPx(dotRows, xScale, marginLeft, px0, px1) {
+  const lo = Math.min(Number(px0), Number(px1));
+  const hi = Math.max(Number(px0), Number(px1));
+  const tol = 1e-4;
+  if (!(hi > lo)) return 0;
+  const ml = Number(marginLeft);
+  const byRoute = new Map();
+  for (let i = 0; i < dotRows.length; i++) {
+    const d = dotRows[i];
+    if (d.segDir === 'V') continue;
+    const gx = Number(d.gx);
+    if (!Number.isFinite(gx)) continue;
+    const px = xScale(gx) - ml;
+    if (!(px > lo + tol && px < hi - tol)) continue;
+    byRoute.set(d.fi, (byRoute.get(d.fi) ?? 0) + 1);
+  }
+  let m = 0;
+  for (const cnt of byRoute.values()) {
+    if (cnt > m) m = cnt;
+  }
+  return m;
+}
+
+/**
+ * layout-grid-viewer Y 刻度間黑點 max：
+ * - Y 軸方向帶狀（水平帶 py0~py1）：只計 V（垂直）或 D（45°）段上的黑點，H 段不貢獻 y 方向
+ * - 按路線 fi 加總後取最大值
+ */
+export function maxLayoutVhDrawBlackDotsOnLegInOpenYSlabPlotPx(dotRows, yScale, marginTop, py0, py1) {
+  const lo = Math.min(Number(py0), Number(py1));
+  const hi = Math.max(Number(py0), Number(py1));
+  const tol = 1e-4;
+  if (!(hi > lo)) return 0;
+  const mt = Number(marginTop);
+  const byRoute = new Map();
+  for (let i = 0; i < dotRows.length; i++) {
+    const d = dotRows[i];
+    if (d.segDir === 'H') continue;
+    const gy = Number(d.gy);
+    if (!Number.isFinite(gy)) continue;
+    const py = yScale(gy) - mt;
+    if (!(py > lo + tol && py < hi - tol)) continue;
+    byRoute.set(d.fi, (byRoute.get(d.fi) ?? 0) + 1);
+  }
+  let m = 0;
+  for (const cnt of byRoute.values()) {
+    if (cnt > m) m = cnt;
+  }
+  return m;
+}
+
 function gcdNonNegative(a, b) {
   let x = Math.abs(Math.round(a));
   let y = Math.abs(Math.round(b));

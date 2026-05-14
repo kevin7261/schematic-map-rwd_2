@@ -63,6 +63,8 @@ export {
   buildVhDrawStationRowsForLayoutMap,
   maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
   maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,
+  maxLayoutVhDrawBlackDotsOnLegInOpenXSlabPlotPx,
+  maxLayoutVhDrawBlackDotsOnLegInOpenYSlabPlotPx,
   buildLayoutNetworkVhDrawMaxBlackDotsPerOrthoLine,
   featureCollectionGridBounds,
   computeLayoutVhDrawFineGridSpec,
