@@ -5747,12 +5747,17 @@
       ).length;
       let layoutLineFeatIdx = 0;
       let layoutRouteFi = 0;
+      let layoutRfGlobalIdx = 0;
       for (const rf of routeFeatures) {
+        const rfGlobalIdx = layoutRfGlobalIdx++;
         if (!rf?.geometry || rf.geometry.type !== 'LineString') continue;
         const coords = rf.geometry.coordinates;
         if (!Array.isArray(coords) || coords.length < 2) continue;
-        const gridPts = coords.map((c) => [Number(c[0]), Number(c[1])]);
-        let row = layoutFindRowForLineGrid(gridPts, exportRowsForSta);
+        const gridPtsOrig = coords.map((c) => [Number(c[0]), Number(c[1])]);
+        // layout-grid-viewer：黑點座標基於簡化路徑（45°-H/V-45°）而非原始格座標
+        const gridPts =
+          layoutPixelVhDrawRouteGridByKey?.get(`${rfGlobalIdx}#0`) ?? gridPtsOrig;
+        let row = layoutFindRowForLineGrid(gridPtsOrig, exportRowsForSta);
         if (
           !row &&
           exportRowsForSta.length > 0 &&
