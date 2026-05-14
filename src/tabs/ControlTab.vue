@@ -6791,8 +6791,13 @@
     vhDrawLShapeStepHint.value = `找到 ${firstList.length} 個 L，但沒有可 flip：${lastNoFlip?.reason || '無可行 flip'}`;
   };
 
-  /** 一鍵連跑：全部 L flip → 斜邊改 L → 斜邊改 N／Z → 斜邊改 H／V／45° → 單位 L 改 45°；不使用 window.alert，結果寫於下方摘要 */
-  async function onOrthogonalVhDrawTripleBatchClick(lyr) {
+  /**
+   * 一鍵連跑：全部 L flip → 斜邊改 L → 斜邊改 N／Z → 斜邊改 H／V／45° →（可選）單位 L 改 45°；
+   * 不使用 window.alert，結果寫於下方摘要。
+   * @param {{ skipUnitL45?: boolean }} [options] — `skipUnitL45: true` 時略過最後一步「單位正交 L→45°」
+   */
+  async function onOrthogonalVhDrawTripleBatchClick(lyr, options = {}) {
+    const skipUnitL45 = options.skipUnitL45 === true;
     if (!lyr || lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) return;
     if (isExecuting.value) return;
     stopVhDrawDiagonalRouteAuto();
@@ -6829,12 +6834,17 @@
       });
       const m4 = vhDrawDiagonalRouteStepHint.value || '—';
       lyr2 = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) || lyr2;
-      await onOrthogonalVhDrawUnitLTo45Click(lyr2, {
-        silent: true,
-        externalExecuting: true,
-      });
-      const m5 = vhDrawUnitL45Hint.value || '—';
-      vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3} ④ 斜→H／V／45°：${m4} ⑤ 單位 L→45°：${m5}`;
+      if (!skipUnitL45) {
+        await onOrthogonalVhDrawUnitLTo45Click(lyr2, {
+          silent: true,
+          externalExecuting: true,
+        });
+        const m5 = vhDrawUnitL45Hint.value || '—';
+        vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3} ④ 斜→H／V／45°：${m4} ⑤ 單位 L→45°：${m5}`;
+      } else {
+        vhDrawUnitL45Hint.value = '';
+        vhDrawTripleBatchHint.value = `① L：${m1} ② 斜→L：${m2} ③ 斜→N／Z：${m3} ④ 斜→H／V／45°：${m4} ⑤ 單位正交 L→45°：未執行`;
+      }
     } catch (e) {
       console.error(e);
       vhDrawTripleBatchHint.value = '批次中斷：發生錯誤（詳見控制台）。';
@@ -10442,6 +10452,15 @@
             @click="onOrthogonalVhDrawTripleBatchClick(layer)"
           >
             一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z → 斜邊→H／V／45° → 單位 L→45°
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-orange mb-2"
+            :disabled="isExecuting || layer.isLoading || vhDrawUnitL45AutoActive"
+            @click="onOrthogonalVhDrawTripleBatchClick(layer, { skipUnitL45: true })"
+          >
+            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z → 斜邊→H／V／45°（不執行
+            單位正交 L→45°）
           </button>
           <div
             v-if="vhDrawTripleBatchHint"
