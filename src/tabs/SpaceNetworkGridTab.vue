@@ -5080,7 +5080,8 @@
           tryPush([S, CB, T]);
         }
 
-        if (ady > PATH_EPS && Math.abs(sy) > 1e-12) {
+        // 45°–水平–45°：只在 adx > ady 時中間段才向前（避免反向的「Z」型平行斜線）
+        if (adx > ady + PATH_EPS) {
           const ym = (S[1] + T[1]) / 2;
           const M1x = S[0] + sx * Math.abs(ym - S[1]);
           const M1 = [M1x, ym];
@@ -5089,7 +5090,8 @@
           tryPush([S, M1, M2, T]);
         }
 
-        if (adx > PATH_EPS && Math.abs(sx) > 1e-12) {
+        // 45°–垂直–45°：只在 ady > adx 時中間段才向前（避免反向的「Z」型平行斜線）
+        if (ady > adx + PATH_EPS) {
           const xm = (S[0] + T[0]) / 2;
           const M1y = S[1] + sy * Math.abs(xm - S[0]);
           const M1 = [xm, M1y];
@@ -5155,7 +5157,9 @@
         const S = pxIn[0];
         const T = pxIn[pxIn.length - 1];
         const simplified = buildStCandidatesPx(S, T);
-        const candidates = [...simplified, { bends: 99, pts: pxIn }];
+        // 候選清單只含 45°/H/V 路徑，不放原始路徑 fallback；
+        // 若所有候選與他線衝突，仍用轉折最少的 45° 候選（接受重疊，絕不用非 45° 線）。
+        const candidates = simplified.length > 0 ? simplified : [{ bends: 0, pts: pxIn }];
         assignment.push({ key, pxIn, candidates });
       }
 
