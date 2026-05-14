@@ -178,7 +178,8 @@
       const twRaw =
         idx === ordered.length - 1
           ? undefined
-          : node[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY] ?? node.tags?.[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY];
+          : (node[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY] ??
+            node.tags?.[LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY]);
       const twTxt =
         twRaw !== undefined && twRaw !== null && Number.isFinite(Number(twRaw))
           ? ` · traffic_weight（連至沿路下一站）${escapeLayoutTooltipHtml(String(Number(twRaw)))}`
@@ -2572,10 +2573,7 @@
       .attr('data-inner-h', svgH)
       .style('background-color', '#FFFFFF')
       .style('background', '#FFFFFF')
-      .style(
-        'transition',
-        layoutVhDrawPixelAxisMode ? 'none' : 'all 0.2s ease-in-out'
-      );
+      .style('transition', layoutVhDrawPixelAxisMode ? 'none' : 'all 0.2s ease-in-out');
 
     // 🎯 強制設置 SVG 背景色（使用 DOM 直接設置以確保生效）
     const svgElement = svg.node();
@@ -3976,7 +3974,9 @@
       const stepPxX = ptToPx(stepPtX);
       const stepPxY = ptToPx(stepPtY);
       xTicks.push(...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, width, stepPxX), width));
-      yTicks.push(...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, height, stepPxY), height));
+      yTicks.push(
+        ...mergeLayoutPixelTicksToFullSpan(buildTicksInRange(0, height, stepPxY), height)
+      );
     } else if (useSchematicCellCenterGrid) {
       for (let tx = Math.ceil(xMin / tickXStep) * tickXStep; tx <= xMax; tx += tickXStep) {
         xTicks.push(tx);
@@ -4849,7 +4849,263 @@
       }
     };
 
-    const hvTransformPath = (path) => path;
+    /**
+     * layout-grid-viewer（layoutVhDrawPixelAxisMode）：在「像素（pt）」合規路線。
+     * - 僅當路徑上至少有一條邊**不是**水平或垂直（pt 空間）時才改畫；純 H/V 折線維持不變。
+     * - 非 H/V 路徑統一改為「45°-水平/垂直-45°」樣式（最多 2 個轉折）。
+     * - 與已繪製路線比對時，會搜尋多組 detour 候選，優先選擇不重疊路徑。
+     * - 均勻網格輔助線仍可做單線合規化（不重疊檢查，因其在路線下層且非「路線」本體）。
+     */
+    /** @type {Map<string, number[][]>|null} */
+    let layoutPixelVhDrawRouteGridByKey = null;
+    /** @param {number[][]} path */
+    let hvTransformPath = (path) => path;
+
+    if (layoutVhDrawPixelAxisMode && isLayoutNetworkGridFromVhDrawLayerId(layerTab)) {
+      /** px：小於此視為水平／垂直 */
+      const PATH_EPS = 0.5;
+      /** 與其他路線做重疊判斷（端點相接允許；內部交叉／共線重疊不允許） */
+      const OVERLAP_PT_TOL = 0.75;
+
+      const dist2 = (p, q) => {
+        const dx = p[0] - q[0];
+        const dy = p[1] - q[1];
+        return dx * dx + dy * dy;
+      };
+      const ptNear = (p, q, tol) => dist2(p, q) <= tol * tol;
+      const segShareEnd = (a1, a2, b1, b2, tol) =>
+        ptNear(a1, b1, tol) || ptNear(a1, b2, tol) || ptNear(a2, b1, tol) || ptNear(a2, b2, tol);
+
+      const pointStrictInteriorOnOpenSegment = (p, a1, a2, tol) => {
+        const len2 = dist2(a1, a2);
+        if (len2 < tol * tol) return false;
+        const t = ((p[0] - a1[0]) * (a2[0] - a1[0]) + (p[1] - a1[1]) * (a2[1] - a1[1])) / len2;
+        const te = 1e-6;
+        if (t <= te || t >= 1 - te) return false;
+        const x = a1[0] + t * (a2[0] - a1[0]);
+        const y = a1[1] + t * (a2[1] - a1[1]);
+        return dist2(p, [x, y]) <= tol * tol;
+      };
+
+      const segmentIntersectionInterior = (a1, a2, b1, b2, te) => {
+        if (segShareEnd(a1, a2, b1, b2, OVERLAP_PT_TOL)) return false;
+        const x1 = a1[0];
+        const y1 = a1[1];
+        const x2 = a2[0];
+        const y2 = a2[1];
+        const x3 = b1[0];
+        const y3 = b1[1];
+        const x4 = b2[0];
+        const y4 = b2[1];
+        const d = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (Math.abs(d) < 1e-14) {
+          const cross = (x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1);
+          if (Math.abs(cross) > OVERLAP_PT_TOL) return false;
+          const useX = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
+          const proj = useX ? (p) => p[0] : (p) => p[1];
+          const a = proj(a1);
+          const b = proj(a2);
+          const c = proj(b1);
+          const d0 = proj(b2);
+          const lo = Math.max(Math.min(a, b), Math.min(c, d0));
+          const hi = Math.min(Math.max(a, b), Math.max(c, d0));
+          return hi - lo > te;
+        }
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / d;
+        const u = ((x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2)) / d;
+        return t > te && t < 1 - te && u > te && u < 1 - te;
+      };
+
+      const edgePairOverlaps = (a1, a2, b1, b2, tol) => {
+        if (segShareEnd(a1, a2, b1, b2, tol)) return false;
+        const te = 1e-7;
+        if (segmentIntersectionInterior(a1, a2, b1, b2, te)) return true;
+        if (pointStrictInteriorOnOpenSegment(a1, b1, b2, tol)) return true;
+        if (pointStrictInteriorOnOpenSegment(a2, b1, b2, tol)) return true;
+        if (pointStrictInteriorOnOpenSegment(b1, a1, a2, tol)) return true;
+        if (pointStrictInteriorOnOpenSegment(b2, a1, a2, tol)) return true;
+        return false;
+      };
+
+      const polylinePairOverlapsPx = (polyA, polyB, tol) => {
+        if (!polyA || !polyB || polyA.length < 2 || polyB.length < 2) return false;
+        for (let i = 0; i < polyA.length - 1; i++) {
+          const p1 = polyA[i];
+          const p2 = polyA[i + 1];
+          for (let j = 0; j < polyB.length - 1; j++) {
+            const q1 = polyB[j];
+            const q2 = polyB[j + 1];
+            if (edgePairOverlaps(p1, p2, q1, q2, tol)) return true;
+          }
+        }
+        return false;
+      };
+
+      const polylineOverlapsAnyPx = (poly, list, tol) => {
+        for (const o of list) {
+          if (polylinePairOverlapsPx(poly, o, tol)) return true;
+        }
+        return false;
+      };
+
+      const polylineOverlapCountPx = (poly, list, tol) => {
+        let count = 0;
+        for (const o of list) {
+          if (polylinePairOverlapsPx(poly, o, tol)) count += 1;
+        }
+        return count;
+      };
+
+      /** 每一段皆為水平或垂直（不含斜線／45°）→ 不需改畫 */
+      const pathEveryEdgeHorizOrVertOnlyPx = (pts, eps) => {
+        for (let i = 0; i < pts.length - 1; i++) {
+          const A = pts[i];
+          const B = pts[i + 1];
+          const adx = Math.abs(B[0] - A[0]);
+          const ady = Math.abs(B[1] - A[1]);
+          const isH = ady < eps;
+          const isV = adx < eps;
+          if (!isH && !isV) return false;
+        }
+        return pts.length >= 2;
+      };
+
+      const normalizePolylinePx = (pts, eps) => {
+        if (!Array.isArray(pts) || pts.length < 2) return pts;
+        const out = [pts[0]];
+        for (let i = 1; i < pts.length; i++) {
+          const p = pts[i];
+          if (!ptNear(p, out[out.length - 1], eps)) out.push(p);
+        }
+        if (out.length < 3) return out;
+        const compact = [out[0]];
+        for (let i = 1; i < out.length - 1; i++) {
+          const A = compact[compact.length - 1];
+          const B = out[i];
+          const C = out[i + 1];
+          const dxAB = B[0] - A[0];
+          const dyAB = B[1] - A[1];
+          const dxBC = C[0] - B[0];
+          const dyBC = C[1] - B[1];
+          const cross = dxAB * dyBC - dyAB * dxBC;
+          if (Math.abs(cross) > eps * eps) compact.push(B);
+        }
+        compact.push(out[out.length - 1]);
+        return compact;
+      };
+
+      const buildTwoBendPx = (A, B, axis, t, eps) => {
+        const dx = B[0] - A[0];
+        const dy = B[1] - A[1];
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        const isH = ady < eps;
+        const isV = adx < eps;
+        const is45 = !isH && !isV && Math.abs(adx - ady) < eps;
+        if (isH || isV || is45) return [A, B];
+        const sx = dx >= 0 ? 1 : -1;
+        const sy = dy >= 0 ? 1 : -1;
+        const total = axis === 'h' ? ady : adx;
+        if (total < eps) return [A, B];
+        const l1 = total * t;
+        const l2 = total - l1;
+        const p1 = [A[0] + sx * l1, A[1] + sy * l1];
+        const p2 = [B[0] - sx * l2, B[1] - sy * l2];
+        return normalizePolylinePx([A, p1, p2, B], eps);
+      };
+
+      const buildTwoBendCandidatesPx = (gridPath, eps) => {
+        if (!Array.isArray(gridPath) || gridPath.length < 2) return [gridPath];
+        if (pathEveryEdgeHorizOrVertOnlyPx(gridPath, eps)) return [gridPath];
+        const A = gridPath[0];
+        const B = gridPath[gridPath.length - 1];
+        const dx = B[0] - A[0];
+        const dy = B[1] - A[1];
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        const isH = ady < eps;
+        const isV = adx < eps;
+        const is45 = !isH && !isV && Math.abs(adx - ady) < eps;
+        if (isH || isV || is45) return [[A, B]];
+        const centerFirst = [0.5, 0.35, 0.65, 0.2, 0.8, 0, 1];
+        const detours = [];
+        for (let k = 1; k <= 12; k++) {
+          detours.push(0.5 - k, 0.5 + k);
+        }
+        const tCandidates = [...centerFirst, ...detours];
+        const axisOrder = adx >= ady ? ['h', 'v'] : ['v', 'h'];
+        const candidates = [];
+        for (const axis of axisOrder) {
+          for (const t of tCandidates) {
+            candidates.push(buildTwoBendPx(A, B, axis, t, eps));
+          }
+        }
+        return candidates;
+      };
+
+      hvTransformPath = (gridPath) => {
+        if (!Array.isArray(gridPath) || gridPath.length < 2) return gridPath;
+        const pxIn = gridPath.map((c) => [xScale(c[0]), yScale(c[1])]);
+        if (pathEveryEdgeHorizOrVertOnlyPx(pxIn, PATH_EPS)) return gridPath;
+        const cand = buildTwoBendCandidatesPx(pxIn, PATH_EPS);
+        const px = cand.length > 0 ? cand[0] : pxIn;
+        return px.map((c) => [xScale.invert(c[0]), yScale.invert(c[1])]);
+      };
+
+      layoutPixelVhDrawRouteGridByKey = new Map();
+      const finalizedPxPolylines = [];
+
+      const routeItems = [];
+      routeFeatures.forEach((feature, featIdx) => {
+        if (!feature?.geometry) return;
+        const pr = feature.properties || {};
+        if (pr.layoutUniformStationGrid === true) return;
+        const g = feature.geometry;
+        if (g.type === 'LineString') {
+          routeItems.push({ coordinates: g.coordinates, featIdx, pi: 0 });
+        } else if (g.type === 'MultiLineString') {
+          g.coordinates.forEach((coords, pi) =>
+            routeItems.push({ coordinates: coords, featIdx, pi })
+          );
+        }
+      });
+
+      for (const item of routeItems) {
+        const gridPath = transformPathCoords(item.coordinates);
+        const key = `${item.featIdx}#${item.pi}`;
+        if (!Array.isArray(gridPath) || gridPath.length < 2) {
+          layoutPixelVhDrawRouteGridByKey.set(key, gridPath);
+          continue;
+        }
+        const pxIn = gridPath.map((c) => [xScale(c[0]), yScale(c[1])]);
+        if (pathEveryEdgeHorizOrVertOnlyPx(pxIn, PATH_EPS)) {
+          layoutPixelVhDrawRouteGridByKey.set(key, gridPath);
+          finalizedPxPolylines.push(pxIn);
+          continue;
+        }
+        const candidates = buildTwoBendCandidatesPx(pxIn, PATH_EPS);
+        let chosenPx = candidates.length > 0 ? candidates[0] : pxIn;
+        let bestOverlapCount = Number.POSITIVE_INFINITY;
+        for (const cand of candidates) {
+          const overlapCount = polylineOverlapCountPx(cand, finalizedPxPolylines, OVERLAP_PT_TOL);
+          if (overlapCount < bestOverlapCount) {
+            bestOverlapCount = overlapCount;
+            chosenPx = cand;
+          }
+          if (overlapCount === 0) {
+            break;
+          }
+        }
+        if (bestOverlapCount > 0 && !polylineOverlapsAnyPx(pxIn, finalizedPxPolylines, OVERLAP_PT_TOL)) {
+          chosenPx = pxIn;
+        }
+        layoutPixelVhDrawRouteGridByKey.set(
+          key,
+          chosenPx.map((c) => [xScale.invert(c[0]), yScale.invert(c[1])])
+        );
+        finalizedPxPolylines.push(chosenPx);
+      }
+    }
 
     const drawLayoutUniformGridLines = (coords) => {
       if (!Array.isArray(coords) || coords.length < 2) return;
@@ -4890,7 +5146,7 @@
         : null;
 
     // 繪製路線（支援 LineString / MultiLineString）；有疊加網格時線一起移動
-    routeFeatures.forEach((feature) => {
+    routeFeatures.forEach((feature, featIdx) => {
       if (!feature || !feature.geometry) return;
       const props = feature.properties || {};
       if (props.layoutUniformStationGrid === true) return;
@@ -4913,8 +5169,10 @@
         exportRowIdx === vhDrawRouteStrokeHlIdx;
 
       if (geom.type === 'LineString') {
+        const rawGrid = transformPathCoords(geom.coordinates);
+        const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#0`) ?? rawGrid;
         drawRoutePath(
-          offsetPathToSchematicCellCenters(hvTransformPath(transformPathCoords(geom.coordinates))),
+          offsetPathToSchematicCellCenters(gridForDraw),
           tags,
           props.name,
           props.color,
@@ -4927,9 +5185,11 @@
           exportRowIdx
         );
       } else if (geom.type === 'MultiLineString') {
-        geom.coordinates.forEach((coords) => {
+        geom.coordinates.forEach((coords, pi) => {
+          const rawGrid = transformPathCoords(coords);
+          const gridForDraw = layoutPixelVhDrawRouteGridByKey?.get(`${featIdx}#${pi}`) ?? rawGrid;
           drawRoutePath(
-            offsetPathToSchematicCellCenters(hvTransformPath(transformPathCoords(coords))),
+            offsetPathToSchematicCellCenters(gridForDraw),
             tags,
             props.name,
             props.color,
@@ -5183,14 +5443,13 @@
       };
 
       /** 粗格＋插入細網：與 `applyLayoutVhDrawFineGridToFeatureCollection` 相同之整數軸 (Fx,Fy)。像素軸檢視不依插入細網對齊。 */
-      const layoutMidDotsFineSubgridSpec =
-        layoutVhDrawPixelAxisMode
-          ? null
-          : !layoutFineGridSpec &&
-              coarseFcLayout?.type === 'FeatureCollection' &&
-              Array.isArray(coarseFcLayout.features)
-            ? computeLayoutVhDrawFineGridSpec(dataStore, coarseFcLayout)
-            : null;
+      const layoutMidDotsFineSubgridSpec = layoutVhDrawPixelAxisMode
+        ? null
+        : !layoutFineGridSpec &&
+            coarseFcLayout?.type === 'FeatureCollection' &&
+            Array.isArray(coarseFcLayout.features)
+          ? computeLayoutVhDrawFineGridSpec(dataStore, coarseFcLayout)
+          : null;
 
       const layoutMidDotTooltipGridLinesHtml = (gx, gy) => {
         const ngx = Number(gx);
@@ -5341,8 +5600,7 @@
         const tags = node.tags && typeof node.tags === 'object' ? node.tags : {};
         return String(node.station_name ?? tags.station_name ?? tags.name ?? '').trim();
       };
-      const layoutTrafficKey = (a, b) =>
-        [String(a).trim(), String(b).trim()].sort().join('\x00');
+      const layoutTrafficKey = (a, b) => [String(a).trim(), String(b).trim()].sort().join('\x00');
       const layoutTrafficEdges = [];
       const layoutTrafficEdgeKeys = new Set();
       const addLayoutTrafficEdges = (orderedPoints) => {
@@ -5393,7 +5651,8 @@
         const trafficSeg = row?.segment;
         const trafficStartName = layoutTrafficStationName(trafficSeg?.start);
         const trafficEndName = layoutTrafficStationName(trafficSeg?.end);
-        if (trafficStartName) trafficOrderedPoints.push({ name: trafficStartName, gxy: gridPts[0] });
+        if (trafficStartName)
+          trafficOrderedPoints.push({ name: trafficStartName, gxy: gridPts[0] });
         const nSta = row ? layoutMidStationCountFromJsonRow(row) : 0;
         const midsArc = layoutMidStationsAlignedWithArc(row);
         const pix = gridPts.map(([gx, gy]) => [xScale(gx), yScale(gy)]);
@@ -5406,97 +5665,98 @@
             gridPts[i + 1][1] - gridPts[i][1]
           );
         }
-        const canDrawMidDots = layoutFineGridSpec
-          ? totalGrid > 0 && totalPx > 0
-          : totalPx > 0;
+        const canDrawMidDots = layoutFineGridSpec ? totalGrid > 0 && totalPx > 0 : totalPx > 0;
         const dotRadius = 2.5;
-        if (canDrawMidDots) for (let k = 1; k <= nSta; k++) {
-          let gxy;
-          const targetPx = (k * totalPx) / (nSta + 1);
-          if (layoutFineGridSpec) {
-            gxy = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
-              gridPts,
-              targetPx,
-              (gx, gy) => [xScale(gx), yScale(gy)]
-            );
-          } else if (
-            layoutMidDotsFineSubgridSpec &&
-            Number.isFinite(layoutMidDotsFineSubgridSpec.m) &&
-            Math.floor(layoutMidDotsFineSubgridSpec.m) > 0
-          ) {
-            gxy = integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString(
-              gridPts,
-              targetPx,
-              (gx, gy) => [xScale(gx), yScale(gy)],
-              layoutMidDotsFineSubgridSpec
-            );
-          } else {
-            gxy = gridXYAtPixelDistanceAlong(gridPts, targetPx);
-          }
-          if (!gxy) continue;
+        if (canDrawMidDots)
+          for (let k = 1; k <= nSta; k++) {
+            let gxy;
+            const targetPx = (k * totalPx) / (nSta + 1);
+            if (layoutFineGridSpec) {
+              gxy = integerLatticeBlackDotAtPixelArcLengthAlongLineString(
+                gridPts,
+                targetPx,
+                (gx, gy) => [xScale(gx), yScale(gy)]
+              );
+            } else if (
+              layoutMidDotsFineSubgridSpec &&
+              Number.isFinite(layoutMidDotsFineSubgridSpec.m) &&
+              Math.floor(layoutMidDotsFineSubgridSpec.m) > 0
+            ) {
+              gxy = integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString(
+                gridPts,
+                targetPx,
+                (gx, gy) => [xScale(gx), yScale(gy)],
+                layoutMidDotsFineSubgridSpec
+              );
+            } else {
+              gxy = gridXYAtPixelDistanceAlong(gridPts, targetPx);
+            }
+            if (!gxy) continue;
 
-          /** 強制落在插入細分／細格視圖之合法網格座標（resize 弧度重算後仍對齊） */
-          const midDotLatticeEps = 1e-3;
-          if (layoutFineGridSpec) {
-            const clampedInt = snapBlackDotGxGyToIntegerLatticeAlongPolyline(
-              gridPts,
-              gxy[0],
-              gxy[1],
-              midDotLatticeEps
-            );
-            if (clampedInt) gxy = clampedInt;
-          } else if (
-            layoutMidDotsFineSubgridSpec &&
-            Number.isFinite(layoutMidDotsFineSubgridSpec.m) &&
-            Math.floor(layoutMidDotsFineSubgridSpec.m) > 0
-          ) {
-            const clampedFine = snapBlackDotGxGyToFineSubgridAlongPolyline(
-              gridPts,
-              gxy[0],
-              gxy[1],
-              layoutMidDotsFineSubgridSpec,
-              midDotLatticeEps
-            );
-            if (clampedFine) gxy = clampedFine;
+            /** 強制落在插入細分／細格視圖之合法網格座標（resize 弧度重算後仍對齊） */
+            const midDotLatticeEps = 1e-3;
+            if (layoutFineGridSpec) {
+              const clampedInt = snapBlackDotGxGyToIntegerLatticeAlongPolyline(
+                gridPts,
+                gxy[0],
+                gxy[1],
+                midDotLatticeEps
+              );
+              if (clampedInt) gxy = clampedInt;
+            } else if (
+              layoutMidDotsFineSubgridSpec &&
+              Number.isFinite(layoutMidDotsFineSubgridSpec.m) &&
+              Math.floor(layoutMidDotsFineSubgridSpec.m) > 0
+            ) {
+              const clampedFine = snapBlackDotGxGyToFineSubgridAlongPolyline(
+                gridPts,
+                gxy[0],
+                gxy[1],
+                layoutMidDotsFineSubgridSpec,
+                midDotLatticeEps
+              );
+              if (clampedFine) gxy = clampedFine;
+            }
+            const dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
+            if (
+              dotSegIndex >= 0 &&
+              Number.isFinite(Number(gxy[0])) &&
+              Number.isFinite(Number(gxy[1]))
+            ) {
+              layoutDotsForBandMaxRealtime.push({
+                gx: Number(gxy[0]),
+                gy: Number(gxy[1]),
+                fi: layoutRouteFi,
+                si: dotSegIndex,
+              });
+            }
+            const sta = midsArc[k - 1] ?? {};
+            const trafficMidName = layoutTrafficStationName(sta);
+            if (trafficMidName) trafficOrderedPoints.push({ name: trafficMidName, gxy });
+            layoutStaG
+              .append('circle')
+              .attr('cx', xScale(gxy[0]))
+              .attr('cy', yScale(gxy[1]))
+              .attr('r', dotRadius)
+              .attr('fill', '#000000')
+              .attr('stroke', '#000000')
+              .attr('stroke-width', 1)
+              .style('cursor', 'pointer')
+              .style('pointer-events', 'all')
+              .on('mouseover', function (event) {
+                d3.select(this).attr('r', 5).attr('stroke-width', 2);
+                showLayoutVHDrawMidStationTooltip(event, sta, gxy[0], gxy[1], row);
+              })
+              .on('mousemove', function (event) {
+                tooltip
+                  .style('left', `${event.pageX + 10}px`)
+                  .style('top', `${event.pageY - 10}px`);
+              })
+              .on('mouseout', function () {
+                d3.select(this).attr('r', dotRadius).attr('stroke-width', 1);
+                tooltip.style('opacity', 0);
+              });
           }
-          const dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
-          if (
-            dotSegIndex >= 0 &&
-            Number.isFinite(Number(gxy[0])) &&
-            Number.isFinite(Number(gxy[1]))
-          ) {
-            layoutDotsForBandMaxRealtime.push({
-              gx: Number(gxy[0]),
-              gy: Number(gxy[1]),
-              fi: layoutRouteFi,
-              si: dotSegIndex,
-            });
-          }
-          const sta = midsArc[k - 1] ?? {};
-          const trafficMidName = layoutTrafficStationName(sta);
-          if (trafficMidName) trafficOrderedPoints.push({ name: trafficMidName, gxy });
-          layoutStaG
-            .append('circle')
-            .attr('cx', xScale(gxy[0]))
-            .attr('cy', yScale(gxy[1]))
-            .attr('r', dotRadius)
-            .attr('fill', '#000000')
-            .attr('stroke', '#000000')
-            .attr('stroke-width', 1)
-            .style('cursor', 'pointer')
-            .style('pointer-events', 'all')
-            .on('mouseover', function (event) {
-              d3.select(this).attr('r', 5).attr('stroke-width', 2);
-              showLayoutVHDrawMidStationTooltip(event, sta, gxy[0], gxy[1], row);
-            })
-            .on('mousemove', function (event) {
-              tooltip.style('left', `${event.pageX + 10}px`).style('top', `${event.pageY - 10}px`);
-            })
-            .on('mouseout', function () {
-              d3.select(this).attr('r', dotRadius).attr('stroke-width', 1);
-              tooltip.style('opacity', 0);
-            });
-        }
         if (trafficEndName) {
           trafficOrderedPoints.push({ name: trafficEndName, gxy: gridPts[gridPts.length - 1] });
         }
@@ -5568,7 +5828,8 @@
         }
         const prevMissing = JSON.stringify(trafficLayer.layoutVhDrawTrafficMissing ?? []);
         const nextMissing = JSON.stringify(missingTrafficRows);
-        if (prevMissing !== nextMissing) trafficLayer.layoutVhDrawTrafficMissing = missingTrafficRows;
+        if (prevMissing !== nextMissing)
+          trafficLayer.layoutVhDrawTrafficMissing = missingTrafficRows;
 
         /** 未定義視為開啟（相容舊圖層 state） */
         const showTrafficW = trafficLayer?.layoutVhDrawShowTrafficWeights !== false;
