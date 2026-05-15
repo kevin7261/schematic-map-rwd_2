@@ -6247,7 +6247,9 @@
       });
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
-      window.alert(`已讀入「${file.name}」至 VH 繪製層。之後開啟該圖層將沿用此檔（不再自動鏡像 VH）。`);
+      window.alert(
+        `已讀入「${file.name}」至 VH 繪製層。之後開啟該圖層將沿用此檔（不再自動鏡像 VH）。`
+      );
     } catch (err) {
       console.error(err);
       window.alert('讀取或解析 JSON 失敗（詳見控制台）。');
@@ -6533,11 +6535,17 @@
     vhDrawUnitL45AutoTimerId = setInterval(async () => {
       if (!vhDrawUnitL45AutoActive.value || vhDrawUnitL45AutoTickBusy) return;
       const lyrFresh = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
-      if (!lyrFresh) { stopVhDrawUnitL45Auto(); return; }
+      if (!lyrFresh) {
+        stopVhDrawUnitL45Auto();
+        return;
+      }
       vhDrawUnitL45AutoTickBusy = true;
       try {
         const flat = getVhDrawFlatSegments(lyrFresh);
-        if (!flat?.length) { stopVhDrawUnitL45Auto(); return; }
+        if (!flat?.length) {
+          stopVhDrawUnitL45Auto();
+          return;
+        }
         const candidates = listUnitOrthogonalLCandidates(flat);
         if (!candidates.length) {
           stopVhDrawUnitL45Auto();
@@ -6691,10 +6699,7 @@
             vhDrawDiagonalRouteStepHint.value = '已輪完一週各路線皆無可替換斜邊，自動執行已停止。';
           }
         }
-        await syncVhDrawDiagonalRouteHighlightToLayer(
-          lyrFresh,
-          vhDrawDiagonalRouteAutoKind.value
-        );
+        await syncVhDrawDiagonalRouteHighlightToLayer(lyrFresh, vhDrawDiagonalRouteAutoKind.value);
       } catch (tickErr) {
         console.error(tickErr);
       } finally {
@@ -7085,7 +7090,10 @@
       const resp = await fetch(csvUrl);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const text = await resp.text();
-      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      const lines = text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
       if (lines.length < 2) throw new Error('CSV 內容不足');
       const header = lines[0].split(',');
       const aIdx = header.findIndex((c) => c.includes('站點A'));
@@ -10437,9 +10445,12 @@
         >
           <div class="my-title-xs-gray pb-2">粗格版面：欄／列黑點 max 比例（分開歸一）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            各<strong>欄開區間</strong>與<strong>列開區間</strong>分別算出刻度間 black-dot max 後，在<strong>同一方向</strong>內加總歸一（欄、列互不混算；與版面網格區間標註同源）。
-            若該方向全系皆為 0，該方向各段比例均等。下方比例表依<strong>目前 geojson 路網</strong>自動計算（粗格／格座標區間，無須按鈕）。<strong>顯示比例條繪製</strong>僅於 Upper「<strong>layout-grid</strong>」分頁生效：依該檢視之
-            pt 區間即時算出之 black-dot max（與軸間藍色數字同源）繪製青色（欄）／玫瑰色（列）條，Σ 歸一比例見條 tooltip。
+            各<strong>欄開區間</strong>與<strong>列開區間</strong>分別算出刻度間 black-dot max
+            後，在<strong>同一方向</strong>內加總歸一（欄、列互不混算；與版面網格區間標註同源）。
+            若該方向全系皆為 0，該方向各段比例均等。下方比例表依<strong>目前 geojson 路網</strong
+            >自動計算（粗格／格座標區間，無須按鈕）。<strong>顯示比例條繪製</strong>僅於
+            Upper「<strong>layout-grid</strong>」分頁生效：依該檢視之 pt 區間即時算出之 black-dot
+            max（與軸間藍色數字同源）繪製青色（欄）／玫瑰色（列）條，Σ 歸一比例見條 tooltip。
           </div>
           <div class="d-flex align-items-center justify-content-between mb-2">
             <div class="my-content-sm-black">顯示比例條繪製</div>
@@ -10449,10 +10460,7 @@
                 :id="'switch-layout-vh-draw-bd-rowcol-' + layer.layerId"
                 :checked="layer.layoutVhDrawShowBlackDotRowColRatioOverlay === true"
                 @change="
-                  onLayoutVhDrawShowBlackDotRowColRatioOverlayChange(
-                    layer,
-                    $event.target.checked
-                  )
+                  onLayoutVhDrawShowBlackDotRowColRatioOverlayChange(layer, $event.target.checked)
                 "
               />
               <label :for="'switch-layout-vh-draw-bd-rowcol-' + layer.layerId"></label>
@@ -10469,10 +10477,10 @@
         >
           <div class="my-title-xs-gray pb-2">還原 VH 繪製（本機 JSON）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            與「站點與路線（先直後橫）·dataJson
-            繪製」之<strong>選擇 JSON 檔讀入</strong>相同：寫入
+            與「站點與路線（先直後橫）·dataJson 繪製」之<strong>選擇 JSON 檔讀入</strong>相同：寫入
             <code class="small">orthogonal_toward_center_vh_draw</code>
-            的 dataJson／路網並同步路網網格。可先於該層<strong>下載 JSON</strong>後在此讀入，省去重跑先前步驟。
+            的 dataJson／路網並同步路網網格。可先於該層<strong>下載 JSON</strong
+            >後在此讀入，省去重跑先前步驟。
           </div>
           <button
             type="button"
@@ -10484,8 +10492,12 @@
           </button>
           <div class="my-title-xs-gray pb-2">路段交通流量（CSV）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            來源：<code class="small">{{ layer.csvFileName_traffic }}</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
-            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。「全部隨機 weight」無須 CSV：會依 VH 繪製層路段自動建立站對並抽 1–9（機率∝<code class="small">1/2<sup>k</sup></code>）；若已載入 CSV 則僅重抽各筆 weight。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
+            來源：<code class="small">{{ layer.csvFileName_traffic }}</code
+            >（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
+            <strong>總人次</strong>；無對應資料者顯示 <strong>0</strong>。「全部隨機 weight」無須
+            CSV：會依 VH 繪製層路段自動建立站對並抽 1–9（機率∝<code class="small"
+              >1/2<sup>k</sup></code
+            >）；若已載入 CSV 則僅重抽各筆 weight。CSV 若找不到相鄰紅／藍／黑點，會列在下方。
           </div>
           <div class="d-flex align-items-center justify-content-between mb-2">
             <div class="my-content-sm-black">顯示 weight 標籤</div>
@@ -10494,9 +10506,7 @@
                 type="checkbox"
                 :id="'switch-layout-vh-draw-traffic-weights-' + layer.layerId"
                 :checked="layer.layoutVhDrawShowTrafficWeights !== false"
-                @change="
-                  onLayoutVhDrawShowTrafficWeightsChange(layer, $event.target.checked)
-                "
+                @change="onLayoutVhDrawShowTrafficWeightsChange(layer, $event.target.checked)"
               />
               <label :for="'switch-layout-vh-draw-traffic-weights-' + layer.layerId"></label>
             </div>
@@ -10533,10 +10543,7 @@
             <div class="fw-bold mb-1">
               CSV 找不到相鄰紅／藍／黑點：{{ layer.layoutVhDrawTrafficMissing.length }} 筆
             </div>
-            <div
-              class="overflow-auto"
-              style="max-height: 120px"
-            >
+            <div class="overflow-auto" style="max-height: 120px">
               <div
                 v-for="(it, idx) in layer.layoutVhDrawTrafficMissing"
                 :key="'traffic-missing-' + idx"
@@ -10547,10 +10554,7 @@
               </div>
             </div>
           </div>
-          <div
-            v-else-if="layer.layoutVhDrawTrafficData"
-            class="text-success my-font-size-xs mt-2"
-          >
+          <div v-else-if="layer.layoutVhDrawTrafficData" class="text-success my-font-size-xs mt-2">
             CSV 所有 weight 皆已找到相鄰點。
           </div>
         </div>
@@ -10600,8 +10604,8 @@
             :disabled="isExecuting || layer.isLoading || vhDrawUnitL45AutoActive"
             @click="onOrthogonalVhDrawTripleBatchClick(layer, { skipUnitL45: true })"
           >
-            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z → 斜邊→H／V／45°（不執行
-            單位正交 L→45°）
+            一鍵執行：L flip 全網 → 斜邊→正交 L → 斜邊→N／Z → 斜邊→H／V／45°（不執行 單位正交
+            L→45°）
           </button>
           <div
             v-if="vhDrawTripleBatchHint"
@@ -10663,7 +10667,12 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawLShapeAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'l')"
             >
               下一步：下一條路線（僅 L；該線斜邊清完後換下一條，循環）
@@ -10689,7 +10698,12 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'l')"
             >
               一鍵全路網：非 H／V 邊 → 僅正交 L（兩段）
@@ -10706,7 +10720,12 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawLShapeAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'nz')"
             >
               下一步：下一條路線（僅 N／Z；該線斜邊清完後換下一條，循環）
@@ -10732,7 +10751,12 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'nz')"
             >
               一鍵全路網：非 H／V 邊 → 僅 N／Z（三正交段）
@@ -10751,7 +10775,12 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawDiagonalRouteAutoActive || vhDrawLShapeAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawLShapeAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawDiagonalOneRouteClick(layer, 'hv45')"
             >
               下一步：下一條路線（H／V／45°；該線可換之斜邊清完後換下一條，循環）
@@ -10777,7 +10806,12 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawDiagonalToLClick(layer, 'hv45')"
             >
               一鍵全路網：|Δx|≠|Δy| 斜邊 → H／V／45°（0.5 格·一至兩轉折）
@@ -10792,17 +10826,25 @@
           </div>
           <div class="my-title-xs-gray pb-2">單位正交 L → 45°</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
-            前面 L flip 與斜向邊轉換完成後再執行。轉角為先橫／豎再豎／橫之正交 L，且自轉角沿兩臂各至少
+            前面 L flip 與斜向邊轉換完成後再執行。轉角為先橫／豎再豎／橫之正交
+            L，且自轉角沿兩臂各至少
             <strong>1</strong>
-            格時，將靠轉角之<strong>各 1 格</strong>（必要時自動插入折點）換成<strong>單一 45°
-            斜線</strong>並移除原位轉折；預覽仍以 L（兩段各一格）呈現。約束同上：無交叉、無與他線共線重疊、頂點不落在他線開放段上、線段開放內部不壓紅／藍
+            格時，將靠轉角之<strong>各 1 格</strong>（必要時自動插入折點）換成<strong
+              >單一 45° 斜線</strong
+            >並移除原位轉折；預覽仍以
+            L（兩段各一格）呈現。約束同上：無交叉、無與他線共線重疊、頂點不落在他線開放段上、線段開放內部不壓紅／藍
             connect；轉折為 connect 站點時略過。
           </div>
           <div class="d-grid gap-2 mb-2">
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer btn-outline-primary"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawUnitL45OneClick(layer)"
             >
               下一步：下一個單位 L → 45°（可行則替換，不可行寫原因）
@@ -10823,7 +10865,12 @@
             <button
               type="button"
               class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green"
-              :disabled="isExecuting || vhDrawLShapeAutoActive || vhDrawDiagonalRouteAutoActive || vhDrawUnitL45AutoActive"
+              :disabled="
+                isExecuting ||
+                vhDrawLShapeAutoActive ||
+                vhDrawDiagonalRouteAutoActive ||
+                vhDrawUnitL45AutoActive
+              "
               @click="onOrthogonalVhDrawUnitLTo45Click(layer)"
             >
               一鍵全路網：單位 L → 45°（僅安全處）
