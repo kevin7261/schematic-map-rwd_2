@@ -21,6 +21,12 @@ export const LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID = 'orthogonal_towar
 export const LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID = 'layout_network_grid_from_vh_draw';
 
 /**
+ * 「版面網絡網格」同組第二份：與 {@link LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID} 同功能與顯示，獨立狀態（程式路徑複製，不共用實作）。
+ * layerId：`layout_network_grid_from_vh_draw_copy`
+ */
+export const LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY = 'layout_network_grid_from_vh_draw_copy';
+
+/**
  * 版面網絡網格_2：與 {@link LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID} 同功能，獨立圖層狀態／persist。
  * layerId：`layout_network_grid_from_vh_draw_2`
  */
@@ -47,6 +53,7 @@ export function isOrthogonalVhDataJsonDrawMirrorLayerId(layerId) {
 export function isLayoutNetworkGridFromVhDrawLayerId(layerId) {
   return (
     layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+    layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ||
     layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
   );
 }

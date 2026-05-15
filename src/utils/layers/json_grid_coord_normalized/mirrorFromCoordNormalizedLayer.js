@@ -25,6 +25,7 @@ import {
   LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
   LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
   LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
+  LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY,
   LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2,
   LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2,
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
@@ -104,6 +105,42 @@ export function applyCoordNormalizedLayerDataJsonToFollowon(findLayerById, deriv
     }
     derivedLayer.isLoaded = true;
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw(findLayerById, derivedLayer);
+    return;
+  }
+
+  if (derivedLayer?.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) {
+    const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+    const osm =
+      draw?.dataOSM != null && String(draw.dataOSM).trim() !== '' ? String(draw.dataOSM) : null;
+    derivedLayer.dataOSM = osm;
+    if (osm) {
+      try {
+        const { geojsonData } = osmXmlStringToGeojsonData(osm);
+        const lineFeats =
+          geojsonData?.type === 'FeatureCollection' && Array.isArray(geojsonData.features)
+            ? geojsonData.features.filter(
+                (f) =>
+                  f?.geometry &&
+                  (f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString')
+              )
+            : [];
+        const drawGj = draw?.geojsonData;
+        const pointFeats =
+          drawGj?.type === 'FeatureCollection' && Array.isArray(drawGj.features)
+            ? drawGj.features.filter((f) => f?.geometry?.type === 'Point')
+            : [];
+        derivedLayer.geojsonData =
+          lineFeats.length || pointFeats.length
+            ? { type: 'FeatureCollection', features: [...lineFeats, ...pointFeats] }
+            : null;
+      } catch {
+        derivedLayer.geojsonData = null;
+      }
+    } else {
+      derivedLayer.geojsonData = null;
+    }
+    derivedLayer.isLoaded = true;
+    syncLayoutNetworkGridRoutesDataJsonFromVhDrawCopy(findLayerById, derivedLayer);
     return;
   }
 
@@ -224,12 +261,14 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
   lyr.layoutUniformGridMeta = null;
   if (
     lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+    lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ||
     lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
   ) {
     lyr.layoutVhDrawFineGridTurnRbMidDots = false;
   }
   if (
     lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+    lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ||
     lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2 ||
     lyr.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2
   ) {
@@ -252,6 +291,18 @@ export function syncLayoutNetworkGridRoutesDataJsonFromVhDraw(findLayerById, lay
   const layout = layoutLayer ?? findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID);
   const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
   if (!layout || layout.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID || !draw) return;
+
+  const rows = buildVhDrawStationRowsForLayoutMap({ findLayerById }, draw);
+  layout.jsonData = null;
+  layout.dataJson =
+    Array.isArray(rows) && rows.length > 0 ? JSON.parse(JSON.stringify(rows)) : null;
+}
+
+/** 同組複本：與 {@link syncLayoutNetworkGridRoutesDataJsonFromVhDraw} 相同邏輯，綁定 `layout_network_grid_from_vh_draw_copy`（實作重複，不呼叫前者）。 */
+export function syncLayoutNetworkGridRoutesDataJsonFromVhDrawCopy(findLayerById, layoutLayer) {
+  const layout = layoutLayer ?? findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY);
+  const draw = findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+  if (!layout || layout.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY || !draw) return;
 
   const rows = buildVhDrawStationRowsForLayoutMap({ findLayerById }, draw);
   layout.jsonData = null;
@@ -385,6 +436,7 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
   }
   if (
     layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+    layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ||
     layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
   ) {
     payload.csvFileName_traffic = layer.csvFileName_traffic ?? null;
@@ -428,6 +480,13 @@ export function refreshLayoutNetworkGridFromVhDrawIfVisible2(findLayerById, save
   mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layout);
 }
 
+/** 同組複本：若可見則自 `orthogonal_toward_center_vh_draw` 重複製並 persist（平行於 {@link refreshLayoutNetworkGridFromVhDrawIfVisible}，實作重複）。 */
+export function refreshLayoutNetworkGridFromVhDrawIfVisibleCopy(findLayerById, saveLayerState) {
+  const layout = findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY);
+  if (!layout?.visible) return;
+  mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layout);
+}
+
 export function mirrorResetAndPersistJsonGridFromCoordNormalized(
   findLayerById,
   saveLayerState,
@@ -444,6 +503,7 @@ export function mirrorResetAndPersistJsonGridFromCoordNormalized(
   }
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
     refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
+    refreshLayoutNetworkGridFromVhDrawIfVisibleCopy(findLayerById, saveLayerState);
     refreshLayoutNetworkGridFromVhDrawIfVisible2(findLayerById, saveLayerState);
   }
   if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
@@ -462,6 +522,7 @@ export function reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerS
   }
   if (layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
     refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
+    refreshLayoutNetworkGridFromVhDrawIfVisibleCopy(findLayerById, saveLayerState);
     refreshLayoutNetworkGridFromVhDrawIfVisible2(findLayerById, saveLayerState);
   }
   if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
@@ -494,6 +555,7 @@ export function refreshOrthogonalVhMirrorDrawLayerIfVisible(findLayerById, saveL
     mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, draw);
   } else if (draw?.visible) {
     refreshLayoutNetworkGridFromVhDrawIfVisible(findLayerById, saveLayerState);
+    refreshLayoutNetworkGridFromVhDrawIfVisibleCopy(findLayerById, saveLayerState);
     refreshLayoutNetworkGridFromVhDrawIfVisible2(findLayerById, saveLayerState);
   }
 }

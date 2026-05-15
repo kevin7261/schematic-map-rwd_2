@@ -42,6 +42,7 @@
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
     LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
+    LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY,
     LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2,
     LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2,
     LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
@@ -49,9 +50,11 @@
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
     refreshLayoutNetworkGridFromVhDrawIfVisible,
+    refreshLayoutNetworkGridFromVhDrawIfVisibleCopy,
     refreshLayoutNetworkGridFromVhDrawIfVisible2,
     mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2,
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw,
+    syncLayoutNetworkGridRoutesDataJsonFromVhDrawCopy,
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw2,
     applyLayoutTrafficCsvToVhDrawLayerRoots,
     buildSyntheticTrafficRowsFromVhDrawLayer,
@@ -5654,6 +5657,10 @@
         dataStore.findLayerById.bind(dataStore),
         dataStore.saveLayerState.bind(dataStore)
       );
+      refreshLayoutNetworkGridFromVhDrawIfVisibleCopy(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
       refreshLayoutNetworkGridFromVhDrawIfVisible2(
         dataStore.findLayerById.bind(dataStore),
         dataStore.saveLayerState.bind(dataStore)
@@ -7030,6 +7037,17 @@
     }
   };
 
+  const persistLayoutVhDrawGridRoutesDataJsonSnapshotCopy = () => {
+    syncLayoutNetworkGridRoutesDataJsonFromVhDrawCopy((id) => dataStore.findLayerById(id));
+    const lay = dataStore.findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY);
+    if (lay) {
+      dataStore.saveLayerState(
+        lay.layerId,
+        jsonGridFromCoordNormalizedPersistPayload(lay, { omitLoadingFlags: true })
+      );
+    }
+  };
+
   /** 版面網絡網格_2：與 {@link persistLayoutVhDrawGridRoutesDataJsonSnapshot} 同流程，綁定 `layout_network_grid_from_vh_draw_2`。 */
   const persistLayoutVhDrawGridRoutesDataJsonSnapshot2 = () => {
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw2((id) => dataStore.findLayerById(id));
@@ -7053,6 +7071,7 @@
   const isLayoutNetworkGridFromVhDrawControlLayer = (lyr) =>
     lyr &&
     (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+      lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ||
       lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2);
 
   /** layout_network_grid_from_vh_draw：載入交通流量 CSV */
@@ -7101,6 +7120,8 @@
       }
       if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
         persistLayoutVhDrawGridRoutesDataJsonSnapshot2();
+      } else if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) {
+        persistLayoutVhDrawGridRoutesDataJsonSnapshotCopy();
       } else {
         persistLayoutVhDrawGridRoutesDataJsonSnapshot();
       }
@@ -7132,6 +7153,8 @@
     }
     if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
       persistLayoutVhDrawGridRoutesDataJsonSnapshot2();
+    } else if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) {
+      persistLayoutVhDrawGridRoutesDataJsonSnapshotCopy();
     } else {
       persistLayoutVhDrawGridRoutesDataJsonSnapshot();
     }
@@ -7225,6 +7248,8 @@
     }
     if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2) {
       persistLayoutVhDrawGridRoutesDataJsonSnapshot2();
+    } else if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) {
+      persistLayoutVhDrawGridRoutesDataJsonSnapshotCopy();
     } else {
       persistLayoutVhDrawGridRoutesDataJsonSnapshot();
     }
@@ -10407,10 +10432,7 @@
         </div>
 
         <div
-          v-if="
-            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
-            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
-          "
+          v-if="isLayoutNetworkGridFromVhDrawControlLayer(layer)"
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">粗格版面：欄／列黑點 max 比例（分開歸一）</div>
@@ -10442,10 +10464,7 @@
 
         <!-- layout_network_grid_from_vh_draw：還原 VH 繪製 JSON／交通流量 CSV -->
         <div
-          v-if="
-            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
-            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
-          "
+          v-if="isLayoutNetworkGridFromVhDrawControlLayer(layer)"
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">還原 VH 繪製（本機 JSON）</div>

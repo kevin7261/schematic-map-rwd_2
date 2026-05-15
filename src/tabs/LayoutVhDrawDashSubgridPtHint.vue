@@ -4,6 +4,7 @@
   import { useDataStore } from '@/stores/dataStore.js';
   import {
     LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID,
+    LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY,
     LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
 
@@ -16,7 +17,11 @@
 
   const isLayoutVhDrawControlLayer = computed(() => {
     const id = props.layer?.layerId;
-    return id === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID || id === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2;
+    return (
+      id === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
+      id === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ||
+      id === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2
+    );
   });
 
   const fmtPtRange = (a, b) => {

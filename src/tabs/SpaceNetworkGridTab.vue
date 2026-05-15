@@ -153,6 +153,55 @@
     return out;
   }
 
+  /**
+   * layout-grid 比例條：黑點 max 為 0 之欄／列區間至少保留 minPt（預設 10）對應之 px，其餘寬高依正權重分配。
+   * @param {unknown[]} vals
+   * @param {number} spanPx
+   * @param {(pt:number)=>number} ptToPx
+   * @param {number} [minPt=10]
+   */
+  function slabRatiosBlackMaxWithMinPtForZeros(vals, spanPx, ptToPx, minPt = 10) {
+    const span = Number(spanPx);
+    const n = vals.length;
+    if (n === 0 || !Number.isFinite(span) || span <= 0) return [];
+    const minPx = Math.max(0, ptToPx(minPt));
+    const v = vals.map((raw) => {
+      const x = Number(raw);
+      return Number.isFinite(x) && x > 0 ? x : 0;
+    });
+    const nZero = v.reduce((acc, x) => acc + (x === 0 ? 1 : 0), 0);
+    const sumPos = v.reduce((a, b) => a + b, 0);
+
+    if (nZero === 0) {
+      if (!(sumPos > 0)) return v.map(() => 1 / n);
+      return v.map((x) => x / sumPos);
+    }
+
+    if (!(sumPos > 0)) {
+      const idealEach = Math.max(minPx, span / n);
+      let alloc = v.map(() => idealEach);
+      let allocSum = alloc.reduce((a, b) => a + b, 0);
+      if (allocSum > span + 1e-9) {
+        const f = span / allocSum;
+        alloc = alloc.map((x) => x * f);
+      }
+      return alloc.map((x) => x / span);
+    }
+
+    const denom = span - minPx * nZero;
+    if (denom <= 1e-9) {
+      const eps = 1e-9;
+      const w = v.map((x) => (x > 0 ? x : eps));
+      const sum = w.reduce((a, b) => a + b, 0);
+      return sum > 0 ? w.map((x) => x / sum) : v.map(() => 1 / n);
+    }
+    const k = (minPx * sumPos) / denom;
+    const eff = v.map((x) => (x > 0 ? x : k));
+    const sumEff = eff.reduce((a, b) => a + b, 0);
+    if (!(sumEff > 0)) return v.map(() => 1 / n);
+    return eff.map((x) => x / sumEff);
+  }
+
   /** 與 MapTab 路段／站點 popup 同源（OSM／GeoJSON → JSON 檢視） */
   const escapeLayoutTooltipHtml = (s) =>
     String(s ?? '')
@@ -6309,16 +6358,6 @@
           !layoutFineGridSpec &&
           layoutPxBandMaxColVals.length === nColSlabs &&
           layoutPxBandMaxRowVals.length === nRowSlabs;
-        const normalizeSlabRatios = (vals) => {
-          const w = vals.map((v) => {
-            const x = Number(v);
-            return Number.isFinite(x) && x >= 0 ? x : 0;
-          });
-          const sum = w.reduce((a, b) => a + b, 0);
-          const n = w.length;
-          if (!(sum > 0) || n === 0) return w.map(() => (n > 0 ? 1 / n : 1));
-          return w.map((x) => x / sum);
-        };
         const slabRemapPlotLocal = (ticks, rats, span, uIn) => {
           const n = ticks.length;
           if (n < 2 || rats.length !== n - 1) return Number(uIn);
@@ -6392,8 +6431,18 @@
           pendingWeightedMidDots.length = 0;
         };
         if (canApplyWeightedPlotRemap) {
-          const ratXC = normalizeSlabRatios(layoutPxBandMaxColVals);
-          const ratYR = normalizeSlabRatios(layoutPxBandMaxRowVals);
+          const ptToPxForRatioFloor =
+            layoutViewerPxPtScale?.ptToPx ?? ((pt) => (Number(pt) * 96) / 72);
+          const ratXC = slabRatiosBlackMaxWithMinPtForZeros(
+            layoutPxBandMaxColVals,
+            width,
+            ptToPxForRatioFloor
+          );
+          const ratYR = slabRatiosBlackMaxWithMinPtForZeros(
+            layoutPxBandMaxRowVals,
+            height,
+            ptToPxForRatioFloor
+          );
 
           /** 鄰近縱／橫線間距（px）：含粗格實線與區間內虛線。nSub≥1 時為 slab/(nSub+1)；nSub=0 時僅實線邊界，間距為整段 slab。 */
           const pxToPtDashSubgrid = (px) => (Number(px) * 72) / 96;
