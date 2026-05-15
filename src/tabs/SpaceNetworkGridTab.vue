@@ -4121,6 +4121,15 @@
       isLayoutNetworkGridFromVhDrawLayerId(layerTab) &&
       activeTabLayer?.layoutVhDrawShowBlackDotRowColRatioOverlay === true;
 
+    if (layoutVhDrawPixelAxisMode && isLayoutNetworkGridFromVhDrawLayerId(layerTab)) {
+      if (!layoutVhDrawWeightedLayoutMode) {
+        dataStore.setLayoutVhDrawWeightedDashSubgridPtUi({
+          layerId: layerTab,
+          status: 'overlay_off',
+        });
+      }
+    }
+
     // 🎯 繪製淺灰色網格線（在背景層）；json 繪製疊均勻格時略過以免與自訂直角格重疊
     const gridGroup = zoomGroup.append('g').attr('class', 'grid-group');
 
@@ -6380,6 +6389,37 @@
         if (canApplyWeightedPlotRemap) {
           const ratXC = normalizeSlabRatios(layoutPxBandMaxColVals);
           const ratYR = normalizeSlabRatios(layoutPxBandMaxRowVals);
+
+          /** 鄰近縱／橫線間距（px）：含粗格實線與區間內虛線。nSub≥1 時為 slab/(nSub+1)；nSub=0 時僅實線邊界，間距為整段 slab。 */
+          const pxToPtDashSubgrid = (px) => (Number(px) * 72) / 96;
+          const roundPt2Dash = (pt) => Math.round(Number(pt) * 100) / 100;
+          const wGapPtList = [];
+          for (let xi = 0; xi < ratXC.length; xi++) {
+            const slabW = width * ratXC[xi];
+            const nSub = Math.max(0, Math.round(Number(layoutPxBandMaxColVals[xi]) || 0));
+            const gapPx = nSub >= 1 ? slabW / (nSub + 1) : slabW;
+            wGapPtList.push(pxToPtDashSubgrid(gapPx));
+          }
+          const hGapPtList = [];
+          for (let yi = 0; yi < ratYR.length; yi++) {
+            const slabH = height * ratYR[yi];
+            const nSubH = Math.max(0, Math.round(Number(layoutPxBandMaxRowVals[yi]) || 0));
+            const gapPx = nSubH >= 1 ? slabH / (nSubH + 1) : slabH;
+            hGapPtList.push(pxToPtDashSubgrid(gapPx));
+          }
+          const wMn = roundPt2Dash(Math.min(...wGapPtList));
+          const wMx = roundPt2Dash(Math.max(...wGapPtList));
+          const hMn = roundPt2Dash(Math.min(...hGapPtList));
+          const hMx = roundPt2Dash(Math.max(...hGapPtList));
+          dataStore.setLayoutVhDrawWeightedDashSubgridPtUi({
+            layerId: layerTab,
+            status: 'ok',
+            wPtMin: wMn,
+            wPtMax: wMx,
+            hPtMin: hMn,
+            hPtMax: hMx,
+          });
+
           const wtx = layoutBlackMaxXTicks.map((t) => Number(t));
           const wty = layoutBlackMaxYTicks.map((t) => Number(t));
 
@@ -6518,6 +6558,10 @@
           flushPendingWeightedMidDots();
           drawLayoutRoutesPass();
         } else {
+          dataStore.setLayoutVhDrawWeightedDashSubgridPtUi({
+            layerId: layerTab,
+            status: 'cant_remap',
+          });
           flushPendingWeightedMidDots();
           drawLayoutRoutesPass();
         }

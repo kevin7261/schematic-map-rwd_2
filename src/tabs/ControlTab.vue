@@ -79,6 +79,7 @@
   import { buildTaipeiB3ExecuteLayerFieldsFromGeojson } from '@/utils/taipeiTest4/buildTaipeiA3StyleLayerFieldsFromGeojson.js';
   import { getIcon } from '@/utils/utils.js';
   import LayoutVhDrawBlackDotRatioTables from './LayoutVhDrawBlackDotRatioTables.vue';
+  import LayoutVhDrawDashSubgridPtHint from './LayoutVhDrawDashSubgridPtHint.vue';
 
   /**
    * 網格合併和縮減工具函數引入
@@ -10383,6 +10384,7 @@
               <label :for="'switch-layout-vh-draw-bd-rowcol-' + layer.layerId"></label>
             </div>
           </div>
+          <LayoutVhDrawDashSubgridPtHint :layer="layer" />
           <LayoutVhDrawBlackDotRatioTables :layer="layer" />
         </div>
 

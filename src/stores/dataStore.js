@@ -3334,6 +3334,31 @@ export const useDataStore = defineStore(
     };
 
     /**
+     * Layout-grid（VH→版面路網）「比例條繪製」：繪區內相鄰縱／橫線間距（pt，含粗格實線與區間虛線；CSS 96dpi）。
+     * 由 SpaceNetworkGridTab drawMap 依 Upper 繪區 width/height 即時寫入；供 Control 對照。
+     */
+    const layoutVhDrawWeightedDashSubgridPtUi = ref({
+      layerId: null,
+      status: 'idle',
+      wPtMin: null,
+      wPtMax: null,
+      hPtMin: null,
+      hPtMax: null,
+    });
+    const setLayoutVhDrawWeightedDashSubgridPtUi = (patch) => {
+      const base = {
+        layerId: null,
+        status: 'idle',
+        wPtMin: null,
+        wPtMax: null,
+        hPtMin: null,
+        hPtMax: null,
+      };
+      layoutVhDrawWeightedDashSubgridPtUi.value =
+        patch && typeof patch === 'object' ? { ...base, ...patch } : base;
+    };
+
+    /**
      * 手繪預覽疊加（可選）：折線以包圍盒正規化 [0,1]²；執行下一步時寫入 taipei_b3_dp_nd.spaceNetworkGridJsonData（Normalize Segments，圖幅依最後選定之可見參考圖層）並清除此欄。
      * polylinesNorm：每條折線為 { nx, ny }[]，nx 由左至右、ny 由上至下（與手繪 SVG 一致）。
      */
@@ -3829,6 +3854,8 @@ export const useDataStore = defineStore(
       overlayShrinkStripRedrawTrigger,
       spaceNetworkGridFullRedrawTrigger,
       requestSpaceNetworkGridFullRedraw,
+      layoutVhDrawWeightedDashSubgridPtUi,
+      setLayoutVhDrawWeightedDashSubgridPtUi,
       networkDrawSketchGridOverlay,
       getNetworkDrawSketchSn4PolylinesForLayer,
       getNetworkDrawSketchSn4MarkersForLayer,
