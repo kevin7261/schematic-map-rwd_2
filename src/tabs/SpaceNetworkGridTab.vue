@@ -6333,7 +6333,10 @@
           const lens = [];
           let total = 0;
           for (let ii = 0; ii < svgPts.length - 1; ii++) {
-            const L = Math.hypot(svgPts[ii + 1][0] - svgPts[ii][0], svgPts[ii + 1][1] - svgPts[ii][1]);
+            const L = Math.hypot(
+              svgPts[ii + 1][0] - svgPts[ii][0],
+              svgPts[ii + 1][1] - svgPts[ii][1]
+            );
             lens.push(L);
             total += L;
           }
@@ -6357,7 +6360,11 @@
           for (let pi = 0; pi < pendingWeightedMidDots.length; pi++) {
             const p = pendingWeightedMidDots[pi];
             // 優先沿加權路線弧長插值（路線在加權空間已重算）
-            if (p.routeKey != null && p.frac != null && layoutWeightedRouteSvgByKey?.has(p.routeKey)) {
+            if (
+              p.routeKey != null &&
+              p.frac != null &&
+              layoutWeightedRouteSvgByKey?.has(p.routeKey)
+            ) {
               const svgPts = layoutWeightedRouteSvgByKey.get(p.routeKey);
               const pt = pointAtArcFracSvg(svgPts, p.frac);
               if (pt) {
@@ -6389,8 +6396,20 @@
           // remap 就緒 → 在加權座標空間重算 HV45° 路線（保證角度與重疊約束）
           if (recomputeWeightedRoutes) recomputeWeightedRoutes(plotRemapSvgX, plotRemapSvgY);
 
-          const vh = layoutVHGridStroke;
+          /** 比例條模式：粗格實線略深灰；區間內依該 col／row 黑點 max 值畫 n 條均等虛線子網格 */
+          const vhWeightedSolid = { stroke: '#757575', strokeW: 0.55, opacity: 0.82 };
+          const vhWeightedInnerDash = {
+            stroke: '#BDBDBD',
+            strokeW: 0.4,
+            opacity: 0.65,
+            dash: '4,4',
+          };
+
           let xCursor = margin.left;
+          const innerWtG = gridGroup
+            .append('g')
+            .attr('class', 'layout-vh-draw-weighted-grid-inner-dash')
+            .style('pointer-events', 'none');
           for (let xi = 0; xi <= ratXC.length; xi++) {
             gridGroup
               .append('line')
@@ -6399,10 +6418,31 @@
               .attr('y1', margin.top)
               .attr('x2', xCursor)
               .attr('y2', margin.top + height)
-              .attr('stroke', vh.stroke)
-              .attr('stroke-width', vh.strokeW)
-              .attr('opacity', vh.opacity);
-            if (xi < ratXC.length) xCursor += width * ratXC[xi];
+              .attr('stroke', vhWeightedSolid.stroke)
+              .attr('stroke-width', vhWeightedSolid.strokeW)
+              .attr('opacity', vhWeightedSolid.opacity);
+            if (xi < ratXC.length) {
+              const slabW = width * ratXC[xi];
+              const nSub = Math.max(
+                0,
+                Math.round(Number(layoutPxBandMaxColVals[xi]) || 0)
+              );
+              for (let j = 1; j <= nSub; j++) {
+                const xIn = xCursor + (slabW * j) / (nSub + 1);
+                innerWtG
+                  .append('line')
+                  .attr('class', 'layout-vh-draw-weighted-grid-inner-v')
+                  .attr('x1', xIn)
+                  .attr('y1', margin.top)
+                  .attr('x2', xIn)
+                  .attr('y2', margin.top + height)
+                  .attr('stroke', vhWeightedInnerDash.stroke)
+                  .attr('stroke-width', vhWeightedInnerDash.strokeW)
+                  .attr('opacity', vhWeightedInnerDash.opacity)
+                  .attr('stroke-dasharray', vhWeightedInnerDash.dash);
+              }
+              xCursor += slabW;
+            }
           }
           let yCursor = margin.top;
           for (let yi = 0; yi <= ratYR.length; yi++) {
@@ -6413,10 +6453,31 @@
               .attr('y1', yCursor)
               .attr('x2', margin.left + width)
               .attr('y2', yCursor)
-              .attr('stroke', vh.stroke)
-              .attr('stroke-width', vh.strokeW)
-              .attr('opacity', vh.opacity);
-            if (yi < ratYR.length) yCursor += height * ratYR[yi];
+              .attr('stroke', vhWeightedSolid.stroke)
+              .attr('stroke-width', vhWeightedSolid.strokeW)
+              .attr('opacity', vhWeightedSolid.opacity);
+            if (yi < ratYR.length) {
+              const slabH = height * ratYR[yi];
+              const nSubH = Math.max(
+                0,
+                Math.round(Number(layoutPxBandMaxRowVals[yi]) || 0)
+              );
+              for (let j = 1; j <= nSubH; j++) {
+                const yIn = yCursor + (slabH * j) / (nSubH + 1);
+                innerWtG
+                  .append('line')
+                  .attr('class', 'layout-vh-draw-weighted-grid-inner-h')
+                  .attr('x1', margin.left)
+                  .attr('y1', yIn)
+                  .attr('x2', margin.left + width)
+                  .attr('y2', yIn)
+                  .attr('stroke', vhWeightedInnerDash.stroke)
+                  .attr('stroke-width', vhWeightedInnerDash.strokeW)
+                  .attr('opacity', vhWeightedInnerDash.opacity)
+                  .attr('stroke-dasharray', vhWeightedInnerDash.dash);
+              }
+              yCursor += slabH;
+            }
           }
 
           for (let xi = 0; xi < nColSlabs; xi++) {
