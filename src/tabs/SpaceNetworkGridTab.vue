@@ -5979,7 +5979,7 @@
       const layoutTrafficKey = (a, b) => [String(a).trim(), String(b).trim()].sort().join('\x00');
       const layoutTrafficEdges = [];
       const layoutTrafficEdgeKeys = new Set();
-      const addLayoutTrafficEdges = (orderedPoints) => {
+      const addLayoutTrafficEdges = (orderedPoints, routeKey) => {
         if (!Array.isArray(orderedPoints) || orderedPoints.length < 2) return;
         for (let i = 0; i < orderedPoints.length - 1; i++) {
           const a = orderedPoints[i];
@@ -5994,6 +5994,11 @@
           layoutTrafficEdgeKeys.add(key);
           layoutTrafficEdges.push({
             key,
+            routeKey: routeKey ?? null,
+            gx0: Number(a.gxy[0]),
+            gy0: Number(a.gxy[1]),
+            gx1: Number(b.gxy[0]),
+            gy1: Number(b.gxy[1]),
             a: a.name,
             b: b.name,
             x: (px0 + px1) / 2,
@@ -6182,7 +6187,7 @@
         if (trafficEndName) {
           trafficOrderedPoints.push({ name: trafficEndName, gxy: gridPts[gridPts.length - 1] });
         }
-        addLayoutTrafficEdges(trafficOrderedPoints);
+        addLayoutTrafficEdges(trafficOrderedPoints, `${rfGlobalIdx}#0`);
         layoutRouteFi += 1;
       }
 
@@ -6568,6 +6573,114 @@
       }
 
       // ── 交通流量標注：CSV 對應紅／藍／黑點之間的相鄰邊；無 CSV 對應邊顯示 0 ──
+      /** 加權比例條：路段已在加權 SVG 空間重畫，標籤須沿加權折線取弧長中點（勿再用均勻空間端點中點套 plotRemap）。 */
+      const layoutTrafficPointAtArcFracSvg = (svgPts, frac) => {
+        if (!svgPts || svgPts.length < 2) return null;
+        const f = Math.max(0, Math.min(1, Number(frac) || 0));
+        const lens = [];
+        let total = 0;
+        for (let ii = 0; ii < svgPts.length - 1; ii++) {
+          const L = Math.hypot(
+            svgPts[ii + 1][0] - svgPts[ii][0],
+            svgPts[ii + 1][1] - svgPts[ii][1]
+          );
+          lens.push(L);
+          total += L;
+        }
+        if (!(total > 1e-12)) return [svgPts[0][0], svgPts[0][1]];
+        const target = f * total;
+        let acc = 0;
+        for (let ii = 0; ii < lens.length; ii++) {
+          if (acc + lens[ii] >= target) {
+            const t = lens[ii] > 0 ? (target - acc) / lens[ii] : 0;
+            return [
+              svgPts[ii][0] + t * (svgPts[ii + 1][0] - svgPts[ii][0]),
+              svgPts[ii][1] + t * (svgPts[ii + 1][1] - svgPts[ii][1]),
+            ];
+          }
+          acc += lens[ii];
+        }
+        const last = svgPts[svgPts.length - 1];
+        return [last[0], last[1]];
+      };
+      const layoutTrafficUniformPolylineLen = (gridPts) => {
+        if (!gridPts || gridPts.length < 2) return 0;
+        let s = 0;
+        for (let i = 0; i < gridPts.length - 1; i++) {
+          const a = gridPts[i];
+          const b = gridPts[i + 1];
+          s += Math.hypot(
+            xScale(Number(b[0])) - xScale(Number(a[0])),
+            yScale(Number(b[1])) - yScale(Number(a[1]))
+          );
+        }
+        return s;
+      };
+      const layoutTrafficDistAlongUniformPx = (gridPts, gx, gy) => {
+        if (!gridPts || gridPts.length < 2) return 0;
+        const px = Number(gx);
+        const py = Number(gy);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return 0;
+        let bestAlong = 0;
+        let bestPerpSq = Infinity;
+        let acc = 0;
+        for (let i = 0; i < gridPts.length - 1; i++) {
+          const a = gridPts[i];
+          const b = gridPts[i + 1];
+          const ax = xScale(Number(a[0]));
+          const ay = yScale(Number(a[1]));
+          const bx = xScale(Number(b[0]));
+          const by = yScale(Number(b[1]));
+          const qx = xScale(px);
+          const qy = yScale(py);
+          const dx = bx - ax;
+          const dy = by - ay;
+          const lenSq = dx * dx + dy * dy;
+          const t =
+            lenSq > 1e-18
+              ? Math.max(0, Math.min(1, ((qx - ax) * dx + (qy - ay) * dy) / lenSq))
+              : 0;
+          const hx = ax + t * dx;
+          const hy = ay + t * dy;
+          const perpSq = (qx - hx) * (qx - hx) + (qy - hy) * (qy - hy);
+          if (perpSq < bestPerpSq) {
+            bestPerpSq = perpSq;
+            bestAlong = acc + t * Math.sqrt(lenSq);
+          }
+          acc += Math.sqrt(lenSq);
+        }
+        return bestAlong;
+      };
+      const layoutTrafficLabelXY = (edge) => {
+        if (
+          layoutVhDrawWeightedLayoutMode &&
+          edge?.routeKey != null &&
+          layoutWeightedRouteSvgByKey &&
+          layoutWeightedRouteSvgByKey.has(edge.routeKey) &&
+          layoutPixelVhDrawRouteGridByKey &&
+          layoutPixelVhDrawRouteGridByKey.has(edge.routeKey)
+        ) {
+          const svgPts = layoutWeightedRouteSvgByKey.get(edge.routeKey);
+          const gridPts = layoutPixelVhDrawRouteGridByKey.get(edge.routeKey);
+          if (
+            Array.isArray(svgPts) &&
+            svgPts.length >= 2 &&
+            Array.isArray(gridPts) &&
+            gridPts.length >= 2
+          ) {
+            const totalU = layoutTrafficUniformPolylineLen(gridPts);
+            if (totalU > 1e-9) {
+              const d0 = layoutTrafficDistAlongUniformPx(gridPts, edge.gx0, edge.gy0);
+              const d1 = layoutTrafficDistAlongUniformPx(gridPts, edge.gx1, edge.gy1);
+              const midFrac = Math.max(0, Math.min(1, (d0 + d1) / (2 * totalU)));
+              const pt = layoutTrafficPointAtArcFracSvg(svgPts, midFrac);
+              if (Array.isArray(pt) && pt.every(Number.isFinite)) return pt;
+            }
+          }
+        }
+        return [plotRemapSvgX(edge.x), plotRemapSvgY(edge.y)];
+      };
+
       const trafficLayer = dataStore.findLayerById(layerTab);
       const trafficRawData = trafficLayer?.layoutVhDrawTrafficData;
       if (Array.isArray(trafficRawData) && trafficRawData.length > 0) {
@@ -6596,10 +6709,11 @@
           const trafficG = zoomGroup.append('g').attr('class', 'layout-vh-draw-traffic-labels');
           for (const edge of layoutTrafficEdges) {
             const weight = trafficMap.get(edge.key) ?? 0;
+            const [lx, ly] = layoutTrafficLabelXY(edge);
             trafficG
               .append('text')
-              .attr('x', plotRemapSvgX(edge.x))
-              .attr('y', plotRemapSvgY(edge.y))
+              .attr('x', lx)
+              .attr('y', ly)
               .attr('text-anchor', 'middle')
               .attr('dominant-baseline', 'middle')
               .attr('font-size', '8px')
