@@ -6145,7 +6145,52 @@
     document.getElementById(VH_DRAW_LOCAL_JSON_INPUT_ID)?.click();
   };
 
+  /**
+   * 下載 Control「先直後橫·繪製」快照：dataJson／mapDrawnRoutes 皆與 json-viewer 匯出列一致（含完整 segment.stations 黑點）；
+   * 不用 buildMapDrawnRoutesExport，以免 connect 跨段合併時中段站較少。
+   */
+  const downloadOrthogonalVhDrawControlTabJson = () => {
+    const lyr = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
+    if (!lyr?.spaceNetworkGridJsonData?.length) {
+      window.alert('尚無路網可匯出。請先完成流程或讀入 JSON。');
+      return;
+    }
+    try {
+      syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+      let canonical = mapDrawnExportRowsFromJsonDrawRoot(lyr.jsonData, lyr.dataJson);
+      if (!Array.isArray(canonical) || canonical.length === 0) {
+        window.alert('無法匯出 dataJson：匯出列為空。');
+        return;
+      }
+      const snapshot = JSON.parse(JSON.stringify(canonical));
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        layerId: LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+        mapDrawnRoutes: snapshot,
+        dataJson: snapshot,
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'orthogonal_toward_center_vh_draw_control.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      window.alert('匯出失敗（詳見控制台）。');
+    }
+  };
+
   const extractMapDrawnRoutesRowsFromParsedJson = (parsed) => {
+    // 優先 dataJson：與執行中 json-viewer 同源，中段黑點最完整（mapDrawnRoutes 可能為舊版或經路段合併之較短列表）
+    if (parsed && typeof parsed === 'object') {
+      const fromDataJson = mapDrawnExportRowsFromJsonDrawRoot(null, parsed.dataJson);
+      if (fromDataJson && isMapDrawnRoutesExportArray(fromDataJson)) return fromDataJson;
+    }
     if (Array.isArray(parsed) && isMapDrawnRoutesExportArray(parsed)) return parsed;
     if (
       parsed &&
@@ -6158,10 +6203,8 @@
     return null;
   };
 
-  const onOrthogonalVhDrawLocalJsonInputChange = async (event) => {
-    const input = event.target;
-    const file = input.files && input.files[0];
-    input.value = '';
+  /** 與「選擇 JSON 檔讀入…」相同：寫入 `orthogonal_toward_center_vh_draw`（含 dataJson／路網），可由路網網格層按鈕觸發。 */
+  const applyOrthogonalVhDrawFromImportedJsonFile = async (file) => {
     const lyr = dataStore.findLayerById(LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID);
     if (!file || !lyr) return;
     try {
@@ -6171,7 +6214,7 @@
       const rows = extractMapDrawnRoutesRowsFromParsedJson(parsed);
       if (!rows?.length) {
         window.alert(
-          'JSON 須為地圖路段匯出陣列（routeName／segment／routeCoordinates），或含 mapDrawnRoutes 之物件。'
+          'JSON 須為地圖路段匯出陣列（routeName／segment／routeCoordinates），或含 dataJson／mapDrawnRoutes 之物件（本功能下載之檔案兩欄皆與 json-viewer 一致）。'
         );
         lyr.isLoading = false;
         return;
@@ -6197,13 +6240,22 @@
       });
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
-      window.alert(`已讀入「${file.name}」。之後開啟本圖層將沿用此檔（不再自動鏡像 VH）。`);
+      window.alert(`已讀入「${file.name}」至 VH 繪製層。之後開啟該圖層將沿用此檔（不再自動鏡像 VH）。`);
     } catch (err) {
       console.error(err);
       window.alert('讀取或解析 JSON 失敗（詳見控制台）。');
-      lyr.isLoading = false;
-      dataStore.saveLayerState(lyr.layerId, { isLoading: false });
+      if (lyr) {
+        lyr.isLoading = false;
+        dataStore.saveLayerState(lyr.layerId, { isLoading: false });
+      }
     }
+  };
+
+  const onOrthogonalVhDrawLocalJsonInputChange = async (event) => {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    await applyOrthogonalVhDrawFromImportedJsonFile(file);
   };
 
   const VH_DRAW_DIAGONAL_ROUTE_AUTO_MS = 1000;
@@ -10388,7 +10440,7 @@
           <LayoutVhDrawBlackDotRatioTables :layer="layer" />
         </div>
 
-        <!-- layout_network_grid_from_vh_draw：交通流量 CSV -->
+        <!-- layout_network_grid_from_vh_draw：還原 VH 繪製 JSON／交通流量 CSV -->
         <div
           v-if="
             layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID ||
@@ -10396,6 +10448,21 @@
           "
           class="pb-3 mb-3 border-bottom"
         >
+          <div class="my-title-xs-gray pb-2">還原 VH 繪製（本機 JSON）</div>
+          <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
+            與「站點與路線（先直後橫）·dataJson
+            繪製」之<strong>選擇 JSON 檔讀入</strong>相同：寫入
+            <code class="small">orthogonal_toward_center_vh_draw</code>
+            的 dataJson／路網並同步路網網格。可先於該層<strong>下載 JSON</strong>後在此讀入，省去重跑先前步驟。
+          </div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-3"
+            :disabled="isExecuting"
+            @click="pickOrthogonalVhDrawLocalJsonClick"
+          >
+            選擇 JSON 檔讀入…
+          </button>
           <div class="my-title-xs-gray pb-2">路段交通流量（CSV）</div>
           <div class="text-muted my-font-size-xs mb-2" style="line-height: 1.45">
             來源：<code class="small">{{ layer.csvFileName_traffic }}</code>（站點A、站點B、總人次）。載入後在每條路段折線中點顯示對應
@@ -10482,6 +10549,14 @@
             @click="pickOrthogonalVhDrawLocalJsonClick"
           >
             選擇 JSON 檔讀入…
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
+            :disabled="isExecuting || layer.isLoading || !layer.spaceNetworkGridJsonData?.length"
+            @click="downloadOrthogonalVhDrawControlTabJson"
+          >
+            下載 JSON（與 json-viewer dataJson 一致）
           </button>
           <div
             v-if="layer.vhDrawUserJsonOverride && layer.jsonFileName"
