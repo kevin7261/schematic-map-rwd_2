@@ -220,6 +220,10 @@ export function buildLayoutVhDrawCopyBlackDotTrafficDataTableRows(exportRows) {
         weight_差值: Math.abs(nOut - nIn),
         /** 水平／垂直／45度線／轉折點；繪製前為 — */
         點位類型: '—',
+        /** 加權比例條下網格鄰線過窄／過矮時，不繪製之中段黑點 */
+        因細間距隱藏: false,
+        /** 因細間距隱藏時：與前／與後 weight 之 max，供折疊鄰段交通標注 */
+        合併鄰段_weight: null,
       });
     }
   }

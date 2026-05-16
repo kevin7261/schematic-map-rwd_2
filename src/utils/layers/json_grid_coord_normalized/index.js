@@ -69,6 +69,8 @@ export {
   findLayoutSegmentMidNeighbors,
   layoutVhDrawCopyBlackDotRowMatchKey,
   classifyLayoutVhDrawBlackDotGeomKind,
+  shouldHideLayoutVhDrawCopyMidForNeighborPt,
+  LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT,
 } from './layoutVhDrawBlackDotGeomKind.js';
 export {
   buildVhDrawStationRowsForLayoutMap,
