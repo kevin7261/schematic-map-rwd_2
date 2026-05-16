@@ -65,6 +65,12 @@ export {
   buildLayoutVhDrawCopyBlackDotTrafficDataTableRows,
 } from './layoutTrafficWeightsSync.js';
 export {
+  layoutVhDrawCopyRouteLabelFromExportRow,
+  findLayoutSegmentMidNeighbors,
+  layoutVhDrawCopyBlackDotRowMatchKey,
+  classifyLayoutVhDrawBlackDotGeomKind,
+} from './layoutVhDrawBlackDotGeomKind.js';
+export {
   buildVhDrawStationRowsForLayoutMap,
   maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
   maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,

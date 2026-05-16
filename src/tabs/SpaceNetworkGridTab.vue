@@ -106,6 +106,7 @@
     isLayoutNetworkGridReadLayoutDataJsonLayerId,
     isSpaceGridVhDrawFamilyLayerId,
     LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY,
+    LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY,
     buildVhDrawStationRowsForLayoutMap,
     maxLayoutVhDrawBlackDotsOnLegInOpenXSlab,
     maxLayoutVhDrawBlackDotsOnLegInOpenYSlab,
@@ -118,6 +119,10 @@
     integerLatticeBlackDotAtPixelArcLengthAlongFineSubgridLineString,
     snapBlackDotGxGyToFineSubgridAlongPolyline,
     snapBlackDotGxGyToIntegerLatticeAlongPolyline,
+    layoutVhDrawCopyRouteLabelFromExportRow,
+    findLayoutSegmentMidNeighbors,
+    layoutVhDrawCopyBlackDotRowMatchKey,
+    classifyLayoutVhDrawBlackDotGeomKind,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -6065,6 +6070,8 @@
       const layoutPxBandMaxColVals = [];
       const layoutPxBandMaxRowVals = [];
       const pendingWeightedMidDots = [];
+      const layoutCopyGeomKindByKey =
+        layerTab === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ? new Map() : null;
       const layoutLineFeatCount = routeFeatures.filter(
         (f) => f?.geometry?.type === 'LineString'
       ).length;
@@ -6193,6 +6200,40 @@
               });
             }
             const sta = midsArc[k - 1] ?? {};
+            if (
+              layoutCopyGeomKindByKey &&
+              dotSegIndex >= 0 &&
+              row &&
+              trafficSeg &&
+              sta &&
+              typeof sta === 'object'
+            ) {
+              const nb = findLayoutSegmentMidNeighbors(trafficSeg, sta);
+              if (nb) {
+                let exportRowIndexForLabel = layoutLineFeatIdx > 0 ? layoutLineFeatIdx - 1 : 0;
+                if (Array.isArray(exportRowsForSta)) {
+                  const ix = exportRowsForSta.indexOf(row);
+                  if (ix >= 0) exportRowIndexForLabel = ix;
+                }
+                const routeLabel = layoutVhDrawCopyRouteLabelFromExportRow(
+                  row,
+                  exportRowIndexForLabel
+                );
+                const key = layoutVhDrawCopyBlackDotRowMatchKey({
+                  路線: routeLabel,
+                  黑點站名: layoutTrafficStationName(sta) || '（無名）',
+                  前站另一端站名: layoutTrafficStationName(nb.prev) || '',
+                  後站另一端站名: layoutTrafficStationName(nb.next) || '',
+                });
+                const kind = classifyLayoutVhDrawBlackDotGeomKind(
+                  gridPts,
+                  gxy,
+                  dotSegIndex,
+                  (gx, gy) => [xScale(Number(gx)), yScale(Number(gy))]
+                );
+                layoutCopyGeomKindByKey.set(key, kind);
+              }
+            }
             const trafficMidName = layoutTrafficStationName(sta);
             if (trafficMidName) trafficOrderedPoints.push({ name: trafficMidName, gxy });
             const paintMidDot = (cx, cy) => {
@@ -6238,6 +6279,22 @@
         }
         addLayoutTrafficEdges(trafficOrderedPoints, `${rfGlobalIdx}#0`);
         layoutRouteFi += 1;
+      }
+
+      if (layoutCopyGeomKindByKey) {
+        const copyLyr = dataStore.findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY);
+        const tbl = copyLyr?.dataTableData;
+        if (Array.isArray(tbl)) {
+          for (const rec of tbl) {
+            const mk = layoutVhDrawCopyBlackDotRowMatchKey({
+              路線: rec?.路線,
+              黑點站名: rec?.黑點站名,
+              前站另一端站名: rec?.前站另一端站名,
+              後站另一端站名: rec?.後站另一端站名,
+            });
+            rec.點位類型 = layoutCopyGeomKindByKey.get(mk) ?? '—';
+          }
+        }
       }
 
       if (layoutBlackMaxXTicks.length >= 2) {

@@ -7079,6 +7079,24 @@
       lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY ||
       lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_2);
 
+  /** 路網網格·複本：`dataTableData` 依 `weight_差值` 升序（控制台清單） */
+  const layoutVhDrawCopyRowsSortedByWeightDiffAsc = (lyr) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) return [];
+    const rows = lyr.dataTableData;
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    return [...rows].sort((a, b) => {
+      const da = Number(a?.weight_差值);
+      const db = Number(b?.weight_差值);
+      const na = Number.isFinite(da) ? da : 0;
+      const nb = Number.isFinite(db) ? db : 0;
+      if (na !== nb) return na - nb;
+      const ia = Number(a?.['#']);
+      const ib = Number(b?.['#']);
+      if (Number.isFinite(ia) && Number.isFinite(ib) && ia !== ib) return ia - ib;
+      return 0;
+    });
+  };
+
   /** layout_network_grid_from_vh_draw：載入交通流量 CSV */
   const onLayoutNetworkLoadTrafficCsvClick = async (lyr) => {
     if (!isLayoutNetworkGridFromVhDrawControlLayer(lyr)) return;
@@ -10464,6 +10482,53 @@
                 "
               />
               <label :for="'switch-layout-vh-draw-bd-rowcol-' + layer.layerId"></label>
+            </div>
+          </div>
+          <div
+            v-if="layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY"
+            class="mt-3"
+          >
+            <div class="my-content-sm-black mb-1">weight_差值 由小到大（黑點清單）</div>
+            <div
+              v-if="layoutVhDrawCopyRowsSortedByWeightDiffAsc(layer).length === 0"
+              class="text-muted my-font-size-xs"
+              style="line-height: 1.45"
+            >
+              尚無資料。請開啟本圖層並確認 VH 繪製層路網與中段站已同步（或載入／隨機
+              weight 後會更新）。
+            </div>
+            <div
+              v-else
+              class="border rounded overflow-auto bg-body"
+              style="max-height: 220px; font-size: 11px"
+            >
+              <table class="table table-sm table-bordered mb-0 align-middle">
+                <thead class="sticky-top bg-secondary bg-opacity-10">
+                  <tr class="text-nowrap">
+                    <th>序</th>
+                    <th>weight_差值</th>
+                    <th>點位類型</th>
+                    <th>黑點站名</th>
+                    <th>路線</th>
+                    <th>與前</th>
+                    <th>與後</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(wdRow, wdIdx) in layoutVhDrawCopyRowsSortedByWeightDiffAsc(layer)"
+                    :key="'layout-wdiff-' + layer.layerId + '-' + wdIdx + '-' + (wdRow['#'] ?? '')"
+                  >
+                    <td>{{ wdIdx + 1 }}</td>
+                    <td>{{ wdRow.weight_差值 }}</td>
+                    <td class="text-nowrap">{{ wdRow.點位類型 }}</td>
+                    <td class="text-break">{{ wdRow.黑點站名 }}</td>
+                    <td class="text-break" style="max-width: 120px">{{ wdRow.路線 }}</td>
+                    <td class="text-nowrap">{{ wdRow.weight_與前站 }}</td>
+                    <td class="text-nowrap">{{ wdRow.weight_與後站 }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
           <LayoutVhDrawDashSubgridPtHint :layer="layer" />

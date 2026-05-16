@@ -14,6 +14,7 @@ import {
   mapDrawnExportRowsFromJsonDrawRoot,
   mergeSegmentStationsFromPriorExportRows,
 } from '@/utils/mapDrawnRoutesImport.js';
+import { layoutVhDrawCopyRouteLabelFromExportRow } from './layoutVhDrawBlackDotGeomKind.js';
 
 /** 根屬性（與 tags 分離）；寫入／清除時會同步清掉同名 tags 避免重複 */
 export const LAYOUT_SEGMENT_TRAFFIC_WEIGHT_KEY = 'traffic_weight';
@@ -173,7 +174,7 @@ export function getNodeTrafficWeightFromLayoutSegment(node) {
 
 /**
  * `layout_network_grid_from_vh_draw_copy` 專用 DataTable：每個路段 `segment.stations` 中段站（黑點）一列，
- * 含路線、兩側 weight 與鄰端站名、`weight_差值` 為 |與後站 − 與前站|（非負）。
+ * 含路線、兩側 weight 與鄰端站名、`weight_差值`、**點位類型**（預設 `—`，由 Upper 網格繪製依目前 px 即時寫入）。
  * 缺漏或未寫入之 `traffic_weight` 以 **0** 顯示（與 CSV 套表後無對應邊之 0 一致）。
  *
  * @param {unknown[]|null|undefined} exportRows — 與本層 `dataJson` 相同之 mapDrawn 匯出列
@@ -190,21 +191,7 @@ export function buildLayoutVhDrawCopyBlackDotTrafficDataTableRows(exportRows) {
     const stations = Array.isArray(seg.stations) ? seg.stations : [];
     if (stations.length === 0) continue;
 
-    const routeParts = [];
-    const rn = String(row.routeName ?? '').trim();
-    if (rn) routeParts.push(rn);
-    const rid =
-      row.route_id != null && String(row.route_id).trim() !== ''
-        ? String(row.route_id).trim()
-        : '';
-    if (rid) routeParts.push(`id:${rid}`);
-    const eri = row.export_row_index;
-    const 路線 =
-      routeParts.length > 0
-        ? routeParts.join(' · ')
-        : Number.isFinite(Number(eri))
-          ? `匯出列#${eri}`
-          : `匯出列#${ri}`;
+    const 路線 = layoutVhDrawCopyRouteLabelFromExportRow(row, ri);
 
     for (let j = 0; j < stations.length; j++) {
       const prev = j === 0 ? seg.start : stations[j - 1];
@@ -231,6 +218,8 @@ export function buildLayoutVhDrawCopyBlackDotTrafficDataTableRows(exportRows) {
         後站另一端站名: nameOtherOut || '',
         /** 語意：|與後站 − 與前站|；缺漏視為 0 */
         weight_差值: Math.abs(nOut - nIn),
+        /** 水平／垂直／45度線／轉折點；繪製前為 — */
+        點位類型: '—',
       });
     }
   }
