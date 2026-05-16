@@ -172,6 +172,29 @@ export function getNodeTrafficWeightFromLayoutSegment(node) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** @param {unknown[]} rows — `layout_network_grid_from_vh_draw_copy` 黑點表列（就地排序並重編 `#`） */
+export function sortLayoutVhDrawCopyBlackDotDataTableRowsByWeightDiffAsc(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  if (rows.length === 1) {
+    if (rows[0] && typeof rows[0] === 'object') rows[0]['#'] = 1;
+    return;
+  }
+  rows.sort((a, b) => {
+    const da = Number(a?.weight_差值);
+    const db = Number(b?.weight_差值);
+    const na = Number.isFinite(da) ? da : 0;
+    const nb = Number.isFinite(db) ? db : 0;
+    if (na !== nb) return na - nb;
+    const ia = Number(a?.['#']);
+    const ib = Number(b?.['#']);
+    if (Number.isFinite(ia) && Number.isFinite(ib) && ia !== ib) return ia - ib;
+    return 0;
+  });
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i] && typeof rows[i] === 'object') rows[i]['#'] = i + 1;
+  }
+}
+
 /**
  * `layout_network_grid_from_vh_draw_copy` 專用 DataTable：每個路段 `segment.stations` 中段站（黑點）一列，
  * 含路線、兩側 weight 與鄰端站名、`weight_差值`、**點位類型**（預設 `—`，由 Upper 網格繪製依目前 px 即時寫入）。
@@ -227,5 +250,6 @@ export function buildLayoutVhDrawCopyBlackDotTrafficDataTableRows(exportRows) {
       });
     }
   }
+  sortLayoutVhDrawCopyBlackDotDataTableRowsByWeightDiffAsc(out);
   return out;
 }

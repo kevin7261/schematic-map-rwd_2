@@ -123,6 +123,7 @@ import {
 import {
   isCoordNormalizedDataJsonMirrorFollowonLayerId,
   LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
+  LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY,
 } from '../utils/layers/json_grid_coord_normalized/layerIds.js';
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
@@ -170,6 +171,7 @@ import {
   reloadJsonGridFromCoordNormalizedLayer,
   mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2,
 } from '../utils/layers/json_grid_coord_normalized/mirrorFromCoordNormalizedLayer.js';
+import { sortLayoutVhDrawCopyBlackDotDataTableRowsByWeightDiffAsc } from '../utils/layers/json_grid_coord_normalized/layoutTrafficWeightsSync.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
   isNetworkDrawSketchPipelineB3LayerId,
@@ -2712,6 +2714,12 @@ export const useDataStore = defineStore(
             result.processedJsonDataM3Tab ?? layer.processedJsonDataM3Tab;
           layer.geojsonData = result.geojsonData || null; // 如果有 geojsonData，則保存
           layer.dataTableData = result.dataTableData;
+          if (
+            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY &&
+            Array.isArray(layer.dataTableData)
+          ) {
+            sortLayoutVhDrawCopyBlackDotDataTableRowsByWeightDiffAsc(layer.dataTableData);
+          }
           layer.dashboardData = result.dashboardData;
           layer.layerInfoData = result.layerInfoData;
           /** 本機載入之 OSM 原文保留於 session，供未帶 sourceOsmXmlText 之載入路徑沿用 */
@@ -3827,6 +3835,12 @@ export const useDataStore = defineStore(
           layer.drawJsonData = result.drawJsonData ?? layer.drawJsonData;
           layer.dashboardData = result.dashboardData ?? layer.dashboardData;
           layer.dataTableData = result.dataTableData ?? layer.dataTableData;
+          if (
+            layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY &&
+            Array.isArray(layer.dataTableData)
+          ) {
+            sortLayoutVhDrawCopyBlackDotDataTableRowsByWeightDiffAsc(layer.dataTableData);
+          }
           layer.layerInfoData = result.layerInfoData ?? layer.layerInfoData;
           if (Object.prototype.hasOwnProperty.call(result, 'trafficData')) {
             layer.trafficData = result.trafficData;

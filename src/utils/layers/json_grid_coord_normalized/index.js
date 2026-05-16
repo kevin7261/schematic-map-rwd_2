@@ -63,6 +63,7 @@ export {
   buildSyntheticTrafficRowsFromVhDrawLayer,
   getNodeTrafficWeightFromLayoutSegment,
   buildLayoutVhDrawCopyBlackDotTrafficDataTableRows,
+  sortLayoutVhDrawCopyBlackDotDataTableRowsByWeightDiffAsc,
 } from './layoutTrafficWeightsSync.js';
 export {
   layoutVhDrawCopyRouteLabelFromExportRow,
