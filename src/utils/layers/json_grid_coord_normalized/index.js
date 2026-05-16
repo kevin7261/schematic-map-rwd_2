@@ -61,6 +61,8 @@ export {
   applyCsvTrafficWeightsToExportRows,
   applyLayoutTrafficCsvToVhDrawLayerRoots,
   buildSyntheticTrafficRowsFromVhDrawLayer,
+  getNodeTrafficWeightFromLayoutSegment,
+  buildLayoutVhDrawCopyBlackDotTrafficDataTableRows,
 } from './layoutTrafficWeightsSync.js';
 export {
   buildVhDrawStationRowsForLayoutMap,

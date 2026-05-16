@@ -31,6 +31,7 @@ import {
   COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
 } from './layerIds.js';
 import { buildVhDrawStationRowsForLayoutMap } from './layoutVhDrawFineIntegerGrid.js';
+import { buildLayoutVhDrawCopyBlackDotTrafficDataTableRows } from './layoutTrafficWeightsSync.js';
 
 /**
  * 將本圖層路網匯出列寫入 dataJson／jsonData／geojsonData（與座標正規化父層語意一致）。
@@ -277,6 +278,9 @@ export function resetJsonGridFromCoordNormalizedPipelineFields(lyr) {
   lyr.layoutVhDrawFineGrid = null;
   lyr.layoutVhDrawBlackDotRowColRatioReport = null;
   lyr.showStationPlacement = true;
+  if (lyr.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) {
+    lyr.dataTableData = buildLayoutVhDrawCopyBlackDotTrafficDataTableRows(lyr.dataJson);
+  }
 }
 
 /**
@@ -308,6 +312,7 @@ export function syncLayoutNetworkGridRoutesDataJsonFromVhDrawCopy(findLayerById,
   layout.jsonData = null;
   layout.dataJson =
     Array.isArray(rows) && rows.length > 0 ? JSON.parse(JSON.stringify(rows)) : null;
+  layout.dataTableData = buildLayoutVhDrawCopyBlackDotTrafficDataTableRows(layout.dataJson);
 }
 
 /** 版面網絡網格_2：與 {@link syncLayoutNetworkGridRoutesDataJsonFromVhDraw} 相同邏輯，綁定 `layout_network_grid_from_vh_draw_2`。 */

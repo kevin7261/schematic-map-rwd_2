@@ -244,7 +244,17 @@ Cheng * @since 1.0.0 */
 
       // 定義應該按數值排序的欄位（即使它們被儲存為字串）
       // 這些欄位通常包含統計數據或計數值
-      const numericFields = ['count', 'spatial_lag', '#', 'P_CNT', '感染率(%)', 'weight'];
+      const numericFields = [
+        'count',
+        'spatial_lag',
+        '#',
+        'P_CNT',
+        '感染率(%)',
+        'weight',
+        'weight_與前站',
+        'weight_與後站',
+        'weight_差值',
+      ];
 
       // 如果是數值欄位，強制轉換為數值進行排序
       if (numericFields.includes(sortState.key)) {
