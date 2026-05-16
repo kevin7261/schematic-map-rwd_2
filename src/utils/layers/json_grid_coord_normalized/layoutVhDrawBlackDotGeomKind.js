@@ -118,35 +118,5 @@ export function classifyLayoutVhDrawBlackDotGeomKind(gridPts, gxy, dotSegIndex, 
   return '45度線';
 }
 
-/** 複本層：加權「網格鄰線間距」最小維度低於此值（pt）時，始得依規則隱藏 weight_差值為 0 之中段黑點。 */
+/** 複本層加權：虛線子網格「鄰線寬／高」下限（pt）。低於此值時依 `weight_差值` 由小到大逐步暫隱中段黑點，直到預估鄰線間距皆 ≥ 此值（見 SpaceNetworkGridTab `runCopyWeightedMidFinalize` 前之迭代）。 */
 export const LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT = 5;
-
-/**
- * 複本加權：`weight_差值 === 0` 且「網格鄰線」在對應維度上 **小於** `ptMin`（預設 5pt）時，
- * 不繪製該中段黑點並令折疊鄰段 traffic 取兩側 weight 之 max。
- * 當欄／列最小鄰線間距 **≥ ptMin**（對該點位類型所檢查之維度不必觸發細間距）時，一律顯示黑點與原 weight。
- *
- * @param {'水平'|'垂直'|'45度線'|'轉折點'|string} kind
- * @param {boolean} weightDiffIsZero
- * @param {number} wPtMin — 各欄開區間鄰線寬度最小值（pt）；非有限或 ≥ ptMin 時不觸發「寬度細」規則
- * @param {number} hPtMin — 各列開區間鄰線高度最小值（pt）
- */
-export function shouldHideLayoutVhDrawCopyMidForNeighborPt(
-  kind,
-  weightDiffIsZero,
-  wPtMin,
-  hPtMin,
-  ptMin = LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT
-) {
-  if (!weightDiffIsZero) return false;
-  const pm = Number(ptMin);
-  const thr = Number.isFinite(pm) && pm > 0 ? pm : LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT;
-  const wN = Number(wPtMin);
-  const hN = Number(hPtMin);
-  const narrow = Number.isFinite(wN) && wN < thr;
-  const shortH = Number.isFinite(hN) && hN < thr;
-  const k = String(kind ?? '');
-  if (narrow && (k === '水平' || k === '45度線' || k === '轉折點')) return true;
-  if (shortH && (k === '垂直' || k === '45度線' || k === '轉折點')) return true;
-  return false;
-}

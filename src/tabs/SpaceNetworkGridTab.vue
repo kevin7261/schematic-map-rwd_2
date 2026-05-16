@@ -124,7 +124,7 @@
     findLayoutSegmentMidNeighbors,
     layoutVhDrawCopyBlackDotRowMatchKey,
     classifyLayoutVhDrawBlackDotGeomKind,
-    shouldHideLayoutVhDrawCopyMidForNeighborPt,
+    LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
   import { resolveB3InputSpaceNetwork } from '@/utils/layers/json_grid_coord_normalized/jsonGridCoordNormalizeHelpers.js';
   import { osmXmlStringToGeojsonData } from '@/utils/layers/osm_2_geojson_2_json/pipeline.js';
@@ -6237,6 +6237,29 @@
               );
               if (clampedFine) gxy = clampedFine;
             }
+            const sta = midsArc[k - 1] ?? {};
+            let copyMidMatchKey = null;
+            let nbMid = null;
+            if (row && trafficSeg && sta && typeof sta === 'object') {
+              nbMid = findLayoutSegmentMidNeighbors(trafficSeg, sta);
+              if (nbMid && copyRouteMidPlans) {
+                let exportRowIndexForLabel = layoutLineFeatIdx > 0 ? layoutLineFeatIdx - 1 : 0;
+                if (Array.isArray(exportRowsForSta)) {
+                  const ixLbl = exportRowsForSta.indexOf(row);
+                  if (ixLbl >= 0) exportRowIndexForLabel = ixLbl;
+                }
+                const routeLabelEarly = layoutVhDrawCopyRouteLabelFromExportRow(
+                  row,
+                  exportRowIndexForLabel
+                );
+                copyMidMatchKey = layoutVhDrawCopyBlackDotRowMatchKey({
+                  路線: routeLabelEarly,
+                  黑點站名: layoutTrafficStationName(sta) || '（無名）',
+                  前站另一端站名: layoutTrafficStationName(nbMid.prev) || '',
+                  後站另一端站名: layoutTrafficStationName(nbMid.next) || '',
+                });
+              }
+            }
             const dotSegIndex = nearestSegIndexOnGridPolyline(gridPts, gxy[0], gxy[1]);
             if (
               dotSegIndex >= 0 &&
@@ -6263,96 +6286,59 @@
                 if (adyPx < segEpsPx && adxPx >= segEpsPx) segDir = 'H';
                 else if (adxPx < segEpsPx && adyPx >= segEpsPx) segDir = 'V';
               }
-              layoutDotsForBandMaxRealtime.push({
+              const dotForBand = {
                 gx: Number(gxy[0]),
                 gy: Number(gxy[1]),
                 fi: layoutRouteFi,
                 si: dotSegIndex,
                 segDir,
-              });
+              };
+              if (copyMidMatchKey) dotForBand.copyMidMatchKey = copyMidMatchKey;
+              layoutDotsForBandMaxRealtime.push(dotForBand);
             }
-            const sta = midsArc[k - 1] ?? {};
             if (
               layoutCopyGeomKindByKey &&
               dotSegIndex >= 0 &&
               row &&
               trafficSeg &&
-              sta &&
-              typeof sta === 'object'
+              nbMid &&
+              copyMidMatchKey
             ) {
-              const nb = findLayoutSegmentMidNeighbors(trafficSeg, sta);
-              if (nb) {
-                let exportRowIndexForLabel = layoutLineFeatIdx > 0 ? layoutLineFeatIdx - 1 : 0;
-                if (Array.isArray(exportRowsForSta)) {
-                  const ix = exportRowsForSta.indexOf(row);
-                  if (ix >= 0) exportRowIndexForLabel = ix;
+              const key = copyMidMatchKey;
+              const kind = classifyLayoutVhDrawBlackDotGeomKind(
+                gridPts,
+                gxy,
+                dotSegIndex,
+                (gx, gy) => [xScale(Number(gx)), yScale(Number(gy))]
+              );
+              layoutCopyGeomKindByKey.set(key, kind);
+              if (copyRouteMidPlans) {
+                const routeKeyPlan = `${rfGlobalIdx}#0`;
+                let pl = copyRouteMidPlans.get(routeKeyPlan);
+                if (!pl) {
+                  pl = {
+                    rfGlobalIdx,
+                    totalPx,
+                    gridPts,
+                    row,
+                    trafficSeg,
+                    items: [],
+                    bandFi: layoutRouteFi,
+                  };
+                  copyRouteMidPlans.set(routeKeyPlan, pl);
+                } else if (!Number.isFinite(pl.bandFi)) {
+                  pl.bandFi = layoutRouteFi;
                 }
-                const routeLabel = layoutVhDrawCopyRouteLabelFromExportRow(
-                  row,
-                  exportRowIndexForLabel
-                );
-                const key = layoutVhDrawCopyBlackDotRowMatchKey({
-                  路線: routeLabel,
-                  黑點站名: layoutTrafficStationName(sta) || '（無名）',
-                  前站另一端站名: layoutTrafficStationName(nb.prev) || '',
-                  後站另一端站名: layoutTrafficStationName(nb.next) || '',
-                });
-                const kind = classifyLayoutVhDrawBlackDotGeomKind(
-                  gridPts,
-                  gxy,
-                  dotSegIndex,
-                  (gx, gy) => [xScale(Number(gx)), yScale(Number(gy))]
-                );
-                layoutCopyGeomKindByKey.set(key, kind);
-                if (copyRouteMidPlans) {
-                  const routeKeyPlan = `${rfGlobalIdx}#0`;
-                  let pl = copyRouteMidPlans.get(routeKeyPlan);
-                  if (!pl) {
-                    pl = {
-                      rfGlobalIdx,
-                      totalPx,
-                      gridPts,
-                      row,
-                      trafficSeg,
-                      items: [],
-                      bandFi: layoutRouteFi,
-                    };
-                    copyRouteMidPlans.set(routeKeyPlan, pl);
-                  } else if (!Number.isFinite(pl.bandFi)) {
-                    pl.bandFi = layoutRouteFi;
-                  }
-                  pl.items.push({ k, sta, matchKey: key, kind });
-                }
+                pl.items.push({ k, sta, matchKey: key, kind });
               }
             }
             const trafficMidName = layoutTrafficStationName(sta);
             if (trafficMidName) trafficOrderedPoints.push({ name: trafficMidName, gxy });
             if (copyTrafficChain && trafficMidName) {
-              let mkChain = null;
-              if (row && trafficSeg && sta && typeof sta === 'object') {
-                const nbChain = findLayoutSegmentMidNeighbors(trafficSeg, sta);
-                if (nbChain) {
-                  let exportRowIndexCh = layoutLineFeatIdx > 0 ? layoutLineFeatIdx - 1 : 0;
-                  if (Array.isArray(exportRowsForSta)) {
-                    const ixCh = exportRowsForSta.indexOf(row);
-                    if (ixCh >= 0) exportRowIndexCh = ixCh;
-                  }
-                  const routeLabelCh = layoutVhDrawCopyRouteLabelFromExportRow(
-                    row,
-                    exportRowIndexCh
-                  );
-                  mkChain = layoutVhDrawCopyBlackDotRowMatchKey({
-                    路線: routeLabelCh,
-                    黑點站名: layoutTrafficStationName(sta) || '（無名）',
-                    前站另一端站名: layoutTrafficStationName(nbChain.prev) || '',
-                    後站另一端站名: layoutTrafficStationName(nbChain.next) || '',
-                  });
-                }
-              }
               copyTrafficChain.nodes.push({
                 name: trafficMidName,
                 gxy: [Number(gxy[0]), Number(gxy[1])],
-                matchKey: mkChain,
+                matchKey: copyMidMatchKey,
               });
             }
             const paintMidDot = (cx, cy) => {
@@ -6554,6 +6540,59 @@
           !layoutFineGridSpec &&
           layoutPxBandMaxColVals.length === nColSlabs &&
           layoutPxBandMaxRowVals.length === nRowSlabs;
+        /** 以指定黑點集合重算各粗格區間內虚線子格數（layoutPxBandMaxColVals / RowVals）。 */
+        const recomputeLayoutPxBandMaxFromDots = (dots) => {
+          layoutPxBandMaxColVals.length = 0;
+          layoutPxBandMaxRowVals.length = 0;
+          if (layoutBlackMaxXTicks.length >= 2) {
+            if (layoutVhDrawPixelAxisMode) {
+              for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
+                const t0 = layoutBlackMaxXTicks[xi];
+                const t1 = layoutBlackMaxXTicks[xi + 1];
+                layoutPxBandMaxColVals.push(
+                  maxLayoutVhDrawBlackDotsOnLegInOpenXSlabPlotPx(
+                    dots,
+                    xScale,
+                    margin.left,
+                    t0,
+                    t1
+                  )
+                );
+              }
+            } else {
+              for (let xi = 0; xi < layoutBlackMaxXTicks.length - 1; xi++) {
+                const t0 = layoutBlackMaxXTicks[xi];
+                const t1 = layoutBlackMaxXTicks[xi + 1];
+                layoutPxBandMaxColVals.push(
+                  maxLayoutVhDrawBlackDotsOnLegInOpenXSlab(dots, t0, t1)
+                );
+              }
+            }
+          }
+          if (layoutBlackMaxYTicks.length >= 2) {
+            if (layoutVhDrawPixelAxisMode) {
+              for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
+                const t0 = layoutBlackMaxYTicks[yi];
+                const t1 = layoutBlackMaxYTicks[yi + 1];
+                layoutPxBandMaxRowVals.push(
+                  maxLayoutVhDrawBlackDotsOnLegInOpenYSlabPlotPx(
+                    dots,
+                    yScale,
+                    margin.top,
+                    t0,
+                    t1
+                  )
+                );
+              }
+            } else {
+              for (let yi = 0; yi < layoutBlackMaxYTicks.length - 1; yi++) {
+                const t0 = layoutBlackMaxYTicks[yi];
+                const t1 = layoutBlackMaxYTicks[yi + 1];
+                layoutPxBandMaxRowVals.push(maxLayoutVhDrawBlackDotsOnLegInOpenYSlab(dots, t0, t1));
+              }
+            }
+          }
+        };
         const slabRemapPlotLocal = (ticks, rats, span, uIn) => {
           const n = ticks.length;
           if (n < 2 || rats.length !== n - 1) return Number(uIn);
@@ -6626,34 +6665,22 @@
           }
           pendingWeightedMidDots.length = 0;
         };
-        /** 複本＋加權：依「鄰線寬／高」最小 pt 隱藏部分 weight_差值 0 黑點並弧長重分配後再進 pending */
-        const runCopyWeightedMidFinalize = (wPtMinRaw, hPtMinRaw) => {
+        /** 複本＋加權：子網格寬／高小於閾值時，依 weight_差值由小到大暫隱中段黑點直至鄰線間距≥閾值，再弧長重分配並進 pending。 */
+        const runCopyWeightedMidFinalize = (hiddenForSubgridPt) => {
           if (!copyRouteMidPlans || copyRouteMidPlans.size === 0) return;
           copyWeightedMidStateByMatchKey.clear();
           layoutDotsForBandMaxAfterCopyFinalize.length = 0;
           const copyLyr = dataStore.findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY);
           const tbl = copyLyr?.dataTableData;
-          const weightZeroByKey = new Map();
+          const hideSet =
+            hiddenForSubgridPt instanceof Set ? hiddenForSubgridPt : new Set(hiddenForSubgridPt ?? []);
           if (Array.isArray(tbl)) {
             for (const rec of tbl) {
               if (!rec || typeof rec !== 'object') continue;
               rec.因細間距隱藏 = false;
               rec.合併鄰段_weight = null;
-              const mk = layoutVhDrawCopyBlackDotRowMatchKey({
-                路線: rec.路線,
-                黑點站名: rec.黑點站名,
-                前站另一端站名: rec.前站另一端站名,
-                後站另一端站名: rec.後站另一端站名,
-              });
-              weightZeroByKey.set(mk, Number(rec.weight_差值) === 0);
             }
           }
-          const wThr = Number.isFinite(Number(wPtMinRaw))
-            ? Number(wPtMinRaw)
-            : Number.POSITIVE_INFINITY;
-          const hThr = Number.isFinite(Number(hPtMinRaw))
-            ? Number(hPtMinRaw)
-            : Number.POSITIVE_INFINITY;
           for (const [, plan] of copyRouteMidPlans) {
             const {
               totalPx: tPx,
@@ -6671,8 +6698,7 @@
             if (!Array.isArray(items) || !items.length || !gPts || !(tPx > 0)) continue;
             const visible = [];
             for (const it of items) {
-              const w0 = weightZeroByKey.get(it.matchKey) === true;
-              const hide = shouldHideLayoutVhDrawCopyMidForNeighborPt(it.kind, w0, wThr, hThr);
+              const hide = hideSet.has(it.matchKey);
               let rec = null;
               if (Array.isArray(tbl)) {
                 rec = tbl.find(
@@ -7056,6 +7082,102 @@
         if (canApplyWeightedPlotRemap) {
           const ptToPxForRatioFloor =
             layoutViewerPxPtScale?.ptToPx ?? ((pt) => (Number(pt) * 96) / 72);
+          const pxToPtDashSubgrid = (px) => (Number(px) * 72) / 96;
+          const roundPt2Dash = (pt) => Math.round(Number(pt) * 100) / 100;
+          const ptThrNei = LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT;
+
+          const copyWeightedHideForSubgrid = new Set();
+          if (copyRouteMidPlans && copyRouteMidPlans.size > 0) {
+            const copyLyrIt = dataStore.findLayerById(LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY);
+            const tblIt = copyLyrIt?.dataTableData;
+            const weightByMatchKey = new Map();
+            if (Array.isArray(tblIt)) {
+              for (const rec of tblIt) {
+                if (!rec || typeof rec !== 'object') continue;
+                const mk = layoutVhDrawCopyBlackDotRowMatchKey({
+                  路線: rec.路線,
+                  黑點站名: rec.黑點站名,
+                  前站另一端站名: rec.前站另一端站名,
+                  後站另一端站名: rec.後站另一端站名,
+                });
+                const w = Number(rec.weight_差值);
+                weightByMatchKey.set(mk, Number.isFinite(w) ? w : 0);
+              }
+            }
+            const orderedKeys = [];
+            const seenMk = new Set();
+            for (const [, plan] of copyRouteMidPlans) {
+              if (!Array.isArray(plan.items)) continue;
+              for (const it of plan.items) {
+                if (!it.matchKey || seenMk.has(it.matchKey)) continue;
+                seenMk.add(it.matchKey);
+                orderedKeys.push(it.matchKey);
+              }
+            }
+            orderedKeys.sort((a, b) => {
+              const wa = weightByMatchKey.has(a) ? Number(weightByMatchKey.get(a)) : 0;
+              const wb = weightByMatchKey.has(b) ? Number(weightByMatchKey.get(b)) : 0;
+              const na = Number.isFinite(wa) ? wa : 0;
+              const nb = Number.isFinite(wb) ? wb : 0;
+              if (na !== nb) return na - nb;
+              return String(a).localeCompare(String(b));
+            });
+            const nStepMax = orderedKeys.length + 2;
+            for (let step = 0; step < nStepMax; step++) {
+              const dotsEff = layoutDotsForBandMaxRealtime.filter(
+                (d) => !d.copyMidMatchKey || !copyWeightedHideForSubgrid.has(d.copyMidMatchKey)
+              );
+              recomputeLayoutPxBandMaxFromDots(dotsEff);
+              if (
+                layoutPxBandMaxColVals.length !== nColSlabs ||
+                layoutPxBandMaxRowVals.length !== nRowSlabs
+              )
+                break;
+              const ratXt = slabRatiosBlackMaxWithMinPtForZeros(
+                layoutPxBandMaxColVals,
+                width,
+                ptToPxForRatioFloor
+              );
+              const ratYt = slabRatiosBlackMaxWithMinPtForZeros(
+                layoutPxBandMaxRowVals,
+                height,
+                ptToPxForRatioFloor
+              );
+              if (!ratXt.length || !ratYt.length) break;
+              const wGapT = [];
+              for (let xi = 0; xi < ratXt.length; xi++) {
+                const slabW = width * ratXt[xi];
+                const nSub = Math.max(0, Math.round(Number(layoutPxBandMaxColVals[xi]) || 0));
+                const gapPx = nSub >= 1 ? slabW / (nSub + 1) : slabW;
+                wGapT.push(pxToPtDashSubgrid(gapPx));
+              }
+              const hGapT = [];
+              for (let yi = 0; yi < ratYt.length; yi++) {
+                const slabH = height * ratYt[yi];
+                const nSubH = Math.max(0, Math.round(Number(layoutPxBandMaxRowVals[yi]) || 0));
+                const gapPx = nSubH >= 1 ? slabH / (nSubH + 1) : slabH;
+                hGapT.push(pxToPtDashSubgrid(gapPx));
+              }
+              const wMnRawT = Math.min(...wGapT);
+              const hMnRawT = Math.min(...hGapT);
+              if (wMnRawT >= ptThrNei && hMnRawT >= ptThrNei) break;
+              let added = false;
+              for (let oi = 0; oi < orderedKeys.length; oi++) {
+                const mk = orderedKeys[oi];
+                if (!copyWeightedHideForSubgrid.has(mk)) {
+                  copyWeightedHideForSubgrid.add(mk);
+                  added = true;
+                  break;
+                }
+              }
+              if (!added) break;
+            }
+            const dotsFinal = layoutDotsForBandMaxRealtime.filter(
+              (d) => !d.copyMidMatchKey || !copyWeightedHideForSubgrid.has(d.copyMidMatchKey)
+            );
+            recomputeLayoutPxBandMaxFromDots(dotsFinal);
+          }
+
           const ratXC = slabRatiosBlackMaxWithMinPtForZeros(
             layoutPxBandMaxColVals,
             width,
@@ -7068,8 +7190,6 @@
           );
 
           /** 鄰近縱／橫線間距（px）：含粗格實線與區間內虛線。nSub≥1 時為 slab/(nSub+1)；nSub=0 時僅實線邊界，間距為整段 slab。 */
-          const pxToPtDashSubgrid = (px) => (Number(px) * 72) / 96;
-          const roundPt2Dash = (pt) => Math.round(Number(pt) * 100) / 100;
           const wGapPtList = [];
           for (let xi = 0; xi < ratXC.length; xi++) {
             const slabW = width * ratXC[xi];
@@ -7124,7 +7244,7 @@
             layoutPxBandMaxRowVals
           );
 
-          runCopyWeightedMidFinalize(wMnRaw, hMnRaw);
+          runCopyWeightedMidFinalize(copyWeightedHideForSubgrid);
 
           if (
             copyLayoutTrafficChains &&
@@ -7231,7 +7351,7 @@
             layerId: layerTab,
             status: 'cant_remap',
           });
-          runCopyWeightedMidFinalize(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
+          runCopyWeightedMidFinalize(new Set());
           rebuildCopyLayoutTrafficEdgesAndWeights();
           flushPendingWeightedMidDots();
           drawLayoutRoutesPass();
