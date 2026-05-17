@@ -125,6 +125,11 @@ import {
   LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
   LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY,
 } from '../utils/layers/json_grid_coord_normalized/layerIds.js';
+import {
+  isCoordNormalizedDataJsonMirrorFollowonLayerId as isCoordNormalizedDataJsonMirrorFollowonLayerIdSn2,
+  LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID as LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID_SN2,
+  JSON_GRID_COORD_NORMALIZED_LAYER_ID as JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2,
+} from '../utils/layers/json_grid_coord_normalized_sn2/layerIds.js';
 import { ensureTaipeiFListedGrayHighlightSnapshot } from '../utils/layerStationsTowardSchematicCenter.js';
 import { refreshTaipeiC6NavigationTableAndWeights } from '../utils/taipeiH2ShortestPath.js';
 
@@ -156,21 +161,36 @@ import {
   executeOsmGeojsonToTaipeiSn4A,
 } from '../utils/dataExecute/index.js';
 import { executeOsmGeojsonToTaipeiSn4ASpaceGrid } from '../utils/layers/osm_2_geojson_2_json/executeOsmGeojsonToTaipeiSn4ASpaceGrid.js';
+import { executeOsmGeojsonToTaipeiSn4ASpaceGrid as executeOsmGeojsonToTaipeiSn4ASpaceGridSn2 } from '../utils/layers/osm_2_geojson_2_json_sn2/executeOsmGeojsonToTaipeiSn4ASpaceGrid.js';
 import { assignOsm2LayerViewerFields } from '../utils/layers/osm_2_geojson_2_json/layerMerge.js';
+import { assignOsm2LayerViewerFields as assignOsm2LayerViewerFieldsSn2 } from '../utils/layers/osm_2_geojson_2_json_sn2/layerMerge.js';
 import {
   LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID,
   setOsm2GeojsonSessionOsmXml,
 } from '../utils/layers/osm_2_geojson_2_json/sessionOsmXml.js';
+import {
+  LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2,
+  setOsm2GeojsonSessionOsmXml as setOsm2GeojsonSessionOsmXmlSn2,
+} from '../utils/layers/osm_2_geojson_2_json_sn2/sessionOsmXml.js';
 import {
   mirrorResetAndPersistJsonGridCoordNormalized,
   reloadJsonGridCoordNormalizedLayer,
   syncOsm2DataJsonMirrorFromParent as syncOsm2DataJsonMirrorFromParentImpl,
 } from '../utils/layers/json_grid_coord_normalized/mirrorFromOsm2Layer.js';
 import {
+  mirrorResetAndPersistJsonGridCoordNormalized as mirrorResetAndPersistJsonGridCoordNormalizedSn2,
+  reloadJsonGridCoordNormalizedLayer as reloadJsonGridCoordNormalizedLayerSn2,
+  syncOsm2DataJsonMirrorFromParent as syncOsm2DataJsonMirrorFromParentSn2Impl,
+} from '../utils/layers/json_grid_coord_normalized_sn2/mirrorFromOsm2Layer.js';
+import {
   mirrorResetAndPersistJsonGridFromCoordNormalized,
   reloadJsonGridFromCoordNormalizedLayer,
   mirrorResetAndPersistLayoutNetworkGridReadLayoutDataJsonLayer2,
 } from '../utils/layers/json_grid_coord_normalized/mirrorFromCoordNormalizedLayer.js';
+import {
+  mirrorResetAndPersistJsonGridFromCoordNormalized as mirrorResetAndPersistJsonGridFromCoordNormalizedSn2,
+  reloadJsonGridFromCoordNormalizedLayer as reloadJsonGridFromCoordNormalizedLayerSn2,
+} from '../utils/layers/json_grid_coord_normalized_sn2/mirrorFromCoordNormalizedLayer.js';
 import { sortLayoutVhDrawCopyBlackDotDataTableRowsByWeightDiffAsc } from '../utils/layers/json_grid_coord_normalized/layoutTrafficWeightsSync.js';
 import {
   isRegisteredNetworkDrawSketchLayerId,
@@ -364,102 +384,7 @@ export const useDataStore = defineStore(
             jsonGridCoordNormalizeReferenceC3: null,
           },
           {
-            /** 站點移動水平垂直化：自「座標正規化」鏡像 dataJson */
-            layerId: 'point_orthogonal',
-            layerName: '站點移動水平垂直化',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'teal',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: true,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            osmFileName: null,
-            jsonFileName: null,
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            /** Control「下一頂點」：共點群組移至此格可嚴格增加橫豎比例時之建議格 */
-            jsonGridFromCoordSuggestTargetGrid: null,
-            squareGridCellsTaipeiTest3: false,
-            dataOSM: null,
-            dataGeojson: null,
-            dataJson: null,
-            layoutUniformGridGeoJson: null,
-            layoutUniformGridMeta: null,
-            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
-          },
-          {
-            /** 僅檢視：自「座標正規化」鏡像 dataJson；Control 列 connect 紅／藍點（與 K3 JSON 紅藍語意：格上度數≤1 藍、否則紅） */
-            layerId: 'coord_normalized_red_blue_connect',
-            layerName: '座標正規化·紅藍點列表',
-            visible: false,
-            isLoading: false,
-            isLoaded: false,
-            colorName: 'teal',
-            jsonData: null,
-            spaceNetworkGridJsonData: null,
-            spaceNetworkGridJsonData_SectionData: null,
-            spaceNetworkGridJsonData_ConnectData: null,
-            spaceNetworkGridJsonData_StationData: null,
-            showStationPlacement: true,
-            layoutGridJsonData: null,
-            layoutGridJsonData_Test: null,
-            layoutGridJsonData_Test2: null,
-            layoutGridJsonData_Test3: null,
-            layoutGridJsonData_Test4: null,
-            geojsonData: null,
-            processedJsonData: null,
-            drawJsonData: null,
-            dashboardData: null,
-            dataTableData: null,
-            layerInfoData: null,
-            jsonLoader: null,
-            geojsonLoader: null,
-            processToDrawData: null,
-            geojsonFileName: null,
-            osmFileName: null,
-            jsonFileName: null,
-            executeFunction: null,
-            isDataLayer: true,
-            hideFromMap: true,
-            display: true,
-            highlightedSegmentIndex: null,
-            jsonGridFromCoordSuggestTargetGrid: null,
-            /** 最近一次 connect 移動：舊格／新格（供示意圖雙圈預覽） */
-            rbConnectMovePreview: null,
-            /** 本輪已 highlight／處理過的 connect 點（綠圈） */
-            rbConnectVisitedKeys: [],
-            squareGridCellsTaipeiTest3: false,
-            dataOSM: null,
-            dataGeojson: null,
-            dataJson: null,
-            layoutUniformGridGeoJson: null,
-            layoutUniformGridMeta: null,
-            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
-          },
-          {
-            /** 路網正交段往紅十字／示意中心縮進（佇序：列→欄）；dataJson 優先自 point_orthogonal，見 mirrorFromCoordNormalizedLayer；Control「往中心聚集」可下載路段匯出 JSON */
+            /** 路網正交段往紅十字／示意中心縮進（佇序：列→欄）；dataJson 優先自「座標正規化」鏡像（見 mirrorFromCoordNormalizedLayer）；Control「往中心聚集」可下載路段匯出 JSON */
             layerId: 'orthogonal_toward_center_hv',
             layerName: '站點與路線往中心聚集（先橫後直）',
             visible: false,
@@ -724,6 +649,330 @@ export const useDataStore = defineStore(
              */
             layoutVhDrawWeightedNeighborHideMinPt: 5,
             upperViewTabs: ['space-layout-grid-viewer', 'layout-grid-viewer', 'json-viewer'],
+          },
+        ],
+      },
+      {
+        groupName: '空間網絡網格_2',
+        groupLayers: [
+          {
+            layerId: 'osm_2_geojson_2_json_sn2',
+            layerName: 'OSM／GeoJSON → JSON（群組_2）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'blue',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: loadOsmXmlAsGeoJsonForRoutes,
+            processToDrawData: null,
+            geojsonFileName: null,
+            /** 對應 `public/taipei/taipei.osm`，供 Control「自動讀入」 */
+            publicBundledTaipeiOsmPath: 'taipei/taipei.osm',
+            /** 僅經 Control 本機選 .osm／.geojson 載入後才有資料；無 osmFileName 時開圖層不請求伺服器（geojsonLoader 為空載入）。 */
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: executeOsmGeojsonToTaipeiSn4ASpaceGridSn2,
+            isDataLayer: true,
+            hideFromMap: false,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            upperViewTabs: ['map', 'osm-viewer', 'geojson-viewer', 'json-viewer'],
+          },
+          {
+            layerId: 'json_grid_coord_normalized_sn2',
+            layerName: '座標正規化（群組_2）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'cyan',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+            /** 鄰線錯邊「修正」座標紀錄；不因 {@link resetJsonGridCoordNormalizedPipelineFields} 清空（另存於此）。 */
+            jsonGridNeighborFixPersist: null,
+            /** 與 {@link executeJsonGridCoordNormalize} 當次拓撲比對相同之 c3 路網（不可從現有 d3 反推，否則找不到錯邊） */
+            jsonGridCoordNormalizeReferenceC3: null,
+          },
+          {
+            /** 站點移動水平垂直化：自「座標正規化」鏡像 dataJson */
+            layerId: 'point_orthogonal_sn2',
+            layerName: '站點移動水平垂直化（群組_2）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            /** Control「下一頂點」：共點群組移至此格可嚴格增加橫豎比例時之建議格 */
+            jsonGridFromCoordSuggestTargetGrid: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
+            /** 僅檢視：自「座標正規化」鏡像 dataJson；Control 列 connect 紅／藍點（與 K3 JSON 紅藍語意：格上度數≤1 藍、否則紅） */
+            layerId: 'coord_normalized_red_blue_connect_sn2',
+            layerName: '座標正規化·紅藍點列表（群組_2）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            jsonGridFromCoordSuggestTargetGrid: null,
+            /** 最近一次 connect 移動：舊格／新格（供示意圖雙圈預覽） */
+            rbConnectMovePreview: null,
+            /** 本輪已 highlight／處理過的 connect 點（綠圈） */
+            rbConnectVisitedKeys: [],
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
+            /** 路網正交段往紅十字／示意中心縮進（佇序：列→欄）；dataJson 優先自 point_orthogonal_sn2，見 mirrorFromCoordNormalizedLayer；Control「往中心聚集」可下載路段匯出 JSON */
+            layerId: 'orthogonal_toward_center_hv_sn2',
+            layerName: '站點與路線往中心聚集（先橫後直）（群組_2）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            jsonGridFromCoordSuggestTargetGrid: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
+            /** 與前一層同演算法；控制台「朝十字縮進」隊列順序為欄（x）整表→列（y）整表；Control「往中心聚集」可下載路段匯出 JSON */
+            layerId: 'orthogonal_toward_center_vh_sn2',
+            layerName: '站點與路線往中心聚集（先直後橫）（群組_2）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            jsonGridFromCoordSuggestTargetGrid: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
+          },
+          {
+            /** 預設鏡像「先直後橫」層；可於 Control 本機選 JSON 覆寫，見 vhDrawUserJsonOverride；執行結果之 OSM 存於 dataOSM（並維護 dataJson／geojson 供繪製） */
+            layerId: 'orthogonal_toward_center_vh_draw_sn2',
+            layerName: '站點與路線（先直後橫）·dataJson 繪製（群組_2）',
+            visible: false,
+            isLoading: false,
+            isLoaded: false,
+            /** 為 true 時不自動鏡像 VH／不因 VH 更新覆寫（使用者已選檔讀入） */
+            vhDrawUserJsonOverride: false,
+            colorName: 'teal',
+            jsonData: null,
+            spaceNetworkGridJsonData: null,
+            spaceNetworkGridJsonData_SectionData: null,
+            spaceNetworkGridJsonData_ConnectData: null,
+            spaceNetworkGridJsonData_StationData: null,
+            showStationPlacement: true,
+            layoutGridJsonData: null,
+            layoutGridJsonData_Test: null,
+            layoutGridJsonData_Test2: null,
+            layoutGridJsonData_Test3: null,
+            layoutGridJsonData_Test4: null,
+            geojsonData: null,
+            processedJsonData: null,
+            drawJsonData: null,
+            dashboardData: null,
+            dataTableData: null,
+            layerInfoData: null,
+            jsonLoader: null,
+            geojsonLoader: null,
+            processToDrawData: null,
+            geojsonFileName: null,
+            osmFileName: null,
+            jsonFileName: null,
+            executeFunction: null,
+            isDataLayer: true,
+            hideFromMap: true,
+            display: true,
+            highlightedSegmentIndex: null,
+            jsonGridFromCoordSuggestTargetGrid: null,
+            squareGridCellsTaipeiTest3: false,
+            dataOSM: null,
+            dataGeojson: null,
+            dataJson: null,
+            layoutUniformGridGeoJson: null,
+            layoutUniformGridMeta: null,
+            upperViewTabs: ['space-layout-grid-viewer', 'json-viewer'],
           },
         ],
       },
@@ -2439,8 +2688,10 @@ export const useDataStore = defineStore(
     };
 
     /** OSM 管線父圖層資料更新後，鏡像至座標正規化圖層 — 實作見 json_grid_coord_normalized／mirrorFromOsm2Layer.js */
-    const syncOsm2DataJsonMirrorFromParent = () =>
+    const syncOsm2DataJsonMirrorFromParent = () => {
       syncOsm2DataJsonMirrorFromParentImpl(findLayerById, saveLayerState);
+      syncOsm2DataJsonMirrorFromParentSn2Impl(findLayerById, saveLayerState);
+    };
 
     // ==================== 🔄 主要圖層處理函數 (Main Layer Processing Functions) ====================
 
@@ -2549,6 +2800,10 @@ export const useDataStore = defineStore(
         mirrorResetAndPersistJsonGridCoordNormalized(findLayerById, saveLayerState, layer);
       }
 
+      if (layer.visible && layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2) {
+        mirrorResetAndPersistJsonGridCoordNormalizedSn2(findLayerById, saveLayerState, layer);
+      }
+
       if (layer.visible && isCoordNormalizedDataJsonMirrorFollowonLayerId(layer.layerId)) {
         if (
           layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID &&
@@ -2558,6 +2813,18 @@ export const useDataStore = defineStore(
           saveLayerState(layer.layerId, { isLoaded: true });
         } else {
           mirrorResetAndPersistJsonGridFromCoordNormalized(findLayerById, saveLayerState, layer);
+        }
+      }
+
+      if (layer.visible && isCoordNormalizedDataJsonMirrorFollowonLayerIdSn2(layer.layerId)) {
+        if (
+          layer.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID_SN2 &&
+          layer.vhDrawUserJsonOverride
+        ) {
+          layer.isLoaded = true;
+          saveLayerState(layer.layerId, { isLoaded: true });
+        } else {
+          mirrorResetAndPersistJsonGridFromCoordNormalizedSn2(findLayerById, saveLayerState, layer);
         }
       }
 
@@ -2735,6 +3002,13 @@ export const useDataStore = defineStore(
           ) {
             setOsm2GeojsonSessionOsmXml(result.sourceOsmXmlText);
           }
+          if (
+            layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2 &&
+            typeof result.sourceOsmXmlText === 'string' &&
+            result.sourceOsmXmlText.length > 0
+          ) {
+            setOsm2GeojsonSessionOsmXmlSn2(result.sourceOsmXmlText);
+          }
           if (Object.prototype.hasOwnProperty.call(result, 'trafficData')) {
             layer.trafficData = result.trafficData;
           }
@@ -2746,6 +3020,13 @@ export const useDataStore = defineStore(
 
           if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID) {
             assignOsm2LayerViewerFields(layer, {
+              sourceOsmXmlText:
+                typeof result.sourceOsmXmlText === 'string' ? result.sourceOsmXmlText : '',
+            });
+            syncOsm2DataJsonMirrorFromParent();
+          }
+          if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2) {
+            assignOsm2LayerViewerFieldsSn2(layer, {
               sourceOsmXmlText:
                 typeof result.sourceOsmXmlText === 'string' ? result.sourceOsmXmlText : '',
             });
@@ -2805,7 +3086,11 @@ export const useDataStore = defineStore(
         } catch (error) {
           console.error(`❌ 載入圖層 "${layer.layerName}" 失敗:`, error);
           /** OSM／可空載入圖層：維持使用者已開啟之可見狀態，不因無檔／請求失敗而自動關閉 */
-          if (layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID && layerId !== 'taipei_osm_geojson_sn4') {
+          if (
+            layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID &&
+            layerId !== OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2 &&
+            layerId !== 'taipei_osm_geojson_sn4'
+          ) {
             layer.visible = false;
             saveLayerState(layerId, { visible: false });
           }
@@ -3743,6 +4028,11 @@ export const useDataStore = defineStore(
         return;
       }
 
+      if (layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2) {
+        reloadJsonGridCoordNormalizedLayerSn2(findLayerById, saveLayerState, layer);
+        return;
+      }
+
       if (isCoordNormalizedDataJsonMirrorFollowonLayerId(layerId)) {
         if (
           layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID &&
@@ -3751,6 +4041,17 @@ export const useDataStore = defineStore(
           return;
         }
         reloadJsonGridFromCoordNormalizedLayer(findLayerById, saveLayerState, layer);
+        return;
+      }
+
+      if (isCoordNormalizedDataJsonMirrorFollowonLayerIdSn2(layerId)) {
+        if (
+          layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID_SN2 &&
+          layer?.vhDrawUserJsonOverride
+        ) {
+          return;
+        }
+        reloadJsonGridFromCoordNormalizedLayerSn2(findLayerById, saveLayerState, layer);
         return;
       }
 

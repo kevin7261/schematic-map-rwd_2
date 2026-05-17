@@ -29,6 +29,20 @@
     setOsm2GeojsonSessionOsmXml,
   } from '@/utils/layers/osm_2_geojson_2_json/index.js';
   import {
+    LAYER_ID as OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2,
+    mergeOsm2GeojsonLoaderResultIntoLayer as mergeOsm2GeojsonLoaderResultIntoLayerSn2,
+    osmXmlToOsm2GeojsonLoaderResult as osmXmlToOsm2GeojsonLoaderResultSn2,
+    parseGeoJsonTextToOsm2GeojsonLoaderResult as parseGeoJsonTextToOsm2GeojsonLoaderResultSn2,
+    getOsm2GeojsonPersistPatchAfterLoaderMerge as getOsm2GeojsonPersistPatchAfterLoaderMergeSn2,
+    setOsm2GeojsonSessionOsmXml as setOsm2GeojsonSessionOsmXmlSn2,
+  } from '@/utils/layers/osm_2_geojson_2_json_sn2/index.js';
+  import {
+    executeJsonGridCoordNormalize as executeJsonGridCoordNormalizeSn2,
+    executeJsonGridCoordNormalizedPruneEmptyGridLines as executeJsonGridCoordNormalizedPruneEmptyGridLinesSn2,
+    executeJsonGridNeighborTopologyFix as executeJsonGridNeighborTopologyFixSn2,
+  } from '@/utils/layers/json_grid_coord_normalized_sn2/executeJsonGridCoordNormalize.js';
+  import { executeJsonGridFromCoordNormalizedPruneEmptyGridLines as executeJsonGridFromCoordNormalizedPruneEmptyGridLinesSn2 } from '@/utils/layers/json_grid_coord_normalized_sn2/executeJsonGridFromCoordNormalizedAxisAlign.js';
+  import {
     executeJsonGridCoordNormalize,
     executeJsonGridCoordNormalizedPruneEmptyGridLines,
     executeJsonGridNeighborTopologyFix,
@@ -41,7 +55,7 @@
     POINT_ORTHOGONAL_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID,
     LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID,
-    LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS,
+    LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS as ORTH_SPACE_LINE_IDS_MAIN,
     COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
     refreshLineOrthogonalFromPointOrthogonalIfVisible,
     refreshOrthogonalVhMirrorDrawLayerIfVisible,
@@ -54,14 +68,27 @@
     buildInitialOrthoCoPointGroups,
     findBestConnectPointMoveForHV,
   } from '@/utils/layers/json_grid_coord_normalized/index.js';
+  import {
+    LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS as ORTH_SPACE_LINE_IDS_SN2,
+    COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID as COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID_SN2,
+    JSON_GRID_COORD_NORMALIZED_LAYER_ID as JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2,
+    POINT_ORTHOGONAL_LAYER_ID as POINT_ORTHOGONAL_LAYER_ID_SN2,
+    LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID as LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID_SN2,
+    LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID as LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID_SN2,
+  } from '@/utils/layers/json_grid_coord_normalized_sn2/layerIds.js';
+
   import { clusterOrthoOverlapsForMergedBand } from '@/utils/layers/json_grid_coord_normalized/orthoNudgeTowardCrossConnectivity.js';
+  import * as JsonGridNormalizedSn2 from '@/utils/layers/json_grid_coord_normalized_sn2/index.js';
   import { computeStationDataFromRoutes } from '@/utils/dataExecute/computeStationDataFromRoutes.js';
   import { flatSegmentsToGeojsonStyleExportRows } from '@/utils/taipeiTest4/flatSegmentsToGeojsonStyleExportRows.js';
   import { getIcon } from '@/utils/utils.js';
   import { useOrthogonalVhDrawControlTab } from '@/utils/layers/orthogonal_toward_center_vh_draw/useOrthogonalVhDrawControlTab.js';
+  import { useOrthogonalVhDrawControlTabSn2 } from '@/utils/layers/orthogonal_toward_center_vh_draw_sn2/useOrthogonalVhDrawControlTab.js';
   import { useLayoutNetworkGridFromVhDrawControlTab } from '@/utils/layers/layout_network_grid_from_vh_draw/useLayoutNetworkGridFromVhDrawControlTab.js';
   import OrthogonalVhDrawControlTabSection from '@/utils/layers/orthogonal_toward_center_vh_draw/ControlTabSection.vue';
+  import OrthogonalVhDrawControlTabSectionSn2 from '@/utils/layers/orthogonal_toward_center_vh_draw_sn2/ControlTabSection.vue';
   import LayoutNetworkGridFromVhDrawControlTabSection from '@/utils/layers/layout_network_grid_from_vh_draw/ControlTabSection.vue';
+  import { useLayoutNetworkGridFromVhDrawControlTabSn2 } from '@/utils/layers/layout_network_grid_from_vh_draw/useLayoutNetworkGridFromVhDrawControlTabSn2.js';
 
   /**
    * 網格合併和縮減工具函數引入
@@ -162,6 +189,15 @@
   const dataStore = useDataStore();
   const { spaceNetworkGridL3MinCellDimensions } = storeToRefs(dataStore);
 
+  const LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL = [
+    ...ORTH_SPACE_LINE_IDS_MAIN,
+    ...ORTH_SPACE_LINE_IDS_SN2,
+  ];
+  const SPACE_NETWORK_GRID_GROUP_NAME_2 = '空間網絡網格_2';
+
+  const isLayerInSpaceNetworkGridGroup2ById = (layerId) =>
+    Boolean(layerId && dataStore.findGroupNameByLayerId(layerId) === SPACE_NETWORK_GRID_GROUP_NAME_2);
+
   /** layout-network-grid k4：分配倍率 n（寫入 store ref；不依賴 setter 以免 HMR 未掛上） */
   function applySpaceNetworkK4ProportionalScaleN(raw) {
     const v = typeof raw === 'number' ? raw : Number(raw);
@@ -247,6 +283,55 @@
     );
   });
 
+  /** 選「座標正規化」或「（群組_2）」圖層時，對應之 execute／目標 layerId */
+  function pickJsonGridNormalizeExecuteBundle() {
+    const id = currentLayer.value?.layerId;
+    if (id === JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2) {
+      return {
+        normLayerId: JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2,
+        execNormalize: executeJsonGridCoordNormalizeSn2,
+        execTopology: executeJsonGridNeighborTopologyFixSn2,
+        execPruneEmptyAfterNorm: executeJsonGridCoordNormalizedPruneEmptyGridLinesSn2,
+      };
+    }
+    return {
+      normLayerId: 'json_grid_coord_normalized',
+      execNormalize: executeJsonGridCoordNormalize,
+      execTopology: executeJsonGridNeighborTopologyFix,
+      execPruneEmptyAfterNorm: executeJsonGridCoordNormalizedPruneEmptyGridLines,
+    };
+  }
+
+  function jsonGridNeighborFixMatchesLayerId(lyr) {
+    if (!lyr) return false;
+    return (
+      lyr.layerId === 'json_grid_coord_normalized' || lyr.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2
+    );
+  }
+
+  /** 自動化「頂點步進／一鍵」：對應使用中或作用中 point_orthogonal／point_orthogonal_sn2 層 */
+  function resolveActivePointOrthogonalLayer() {
+    const cur = currentLayer.value;
+    const lid = cur?.layerId;
+    if (lid === POINT_ORTHOGONAL_LAYER_ID_SN2) return cur;
+    if (lid === POINT_ORTHOGONAL_LAYER_ID) return cur;
+    if (lid && dataStore.findGroupNameByLayerId(lid) === SPACE_NETWORK_GRID_GROUP_NAME_2) {
+      return dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID_SN2);
+    }
+    return dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+  }
+
+  /** 紅／藍 connect 自動步進時作用之圖層（依目前分頁或群組_2 fallback） */
+  function resolveRbConnectListLayer() {
+    const cur = currentLayer.value;
+    if (cur?.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID_SN2) return cur;
+    if (cur?.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID) return cur;
+    if (cur?.layerId && dataStore.findGroupNameByLayerId(cur.layerId) === SPACE_NETWORK_GRID_GROUP_NAME_2) {
+      return dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID_SN2);
+    }
+    return dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+  }
+
   /**
    * 取得圖層完整標題 (包含群組名稱) (Get Layer Full Title with Group Name)
    * 組合群組名稱和圖層名稱，形成完整的圖層標題
@@ -276,6 +361,8 @@
     const groupName = dataStore.findGroupNameByLayerId(currentLayer.value.layerId);
     if (
       groupName !== '資料處理_2' &&
+      groupName !== '空間網絡網格' &&
+      groupName !== SPACE_NETWORK_GRID_GROUP_NAME_2 &&
       groupName !== '空間網絡網格測試_4' &&
       groupName !== '版面網格測試_3'
     )
@@ -2615,7 +2702,8 @@
     if (
       (layer?.layerId !== 'taipei_d3' &&
         layer?.layerId !== 'taipei_sn4_d' &&
-        layer?.layerId !== 'json_grid_coord_normalized') ||
+        layer?.layerId !== 'json_grid_coord_normalized' &&
+        layer?.layerId !== JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2) ||
       !d?.coordNormalize ||
       !d.gridSizeCells
     )
@@ -2841,7 +2929,8 @@
     const layer = currentLayer.value;
     if (!layer) return null;
     /** 僅 OSM/XML→GeoJSON 與衍生 JSON，無空間網格路段資料 */
-    if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID) return null;
+    if (layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID || layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2)
+      return null;
     /** k／k4／l／m：黑點相銜權重改見 Data 分頁 dataTableData，此處不列節點清單 */
     if (
       layer.layerId === 'taipei_sn4_k' ||
@@ -3695,6 +3784,10 @@
     if (el) el.click();
   };
 
+  const onTaipeiOsmSpaceGridPickLocalFileClickSn2 = () => {
+    document.getElementById('taipei-osm-space-grid-local-file-input-sn2')?.click();
+  };
+
   /**
    * 本機檔：依副檔名與內容判斷走 GeoJSON 或 OSM XML（避免僅有 `.json`／無副檔名時誤當 XML 而讀取失敗）。
    */
@@ -3709,26 +3802,37 @@
     return 'osm';
   };
 
-  /** 將 OSM／GeoJSON 原始字串併入 `osm_2_geojson_2_json`（與本機選檔相同管線／持久化／鏡像） */
+  /** 將 OSM／GeoJSON 原始字串併入主群或群組_2 之 OSM→GeoJSON 圖層（與本機選檔相同管線／持久化／鏡像）。 */
   const ingestOsmSpaceGridTextIntoLayer = (layer, text, logicalFileName) => {
     const normalizedText = String(text ?? '').replace(/^\uFEFF/, '');
     const fmt = inferOsm2LocalIngestFormat(logicalFileName, normalizedText);
     const fromGeojson = fmt === 'geojson';
     let result;
     const mergeOpts = {
-      groupName: dataStore.findGroupNameByLayerId(OSM_2_GEOJSON_2_JSON_LAYER_ID),
+      groupName: dataStore.findGroupNameByLayerId(layer.layerId),
     };
+    const sn2 = layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2;
     if (fromGeojson) {
-      setOsm2GeojsonSessionOsmXml('');
-      result = parseGeoJsonTextToOsm2GeojsonLoaderResult(normalizedText);
+      if (sn2) setOsm2GeojsonSessionOsmXmlSn2('');
+      else setOsm2GeojsonSessionOsmXml('');
+      result = sn2
+        ? parseGeoJsonTextToOsm2GeojsonLoaderResultSn2(normalizedText)
+        : parseGeoJsonTextToOsm2GeojsonLoaderResult(normalizedText);
     } else {
-      setOsm2GeojsonSessionOsmXml(normalizedText);
-      result = osmXmlToOsm2GeojsonLoaderResult(normalizedText);
+      if (sn2) setOsm2GeojsonSessionOsmXmlSn2(normalizedText);
+      else setOsm2GeojsonSessionOsmXml(normalizedText);
+      result = sn2
+        ? osmXmlToOsm2GeojsonLoaderResultSn2(normalizedText)
+        : osmXmlToOsm2GeojsonLoaderResult(normalizedText);
       mergeOpts.sourceOsmXmlText = normalizedText;
     }
     layer.osmFileName = logicalFileName ?? null;
-    mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, mergeOpts);
-    dataStore.saveLayerState(layer.layerId, getOsm2GeojsonPersistPatchAfterLoaderMerge(layer));
+    if (sn2) mergeOsm2GeojsonLoaderResultIntoLayerSn2(layer, result, mergeOpts);
+    else mergeOsm2GeojsonLoaderResultIntoLayer(layer, result, mergeOpts);
+    dataStore.saveLayerState(
+      layer.layerId,
+      sn2 ? getOsm2GeojsonPersistPatchAfterLoaderMergeSn2(layer) : getOsm2GeojsonPersistPatchAfterLoaderMerge(layer)
+    );
     dataStore.syncOsm2DataJsonMirrorFromParent();
   };
 
@@ -3767,12 +3871,46 @@
     }
   };
 
+  const onTaipeiOsmSpaceGridLoadBundledTaipeiClickSn2 = async () => {
+    const layer = dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2);
+    if (!layer || layer.isLoading) return;
+    try {
+      layer.isLoading = true;
+      const rawRel =
+        typeof layer.publicBundledTaipeiOsmPath === 'string' &&
+        layer.publicBundledTaipeiOsmPath.trim()
+          ? layer.publicBundledTaipeiOsmPath.trim().replace(/^\/+/, '')
+          : 'taipei/taipei.osm';
+      const baseUrl = process.env.BASE_URL || '/';
+      const primaryUrl = `${baseUrl.replace(/\/?$/, '/')}${rawRel.replace(/^\/+/, '')}`;
+      let res;
+      try {
+        res = await fetch(primaryUrl);
+      } catch {
+        res = await fetch(`/${rawRel.replace(/^\/+/, '')}`);
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      ingestOsmSpaceGridTextIntoLayer(layer, text, 'taipei/taipei.osm');
+    } catch (err) {
+      console.error('[sn2] 自動讀入 taipei/taipei.osm 失敗:', err);
+      layer.isLoading = false;
+      const pathLabel =
+        (typeof layer.publicBundledTaipeiOsmPath === 'string' &&
+          layer.publicBundledTaipeiOsmPath.trim()) ||
+        'taipei/taipei.osm';
+      window.alert(`無法載入「${pathLabel}」。${String(err?.message ?? err ?? '')}`);
+      dataStore.saveLayerState(layer.layerId, { isLoading: false });
+    }
+  };
+
   const onJsonGridNeighborTopologyFixClick = async () => {
     if (isExecuting.value) return;
     isExecuting.value = true;
     try {
       await nextTick();
-      const r = await Promise.resolve(executeJsonGridNeighborTopologyFix());
+      const b = pickJsonGridNormalizeExecuteBundle();
+      const r = await Promise.resolve(b.execTopology());
       const coordBlock =
         r.moveLines && r.moveLines.length
           ? `以下為 d3 路網上被移動頂點的「網格座標」（整數格，與編輯器網格一致）：\n\n${r.moveLines.join(
@@ -3796,7 +3934,7 @@
 
   /** 與拓撲／dashboard 分離存放的「修正」座標字串列；圖層欄位 {@link jsonGridNeighborFixPersist} 優先 */
   const jsonGridNeighborFixDisplayLines = (lyr) => {
-    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return [];
+    if (!lyr || !jsonGridNeighborFixMatchesLayerId(lyr)) return [];
     const p = lyr.jsonGridNeighborFixPersist?.log;
     if (Array.isArray(p) && p.length > 0) return p;
     const d = lyr.dashboardData?.neighborTopologyFixLog;
@@ -3804,13 +3942,13 @@
   };
 
   const jsonGridNeighborFixStaleVisual = (lyr) => {
-    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return false;
+    if (!lyr || !jsonGridNeighborFixMatchesLayerId(lyr)) return false;
     if (lyr.jsonGridNeighborFixPersist?.stale) return true;
     return !!lyr.dashboardData?.neighborTopologyFixStale;
   };
 
   const jsonGridTopologyPanelShow = (lyr) => {
-    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return false;
+    if (!lyr || !jsonGridNeighborFixMatchesLayerId(lyr)) return false;
     const tc = lyr.dashboardData?.topologyCheck;
     if (tc && !tc.skipped) return true;
     return jsonGridNeighborFixDisplayLines(lyr).length > 0;
@@ -3818,14 +3956,18 @@
 
   /** 須先完成「座標正規化」取得拓撲比對（非刪空欄列後之 skipped 占位）才可刪空欄列 */
   const jsonGridPruneEmptyGridLinesEnabled = (lyr) => {
-    if (!lyr || lyr.layerId !== 'json_grid_coord_normalized') return false;
+    if (!lyr || !jsonGridNeighborFixMatchesLayerId(lyr)) return false;
     const tc = lyr.dashboardData?.topologyCheck;
     return !!(tc && !tc.skipped);
   };
 
   /** `point_orthogonal`：本層有路網即可刪空欄列（與父層拓撲狀態無關） */
   const jsonGridFromCoordPruneEmptyGridLinesEnabled = (lyr) => {
-    if (!lyr || lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID) return false;
+    if (
+      !lyr ||
+      (lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID && lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID_SN2)
+    )
+      return false;
     return Array.isArray(lyr.spaceNetworkGridJsonData) && lyr.spaceNetworkGridJsonData.length > 0;
   };
 
@@ -3844,7 +3986,11 @@
    * @returns {Array<{ row: number, segIdx: number, ptIdx: number, routeName: string, x: number, y: number, role: string, label: string }>}
    */
   const jsonGridFromCoordNormalizedVertexList = (lyr) => {
-    if (!lyr || lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID) return [];
+    if (
+      !lyr ||
+      (lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID && lyr.layerId !== POINT_ORTHOGONAL_LAYER_ID_SN2)
+    )
+      return [];
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return [];
     const flat = normalizeSpaceNetworkDataToFlatSegments(
@@ -3903,7 +4049,12 @@
    * @returns {Array<{ row: number, segIdx: number, ptIdx: number, routeName: string, routeLabel: string, x: number, y: number, hue: string, deg: number, label: string }>}
    */
   const coordNormalizedRedBlueConnectList = (lyr) => {
-    if (!lyr || lyr.layerId !== COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID) return [];
+    if (
+      !lyr ||
+      (lyr.layerId !== COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID &&
+        lyr.layerId !== COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID_SN2)
+    )
+      return [];
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return [];
     const flat = normalizeSpaceNetworkDataToFlatSegments(
@@ -4009,7 +4160,7 @@
    */
   const jsonGridLineOrthogonalAxisLineLists = (lyr) => {
     const empty = { horizontal: [], vertical: [], runsInOrder: [], diagonalCount: 0 };
-    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return empty;
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId)) return empty;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return empty;
     const flat = normalizeSpaceNetworkDataToFlatSegments(
@@ -4667,7 +4818,7 @@
       centerCx: null,
       centerCy: null,
     };
-    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return empty;
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId)) return empty;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return empty;
     const flat = normalizeSpaceNetworkDataToFlatSegments(
@@ -5046,14 +5197,14 @@
   /** @type Record<string, ReturnType<typeof makeLineOrthoTowardCrossUiState>> */
   const lineOrthoTowardCrossUiByLayerId = reactive(
     Object.fromEntries(
-      LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.map((id) => [id, makeLineOrthoTowardCrossUiState()])
+      LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.map((id) => [id, makeLineOrthoTowardCrossUiState()])
     )
   );
   /** @type Record<string, ReturnType<typeof setInterval> | null> */
   const lineOrthoTowardCrossAutoTimerByLayerId = {};
   /** @type Record<string, boolean> */
   const lineOrthoTowardCrossAutoTickBusyByLayerId = {};
-  for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+  for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL) {
     lineOrthoTowardCrossAutoTimerByLayerId[id] = null;
     lineOrthoTowardCrossAutoTickBusyByLayerId[id] = false;
   }
@@ -5063,18 +5214,24 @@
 
   /** 一輪隊列之短標（停止自動時提示用） */
   const lineOrthoTowardCrossCycleShortLabel = (lyr) =>
-    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID ? '欄→列' : '列→欄';
+    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID ||
+    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID_SN2
+      ? '欄→列'
+      : '列→欄';
 
   /** 綠鍵／說明：整表循環順序 */
   const lineOrthoTowardCrossCycleLongLabel = (lyr) =>
-    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID ? '欄整表→列整表' : '列整表→欄整表';
+    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID ||
+    lyr?.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID_SN2
+      ? '欄整表→列整表'
+      : '列整表→欄整表';
 
   const LINE_ORTHO_TOWARD_CROSS_AUTO_MS = 1000;
   /** 一鍵完成：與「自動」同條件停滯前，單次最多 pulse 數（防異常迴圈） */
   const LINE_ORTHO_TOWARD_CROSS_FINISH_ALL_MAX_PULSES = 20000;
 
   const stopLineOrthoTowardCrossAuto = (onlyLayerId = null) => {
-    for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+    for (const id of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL) {
       if (onlyLayerId != null && id !== onlyLayerId) continue;
       if (lineOrthoTowardCrossAutoTimerByLayerId[id] != null) {
         clearInterval(lineOrthoTowardCrossAutoTimerByLayerId[id]);
@@ -5139,9 +5296,11 @@
 
   const buildLineOrthoTowardCrossQueueAndReport = (lyr) => {
     const empty = { queue: [], report: null };
-    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return empty;
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId)) return empty;
     const rep = jsonGridLineOrthogonalRowColPointOrLineReport(lyr);
-    const rowFirst = lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID;
+    const rowFirst =
+      lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID &&
+      lyr.layerId !== LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID_SN2;
     const rows = rep.rowTable.map((it) => ({ tableAxis: 'row', it }));
     const cols = rep.colTable.map((it) => ({ tableAxis: 'col', it }));
     const queue = rowFirst ? [...rows, ...cols] : [...cols, ...rows];
@@ -5234,6 +5393,21 @@
     return best != null ? best : prevIt;
   };
 
+  const refreshOrthogonalVhMirrorForLineOrthoLayer = (lyr) => {
+    if (!lyr) return;
+    if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
+      refreshOrthogonalVhMirrorDrawLayerIfVisible(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+    } else if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID_SN2) {
+      JsonGridNormalizedSn2.refreshOrthogonalVhMirrorDrawLayerIfVisible(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+    }
+  };
+
   /**
    * 單按一次「朝紅十字縮進」：`clearMovePreview`、`queue[idx]`、`seqIdx+=1`；
    * 若有合法位移能提升水平／垂直邊數則可走多格至該向最佳位置，否則只挪一格。與自動排程同軌。
@@ -5244,7 +5418,7 @@
     if (
       !lyr ||
       !uiLine ||
-      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId) ||
       isExecuting.value
     )
       return { evaluationFailed: false, earlyExit: true };
@@ -5307,12 +5481,7 @@
       await dataStore.saveLayerState(lyr.layerId, {
         ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
       });
-      if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
-        refreshOrthogonalVhMirrorDrawLayerIfVisible(
-          dataStore.findLayerById.bind(dataStore),
-          dataStore.saveLayerState.bind(dataStore)
-        );
-      }
+      refreshOrthogonalVhMirrorForLineOrthoLayer(lyr);
       uiLine.lastHint = formatLineOrthoTowardCrossHint(
         posLabel,
         stepCount,
@@ -5386,12 +5555,7 @@
     await dataStore.saveLayerState(lyr.layerId, {
       ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
     });
-    if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
-      refreshOrthogonalVhMirrorDrawLayerIfVisible(
-        dataStore.findLayerById.bind(dataStore),
-        dataStore.saveLayerState.bind(dataStore)
-      );
-    }
+    refreshOrthogonalVhMirrorForLineOrthoLayer(lyr);
 
     uiLine.lastHint = formatLineOrthoTowardCrossHint(
       posLabel,
@@ -5414,7 +5578,7 @@
   }
 
   const onLineOrthoTowardCrossStepClick = async (lyr) => {
-    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) || isExecuting.value)
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId) || isExecuting.value)
       return;
     await pulseOnceLineOrthoTowardCross(lyr, { muteEvalErrorAlert: false });
   };
@@ -5424,7 +5588,7 @@
     if (
       !lyr ||
       !uiA ||
-      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId) ||
       isExecuting.value
     )
       return;
@@ -5484,7 +5648,7 @@
 
   const toggleLineOrthoTowardCrossAuto = (lyr) => {
     const uiT = lineOrthoTowardCrossUiFor(lyr);
-    if (!lyr || !uiT || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return;
+    if (!lyr || !uiT || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId)) return;
     if (uiT.autoActive) stopLineOrthoTowardCrossAuto();
     else startLineOrthoTowardCrossAuto(lyr);
   };
@@ -5494,7 +5658,7 @@
     if (
       !lyr ||
       !uiF ||
-      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) ||
+      !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId) ||
       isExecuting.value
     )
       return;
@@ -5626,10 +5790,16 @@
       // eslint-disable-next-line no-console
       console.error('共點平移：匯出 processedJsonData 失敗', e);
     }
-    writeLayoutNormalizedLayerDataOsmFromNetwork(lyr, segments);
-    syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+    const snap2 = isLayerInSpaceNetworkGridGroup2ById(lyr.layerId);
+    if (snap2) {
+      JsonGridNormalizedSn2.writeLayoutNormalizedLayerDataOsmFromNetwork(lyr, segments);
+      JsonGridNormalizedSn2.syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+    } else {
+      writeLayoutNormalizedLayerDataOsmFromNetwork(lyr, segments);
+      syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+    }
     lyr.jsonGridFromCoordSuggestTargetGrid = null;
-    if (LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId)) return;
+    if (LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId)) return;
     if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID) {
       refreshLayoutNetworkGridFromVhDrawIfVisible(
         dataStore.findLayerById.bind(dataStore),
@@ -5645,14 +5815,40 @@
       );
       return;
     }
-    for (const oid of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS) {
+    if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_MIRROR_DRAW_LAYER_ID_SN2) {
+      JsonGridNormalizedSn2.refreshLayoutNetworkGridFromVhDrawIfVisible(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+      JsonGridNormalizedSn2.refreshLayoutNetworkGridFromVhDrawIfVisibleCopy(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+      JsonGridNormalizedSn2.refreshLayoutNetworkGridFromVhDrawIfVisible2(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+      JsonGridNormalizedSn2.refreshLayoutNetworkGridReadLayoutDataJsonLayerIfVisible2(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+      return;
+    }
+    for (const oid of LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL) {
       const lo = dataStore.findLayerById(oid);
       if (lo) lo.lineOrthoTowardCrossMovePreview = null;
     }
-    refreshLineOrthogonalFromPointOrthogonalIfVisible(
-      dataStore.findLayerById.bind(dataStore),
-      dataStore.saveLayerState.bind(dataStore)
-    );
+    if (snap2) {
+      JsonGridNormalizedSn2.refreshLineOrthogonalFromPointOrthogonalIfVisible(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+    } else {
+      refreshLineOrthogonalFromPointOrthogonalIfVisible(
+        dataStore.findLayerById.bind(dataStore),
+        dataStore.saveLayerState.bind(dataStore)
+      );
+    }
   };
 
   // ── coord_normalized_red_blue_connect：按鈕式 connect 紅／藍點最佳化移動 ──────
@@ -5688,9 +5884,23 @@
       orthogonalVhDrawControlTabApi.pickOrthogonalVhDrawLocalJsonClick(),
   });
 
+  const orthogonalVhDrawControlTabSn2Api = useOrthogonalVhDrawControlTabSn2({
+    dataStore,
+    isExecuting,
+    applyJsonGridFromCoordBestMoveSegmentsToLayer,
+    stopJsonGridFromCoordVertexAuto,
+    stopRbConnectAuto,
+  });
+
+  const layoutNetworkGridFromVhDrawControlTabApiSn2 = useLayoutNetworkGridFromVhDrawControlTabSn2({
+    dataStore,
+    pickOrthogonalVhDrawLocalJsonClick: () =>
+      orthogonalVhDrawControlTabSn2Api.pickOrthogonalVhDrawLocalJsonClick(),
+  });
+
   /**
    * 把路段寫回 coord_normalized_red_blue_connect 層（spaceNetworkGridJsonData + 衍生 + dataJson）。
-   * 同時更新父層 json_grid_coord_normalized 的 dataJson，讓其他鏡像圖層保持一致。
+   * 同時更新對應父層 json_grid_coord_normalized／_sn2 之 dataJson，讓鏡像圖層一致。
    */
   const applyRbConnectSegmentsToLayer = (lyr, segments) => {
     const priorExportRows = mapDrawnExportRowsFromJsonDrawRoot(lyr.jsonData, lyr.dataJson);
@@ -5707,10 +5917,16 @@
       // eslint-disable-next-line no-console
       console.error('rbConnect 移動：processedJsonData 失敗', e);
     }
-    syncJsonGridFromCoordDataJsonFromPipeline(lyr);
-    // 保留 highlightedSegmentIndex／rbConnectMovePreview，由呼叫端設定
-    // 同步父層 dataJson（讓切換回座標正規化仍能看到最新路網）
-    const parent = dataStore.findLayerById('json_grid_coord_normalized');
+    if (lyr.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID_SN2) {
+      JsonGridNormalizedSn2.syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+    } else {
+      syncJsonGridFromCoordDataJsonFromPipeline(lyr);
+    }
+    const normParentId =
+      lyr.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID_SN2
+        ? JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2
+        : 'json_grid_coord_normalized';
+    const parent = dataStore.findLayerById(normParentId);
     if (parent && Array.isArray(lyr.dataJson)) {
       parent.dataJson = JSON.parse(JSON.stringify(lyr.dataJson));
       parent.jsonData = parent.dataJson;
@@ -5719,7 +5935,8 @@
 
   /** 手動步進：依列表序一次一點；一輪內每點只試一次，輪完才從頭；自動模式在「整輪零移動」時停止 */
   const advanceRbConnectHighlight = async () => {
-    const lyr = dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+    const lyr = resolveRbConnectListLayer();
+    const rbLayerId = lyr?.layerId ?? COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID;
     const list = lyr ? coordNormalizedRedBlueConnectList(lyr) : [];
     if (!lyr || !list.length) {
       window.alert('尚無 connect 點；請先開啟本圖層並確認父層「座標正規化」已有路網。');
@@ -5756,7 +5973,7 @@
       ])
     );
 
-    await dataStore.saveLayerState(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID, {
+    await dataStore.saveLayerState(rbLayerId, {
       highlightedSegmentIndex: lyr.highlightedSegmentIndex,
       rbConnectMovePreview: null,
       rbConnectVisitedKeys: lyr.rbConnectVisitedKeys,
@@ -5776,7 +5993,7 @@
     if (!r.ok) {
       window.alert(r.message || '無法評估移動');
       stopRbConnectAuto();
-      dataStore.saveLayerState(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID, {
+      dataStore.saveLayerState(rbLayerId, {
         highlightedSegmentIndex: lyr.highlightedSegmentIndex,
         rbConnectVisitedKeys: lyr.rbConnectVisitedKeys,
       });
@@ -5801,16 +6018,12 @@
       rbConnectMovesInRound.value += 1;
       lyr.highlightedSegmentIndex = [it.segIdx, it.ptIdx];
       applyRbConnectSegmentsToLayer(lyr, r.segments);
-      dataStore.saveLayerState(
-        COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID,
-        jsonGridFromCoordNormalizedPersistPayload(lyr)
-      );
+      dataStore.saveLayerState(rbLayerId, jsonGridFromCoordNormalizedPersistPayload(lyr));
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       return;
     }
-    // 本點無可改善：僅更新 highlight
-    dataStore.saveLayerState(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID, {
+    dataStore.saveLayerState(rbLayerId, {
       highlightedSegmentIndex: lyr.highlightedSegmentIndex,
       rbConnectVisitedKeys: lyr.rbConnectVisitedKeys,
     });
@@ -5819,13 +6032,14 @@
   };
 
   const startRbConnectAuto = () => {
-    const lyr = dataStore.findLayerById(COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID);
+    const lyr = resolveRbConnectListLayer();
     if (!lyr || coordNormalizedRedBlueConnectList(lyr).length === 0) {
       window.alert('尚無 connect 點；請先開啟本圖層並確認父層「座標正規化」已有路網。');
       return;
     }
     stopRbConnectAuto();
     orthogonalVhDrawControlTabApi.stopVhDrawDiagonalRouteAuto();
+    orthogonalVhDrawControlTabSn2Api.stopVhDrawDiagonalRouteAuto();
     rbConnectHighlightStep.value = -1;
     rbConnectMovesInRound.value = 0;
     lyr.rbConnectVisitedKeys = [];
@@ -5845,7 +6059,7 @@
   // ── end coord_normalized_red_blue_connect ────────────────────────────────
 
   const maybeLineOrthoHubBlueDiagonalPrepassOnce = async (lyr) => {
-    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(lyr.layerId) || isExecuting.value)
+    if (!lyr || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(lyr.layerId) || isExecuting.value)
       return;
     const resolved = resolveB3InputSpaceNetwork(lyr, { routeLineFromExportRows: 'full' });
     if (!resolved?.spaceNetwork?.length) return;
@@ -5858,12 +6072,7 @@
     await dataStore.saveLayerState(lyr.layerId, {
       ...jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true }),
     });
-    if (lyr.layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID) {
-      refreshOrthogonalVhMirrorDrawLayerIfVisible(
-        dataStore.findLayerById.bind(dataStore),
-        dataStore.saveLayerState.bind(dataStore)
-      );
-    }
+    refreshOrthogonalVhMirrorForLineOrthoLayer(lyr);
     await nextTick();
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
@@ -5899,9 +6108,10 @@
 
   /** 手動步進：highlight 下一點並嘗試平移；自動模式每秒呼叫 */
   const advanceJsonGridFromCoordVertexHighlight = async () => {
-    const lyr = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+    const lyr = resolveActivePointOrthogonalLayer();
+    const pid = lyr?.layerId;
     const list = lyr ? jsonGridFromCoordNormalizedVertexList(lyr) : [];
-    if (!lyr || !list.length) {
+    if (!lyr || !pid || !list.length) {
       window.alert('尚無頂點；請先有路網資料。');
       stopJsonGridFromCoordVertexAuto();
       return;
@@ -5915,7 +6125,7 @@
     if (!r.ok && r.errorMessage) {
       window.alert(r.errorMessage);
       stopJsonGridFromCoordVertexAuto();
-      dataStore.saveLayerState(POINT_ORTHOGONAL_LAYER_ID, {
+      dataStore.saveLayerState(pid, {
         highlightedSegmentIndex: lyr.highlightedSegmentIndex,
         jsonGridFromCoordSuggestTargetGrid: null,
       });
@@ -5925,23 +6135,20 @@
     if (r.applied) {
       jsonGridFromCoordVertexStep.value = -1;
       lyr.highlightedSegmentIndex = null;
-      dataStore.saveLayerState(
-        POINT_ORTHOGONAL_LAYER_ID,
-        jsonGridFromCoordNormalizedPersistPayload(lyr)
-      );
+      dataStore.saveLayerState(pid, jsonGridFromCoordNormalizedPersistPayload(lyr));
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       return;
     }
 
-    dataStore.saveLayerState(POINT_ORTHOGONAL_LAYER_ID, {
+    dataStore.saveLayerState(pid, {
       highlightedSegmentIndex: lyr.highlightedSegmentIndex,
       jsonGridFromCoordSuggestTargetGrid: null,
     });
   };
 
   const startJsonGridFromCoordVertexAuto = () => {
-    const lyr = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+    const lyr = resolveActivePointOrthogonalLayer();
     if (!lyr || jsonGridFromCoordNormalizedVertexList(lyr).length === 0) {
       window.alert('尚無頂點；請先有路網資料。');
       return;
@@ -5949,6 +6156,7 @@
     if (jsonGridFromCoordVertexOneClickRunning.value) return;
     stopJsonGridFromCoordVertexAuto();
     orthogonalVhDrawControlTabApi.stopVhDrawDiagonalRouteAuto();
+    orthogonalVhDrawControlTabSn2Api.stopVhDrawDiagonalRouteAuto();
     jsonGridFromCoordVertexAutoActive.value = true;
     jsonGridFromCoordVertexAutoTimerId = setInterval(async () => {
       if (!jsonGridFromCoordVertexAutoActive.value || jsonGridFromCoordVertexAutoTickBusy) return;
@@ -5963,8 +6171,9 @@
 
   /** 自列表頭逐一嘗試平移，一有套用即回到頭，直到整輪無可改善（不更新 highlight／中途不重繪） */
   const runJsonGridFromCoordVertexUntilStableNoUi = async () => {
-    const lyr = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
-    if (!lyr || jsonGridFromCoordNormalizedVertexList(lyr).length === 0) {
+    const lyr = resolveActivePointOrthogonalLayer();
+    const pid = lyr?.layerId;
+    if (!lyr || !pid || jsonGridFromCoordNormalizedVertexList(lyr).length === 0) {
       window.alert('尚無頂點；請先有路網資料。');
       return;
     }
@@ -5973,7 +6182,7 @@
     const MAX_MOVES = 50000;
     let moveCount = 0;
     let round = 0;
-    const logPrefix = '[point_orthogonal][一鍵完成]';
+    const logPrefix = `[${pid}][一鍵完成]`;
     try {
       // eslint-disable-next-line no-console
       console.log(logPrefix, '開始', {
@@ -6014,10 +6223,7 @@
             // eslint-disable-next-line no-console
             console.error(logPrefix, '評估／套用失敗', r.errorMessage);
             window.alert(r.errorMessage || '無法評估平移');
-            dataStore.saveLayerState(
-              POINT_ORTHOGONAL_LAYER_ID,
-              jsonGridFromCoordNormalizedPersistPayload(lyr)
-            );
+            dataStore.saveLayerState(pid, jsonGridFromCoordNormalizedPersistPayload(lyr));
             await nextTick();
             dataStore.requestSpaceNetworkGridFullRedraw();
             return;
@@ -6054,10 +6260,7 @@
       jsonGridFromCoordVertexStep.value = -1;
       lyr.highlightedSegmentIndex = null;
       lyr.jsonGridFromCoordSuggestTargetGrid = null;
-      dataStore.saveLayerState(
-        POINT_ORTHOGONAL_LAYER_ID,
-        jsonGridFromCoordNormalizedPersistPayload(lyr)
-      );
+      dataStore.saveLayerState(pid, jsonGridFromCoordNormalizedPersistPayload(lyr));
       await nextTick();
       dataStore.requestSpaceNetworkGridFullRedraw();
       // eslint-disable-next-line no-console
@@ -6082,7 +6285,8 @@
     jsonGridCoordNormalizedPipelineOneClickRunning.value = true;
     try {
       await nextTick();
-      const normOk = await Promise.resolve(executeJsonGridCoordNormalize());
+      const b = pickJsonGridNormalizeExecuteBundle();
+      const normOk = await Promise.resolve(b.execNormalize());
       if (!normOk) {
         window.alert(
           '一鍵流程中止：無法完成「座標正規化」（請確認已開啟本圖層並自「OSM／GeoJSON → JSON」複製 dataJson／路網）。'
@@ -6090,17 +6294,17 @@
         return;
       }
 
-      const layNorm = dataStore.findLayerById('json_grid_coord_normalized');
+      const layNorm = dataStore.findLayerById(b.normLayerId);
       const tc0 = layNorm?.dashboardData?.topologyCheck;
       if (tc0 && !tc0.skipped && tc0.structMatch && tc0.hasNeighborFlips) {
-        await Promise.resolve(executeJsonGridNeighborTopologyFix());
+        await Promise.resolve(b.execTopology());
       }
 
       await nextTick();
-      const layPrune = dataStore.findLayerById('json_grid_coord_normalized');
+      const layPrune = dataStore.findLayerById(b.normLayerId);
       const tcp = layPrune?.dashboardData?.topologyCheck;
       if (tcp && !tcp.skipped) {
-        await Promise.resolve(executeJsonGridCoordNormalizedPruneEmptyGridLines());
+        await Promise.resolve(b.execPruneEmptyAfterNorm());
       }
     } catch (err) {
       console.error(err);
@@ -6116,13 +6320,14 @@
     isExecuting.value = true;
     try {
       await nextTick();
-      const ok = await Promise.resolve(executeJsonGridCoordNormalize());
+      const b = pickJsonGridNormalizeExecuteBundle();
+      const ok = await Promise.resolve(b.execNormalize());
       if (!ok) {
         window.alert(
           '座標正規化失敗：請先在左側開啟「JSON·網格·座標正規化」圖層（會自動自「OSM／GeoJSON → JSON」複製 dataJson），或將路網貼入 spaceNetworkGridJsonData 後再試。'
         );
       } else {
-        const layNorm = dataStore.findLayerById('json_grid_coord_normalized');
+        const layNorm = dataStore.findLayerById(b.normLayerId);
         const tc = layNorm?.dashboardData?.topologyCheck;
         if (tc && !tc.skipped && !tc.topologyPreserved) {
           window.alert(`座標正規化已完成。\n\n${tc.summaryZh}`);
@@ -6137,10 +6342,34 @@
     }
   };
 
+  /** 「JSON·網格·座標正規化」圖層：刪空欄列（依目前選定之 main／群組_2 執行） */
+  const onJsonGridPruneEmptyGridLinesClick = async () => {
+    const b = pickJsonGridNormalizeExecuteBundle();
+    const lay = dataStore.findLayerById(b.normLayerId);
+    const tc = lay?.dashboardData?.topologyCheck;
+    if (!(tc && !tc.skipped)) {
+      window.alert('須先完成「座標正規化」並顯示上方拓撲比對後，才可刪空欄列。');
+      return;
+    }
+    if (isExecuting.value) return;
+    isExecuting.value = true;
+    try {
+      await nextTick();
+      await Promise.resolve(b.execPruneEmptyAfterNorm());
+      await nextTick();
+      dataStore.requestSpaceNetworkGridFullRedraw();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTimeout(() => {
+        isExecuting.value = false;
+      }, 300);
+    }
+  };
 
   const onJsonGridFromCoordPruneEmptyGridLinesClick = async () => {
     if (isExecuting.value) return;
-    const follow = dataStore.findLayerById(POINT_ORTHOGONAL_LAYER_ID);
+    const follow = resolveActivePointOrthogonalLayer();
     if (!follow?.spaceNetworkGridJsonData?.length) {
       window.alert('本層尚無路網（spaceNetworkGridJsonData）。請先載入或鏡像父層資料。');
       return;
@@ -6148,7 +6377,11 @@
     isExecuting.value = true;
     try {
       await nextTick();
-      const r = await Promise.resolve(executeJsonGridFromCoordNormalizedPruneEmptyGridLines());
+      const execPrune =
+        follow.layerId === POINT_ORTHOGONAL_LAYER_ID_SN2
+          ? executeJsonGridFromCoordNormalizedPruneEmptyGridLinesSn2
+          : executeJsonGridFromCoordNormalizedPruneEmptyGridLines;
+      const r = await Promise.resolve(execPrune());
       if (!r?.ok) {
         if (r?.reason === 'no-network') {
           window.alert('尚無路網可刪空欄列。');
@@ -6188,6 +6421,30 @@
       ingestOsmSpaceGridTextIntoLayer(layer, text, file.name);
     } catch (err) {
       console.error('本機 OSM／GeoJSON 讀取失敗:', err);
+      layer.isLoading = false;
+      dataStore.saveLayerState(layer.layerId, { isLoading: false });
+      window.alert(`讀檔失敗：${String(err?.message ?? err ?? '')}`);
+    }
+  };
+
+  const onTaipeiOsmSpaceGridLocalFileInputChangeSn2 = async (event) => {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    const layer = dataStore.findLayerById(OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2);
+    if (!file) return;
+    if (!layer) {
+      window.alert(
+        '找不到群組_2「OSM／GeoJSON → JSON」圖層（osm_2_geojson_2_json_sn2）。請確認左側圖層列表內含此圖層後再試。'
+      );
+      return;
+    }
+    try {
+      layer.isLoading = true;
+      const text = await file.text();
+      ingestOsmSpaceGridTextIntoLayer(layer, text, file.name);
+    } catch (err) {
+      console.error('[sn2] 本機 OSM／GeoJSON 讀取失敗:', err);
       layer.isLoading = false;
       dataStore.saveLayerState(layer.layerId, { isLoading: false });
       window.alert(`讀檔失敗：${String(err?.message ?? err ?? '')}`);
@@ -8543,9 +8800,13 @@
   };
 
   const lineOrthoTowardCenterRoutesExportFilename = (layerId) =>
-    layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID
-      ? 'orthogonal_toward_center_vh_routes.json'
-      : 'orthogonal_toward_center_hv_routes.json';
+    layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID_SN2
+      ? 'orthogonal_toward_center_vh_routes_sn2.json'
+      : layerId === ORTH_SPACE_LINE_IDS_SN2[0]
+        ? 'orthogonal_toward_center_hv_routes_sn2.json'
+        : layerId === LINE_ORTHOGONAL_VERT_FIRST_LAYER_ID
+          ? 'orthogonal_toward_center_vh_routes.json'
+          : 'orthogonal_toward_center_hv_routes.json';
 
   /**
    * `orthogonal_toward_center_hv`／`vh`：與 Upper「json-viewer」同一來源（SpaceNetworkGridJsonDataTab
@@ -8554,7 +8815,7 @@
    */
   const lineOrthoTowardCenterJsonViewerMirrorPayload = (layer) => {
     const id = layer?.layerId;
-    if (!id || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(id)) return null;
+    if (!id || !LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(id)) return null;
     const jdraw = layer.dataJson ?? layer.jsonData;
     return jdraw != null ? jdraw : null;
   };
@@ -8922,8 +9183,39 @@
           </ol>
         </div>
 
-        <!-- JSON·網格·座標正規化（單鍵 b→c→d）；layerId：json_grid_coord_normalized -->
-        <div v-if="layer.layerId === 'json_grid_coord_normalized'" class="pb-3 mb-3 border-bottom">
+        <!-- osm_2_geojson_2_json_sn2：本機 .osm／.geojson（群組_2 獨立管線／session／鏡像） -->
+        <div v-if="layer.layerId === OSM_2_GEOJSON_2_JSON_LAYER_ID_SN2" class="pb-3 mb-3 border-bottom">
+          <div class="my-title-xs-gray pb-2">OSM／GeoJSON 來源（本機檔，群組_2）</div>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-green mb-2"
+            :disabled="layer.isLoading"
+            @click="onTaipeiOsmSpaceGridPickLocalFileClickSn2"
+          >
+            選擇本機 .osm 或 .geojson 並讀入
+          </button>
+          <button
+            type="button"
+            class="btn rounded-pill border-0 my-font-size-xs text-nowrap w-100 my-cursor-pointer my-btn-blue mb-2"
+            :disabled="layer.isLoading"
+            @click="onTaipeiOsmSpaceGridLoadBundledTaipeiClickSn2"
+          >
+            自動讀入 taipei/taipei.osm
+          </button>
+          <div class="text-muted mb-0" style="font-size: 11px; line-height: 1.45">
+            程式路徑與主「空間網絡網格」分開（session／鏡像至
+            <code class="small">json_grid_coord_normalized_sn2</code>）；資料不與主群組共用。
+          </div>
+        </div>
+
+        <!-- JSON·網格·座標正規化 — 空間網絡網格／（群組_2）-->
+        <div
+          v-if="
+            layer.layerId === 'json_grid_coord_normalized' ||
+            layer.layerId === JSON_GRID_COORD_NORMALIZED_LAYER_ID_SN2
+          "
+          class="pb-3 mb-3 border-bottom"
+        >
           <div class="my-title-xs-gray pb-2">座標正規化</div>
           <button
             type="button"
@@ -9089,8 +9381,11 @@
           </div>
         </div>
 
-        <!-- point_orthogonal：所有頂點列表 -->
-        <div v-if="layer.layerId === POINT_ORTHOGONAL_LAYER_ID" class="pb-3 mb-3 border-bottom">
+        <!-- point_orthogonal／point_orthogonal_sn2：所有頂點列表 -->
+        <div
+          v-if="layer.layerId === POINT_ORTHOGONAL_LAYER_ID || layer.layerId === POINT_ORTHOGONAL_LAYER_ID_SN2"
+          class="pb-3 mb-3 border-bottom"
+        >
           <div class="my-title-xs-gray pb-2">所有頂點列表</div>
           <div class="d-flex flex-wrap gap-2 mb-2">
             <button
@@ -9208,7 +9503,10 @@
 
         <!-- 座標正規化·紅藍點列表（鏡像父層 dataJson）：僅 connect -->
         <div
-          v-if="layer.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID"
+          v-if="
+            layer.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID ||
+            layer.layerId === COORD_NORMALIZED_RED_BLUE_LIST_LAYER_ID_SN2
+          "
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">connect 紅／藍點</div>
@@ -9317,16 +9615,26 @@
           :is-executing="isExecuting"
           :api="layoutNetworkGridFromVhDrawControlTabApi"
         />
+        <LayoutNetworkGridFromVhDrawControlTabSection
+          :layer="layer"
+          :is-executing="isExecuting"
+          :api="layoutNetworkGridFromVhDrawControlTabApiSn2"
+        />
         <OrthogonalVhDrawControlTabSection
           :layer="layer"
           :is-executing="isExecuting"
           :api="orthogonalVhDrawControlTabApi"
         />
+        <OrthogonalVhDrawControlTabSectionSn2
+          :layer="layer"
+          :is-executing="isExecuting"
+          :api="orthogonalVhDrawControlTabSn2Api"
+        />
 
 
         <!-- 往中心聚集（列→欄 或 欄→列）：各列／欄 HV 線段（表格：站名＋座標） -->
         <div
-          v-if="LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS.includes(layer.layerId)"
+          v-if="LINE_ORTHOGONAL_TOWARD_CENTER_LAYER_IDS_ALL.includes(layer.layerId)"
           class="pb-3 mb-3 border-bottom"
         >
           <div class="my-title-xs-gray pb-2">各列（y）／各欄（x）：點或線</div>
@@ -12263,6 +12571,13 @@
       @change="orthogonalVhDrawControlTabApi.onOrthogonalVhDrawLocalJsonInputChange"
     />
     <input
+      id="orthogonal-vh-draw-local-json-input-sn2"
+      type="file"
+      class="d-none"
+      accept=".json,application/json"
+      @change="orthogonalVhDrawControlTabSn2Api.onOrthogonalVhDrawLocalJsonInputChange"
+    />
+    <input
       id="taipei-osm-sn4-local-file-input"
       type="file"
       class="d-none"
@@ -12275,6 +12590,13 @@
       class="d-none"
       accept=".osm,.xml,.geojson,application/geo+json,application/json,application/xml,text/xml,*/*"
       @change="onTaipeiOsmSpaceGridLocalFileInputChange"
+    />
+    <input
+      id="taipei-osm-space-grid-local-file-input-sn2"
+      type="file"
+      class="d-none"
+      accept=".osm,.xml,.geojson,application/geo+json,application/json,application/xml,text/xml,*/*"
+      @change="onTaipeiOsmSpaceGridLocalFileInputChangeSn2"
     />
   </div>
 </template>

@@ -541,7 +541,10 @@ export async function loadOsmXmlAsGeoJsonForRoutes(layer) {
     const fileName = layer?.osmFileName;
     if (!fileName || String(fileName).trim() === '') {
       const emptyFc = { type: 'FeatureCollection', features: [] };
-      if (layer?.layerId === 'osm_2_geojson_2_json') {
+      if (
+        layer?.layerId === 'osm_2_geojson_2_json' ||
+        layer?.layerId === 'osm_2_geojson_2_json_sn2'
+      ) {
         const base = buildStandardRouteGeoJsonLoadResult(emptyFc);
         const routeExportRows = exportRouteSegmentsFromGeoJson(emptyFc, {
           insertStationsOntoLinesByProximity: false,
@@ -576,6 +579,15 @@ export async function loadOsmXmlAsGeoJsonForRoutes(layer) {
     if (layer?.layerId === 'osm_2_geojson_2_json') {
       const { osmXmlToOsm2GeojsonLoaderResult, parseGeoJsonTextToOsm2GeojsonLoaderResult } =
         await import('@/utils/layers/osm_2_geojson_2_json/index.js');
+      const lower = String(fileName).toLowerCase();
+      if (lower.endsWith('.geojson')) {
+        return parseGeoJsonTextToOsm2GeojsonLoaderResult(bodyText);
+      }
+      return osmXmlToOsm2GeojsonLoaderResult(bodyText);
+    }
+    if (layer?.layerId === 'osm_2_geojson_2_json_sn2') {
+      const { osmXmlToOsm2GeojsonLoaderResult, parseGeoJsonTextToOsm2GeojsonLoaderResult } =
+        await import('@/utils/layers/osm_2_geojson_2_json_sn2/index.js');
       const lower = String(fileName).toLowerCase();
       if (lower.endsWith('.geojson')) {
         return parseGeoJsonTextToOsm2GeojsonLoaderResult(bodyText);
