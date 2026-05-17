@@ -56,6 +56,7 @@
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw,
     syncLayoutNetworkGridRoutesDataJsonFromVhDrawCopy,
     syncLayoutNetworkGridRoutesDataJsonFromVhDraw2,
+    LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT,
     applyLayoutTrafficCsvToVhDrawLayerRoots,
     buildSyntheticTrafficRowsFromVhDrawLayer,
     replaceDiagonalEdgesWithLOrtho,
@@ -7207,6 +7208,21 @@
     dataStore.requestSpaceNetworkGridFullRedraw();
   };
 
+  /** 複本層：加權子網格「鄰線寬／高」目標下限（pt），用於暫隱中段黑點之迭代停止條件 */
+  const onLayoutVhDrawCopyWeightedNeighborHideMinPtChange = async (lyr, ev) => {
+    if (!lyr || lyr.layerId !== LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) return;
+    let v = Number(ev?.target?.value);
+    if (!Number.isFinite(v)) v = LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT;
+    v = Math.min(99, Math.max(0.25, v));
+    lyr.layoutVhDrawWeightedNeighborHideMinPt = v;
+    dataStore.saveLayerState(
+      lyr.layerId,
+      jsonGridFromCoordNormalizedPersistPayload(lyr, { omitLoadingFlags: true })
+    );
+    await nextTick();
+    dataStore.requestSpaceNetworkGridFullRedraw();
+  };
+
   /**
    * 1–9 整數抽樣：機率與反等比級數 1/r^k 成正比（公比 r>1 → k 愈小愈容易出現）。
    * @param {number} [ratio=2]
@@ -10483,6 +10499,34 @@
               />
               <label :for="'switch-layout-vh-draw-bd-rowcol-' + layer.layerId"></label>
             </div>
+          </div>
+          <div
+            v-if="layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY"
+            class="d-flex flex-wrap align-items-center gap-2 mb-2"
+          >
+            <label
+              class="my-content-sm-black mb-0 text-nowrap"
+              :for="'layout-vh-draw-nei-min-pt-' + layer.layerId"
+              >子網格鄰線最小寬／高（pt）</label
+            >
+            <input
+              :id="'layout-vh-draw-nei-min-pt-' + layer.layerId"
+              type="number"
+              class="form-control form-control-sm"
+              style="width: 5.5rem"
+              min="0.25"
+              max="99"
+              step="0.25"
+              :value="
+                Number(layer.layoutVhDrawWeightedNeighborHideMinPt) > 0
+                  ? layer.layoutVhDrawWeightedNeighborHideMinPt
+                  : LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT
+              "
+              @change="onLayoutVhDrawCopyWeightedNeighborHideMinPtChange(layer, $event)"
+            />
+            <span class="text-muted my-font-size-xs" style="line-height: 1.45"
+              >細於此則依 weight_差值由小到大暫隱黑點，直至寬與高皆 ≥ 此值。</span
+            >
           </div>
           <div
             v-if="layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY"

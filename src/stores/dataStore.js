@@ -718,6 +718,11 @@ export const useDataStore = defineStore(
             layoutVhDrawBlackDotRowColRatioReport: null,
             /** Upper「layout-grid」檢視專用：顯示欄／列 black-dot Σ 歸一比例條（pt 區間，與藍字同源） */
             layoutVhDrawShowBlackDotRowColRatioOverlay: false,
+            /**
+             * 加權比例條下：鄰線寬／高皆須 ≥ 此值（pt）才停止依 weight_差值 暫隱中段黑點（控制台可調）。
+             * 預設 5，與模組常數 LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT 一致。
+             */
+            layoutVhDrawWeightedNeighborHideMinPt: 5,
             upperViewTabs: ['space-layout-grid-viewer', 'layout-grid-viewer', 'json-viewer'],
           },
         ],

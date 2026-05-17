@@ -7084,7 +7084,14 @@
             layoutViewerPxPtScale?.ptToPx ?? ((pt) => (Number(pt) * 96) / 72);
           const pxToPtDashSubgrid = (px) => (Number(px) * 72) / 96;
           const roundPt2Dash = (pt) => Math.round(Number(pt) * 100) / 100;
-          const ptThrNei = LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT;
+          const neiThrSrc = dataStore.findLayerById(layerTab);
+          const rawNeiThr = Number(neiThrSrc?.layoutVhDrawWeightedNeighborHideMinPt);
+          const ptThrNei =
+            layerTab === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY &&
+            Number.isFinite(rawNeiThr) &&
+            rawNeiThr > 0
+              ? rawNeiThr
+              : LAYOUT_VH_DRAW_COPY_GRID_NEIGHBOR_HIDE_MIN_PT;
 
           const copyWeightedHideForSubgrid = new Set();
           if (copyRouteMidPlans && copyRouteMidPlans.size > 0) {

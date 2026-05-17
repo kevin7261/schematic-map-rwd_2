@@ -454,6 +454,11 @@ export function jsonGridFromCoordNormalizedPersistPayload(layer, opts = {}) {
     payload.layoutVhDrawShowBlackDotRowColRatioOverlay =
       layer.layoutVhDrawShowBlackDotRowColRatioOverlay === true;
   }
+  if (layer.layerId === LAYOUT_NETWORK_GRID_FROM_VH_DRAW_LAYER_ID_COPY) {
+    const m = Number(layer.layoutVhDrawWeightedNeighborHideMinPt);
+    payload.layoutVhDrawWeightedNeighborHideMinPt =
+      Number.isFinite(m) && m > 0 ? m : 5;
+  }
   if (layer.layerId === LAYOUT_NETWORK_GRID_READ_LAYOUT_DATA_JSON_LAYER_ID_2) {
     payload.csvFileName_traffic = layer.csvFileName_traffic ?? null;
     payload.layoutVhDrawTrafficData = layer.layoutVhDrawTrafficData ?? null;
